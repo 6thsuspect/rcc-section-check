@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bahnschrift", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+  /* drafting-ink palette */
+  --color-ink: #17222c;
+  --color-ink-2: #485866;
+  --color-ink-3: #75828e;
+  --color-paper: #fbfcfd;
+  --color-panel: #f2f5f8;
+  --color-card: #ffffff;
+  --color-edge: #dde4ea;
+  --color-edge-strong: #b9c4cd;
+  --color-accent: #256abf;
+  --color-accent-strong: #1c5cab;
+  --color-accent-wash: #e8f0fa;
+  --color-capacity: #2a78d6;
+  --color-demand: #eb6834;
+  --color-ramp-lo: #86b6ef;
+  --color-ramp-mid: #2a78d6;
+  --color-ramp-hi: #104281;
+  --color-ok: #006300;
+  --color-bad: #b93434;
+  --color-warn2: #8a5a00;
+  --color-concrete: #e9eef3;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+/* numeric alignment in tables */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
