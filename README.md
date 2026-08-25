@@ -56,4 +56,4 @@ src/App.tsx               State + analysis pipeline wiring
   Fe500, 12 ⌀25 — docs/11) within ±2% on all capacities; see the test suite.
 
 **Disclaimer:** design aid only — the engineer of record remains responsible for the
-design, code applicability and clause interpretation. See `docs/README.md`.
+design, code applicability and clause interpretation. See `docs/README.md`..
