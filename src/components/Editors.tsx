@@ -10,6 +10,7 @@ import {
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
 import { Card, NumField } from './ui'
+import { PasteReinforcement } from './PasteReinforcement'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -326,9 +327,12 @@ export function RebarPanel({
     <Card
       title={`Reinforcement bars (${bars.length})`}
       action={
-        <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
-          + bar
-        </button>
+        <span className="flex items-center gap-1.5">
+          <PasteReinforcement onAdd={(newBars) => update([...bars, ...newBars])} />
+          <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
+            + bar
+          </button>
+        </span>
       }
     >
       <div className="max-h-64 overflow-y-auto border border-edge rounded">
