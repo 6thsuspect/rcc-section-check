@@ -171,7 +171,7 @@ export default function App() {
         <div className="flex flex-col gap-4 min-w-0">
           <CodeMaterialsPanel state={state} update={update} />
           <SectionPanel state={state} update={update} />
-          <RebarPanel bars={state.bars} geometry={state.geometry} update={(bars) => update({ bars, predefined: state.predefined })} />
+          <RebarPanel bars={state.bars} update={(bars) => update({ bars, predefined: state.predefined })} />
           <LoadCasesPanel
             cases={state.cases}
             selected={selected?.id ?? null}
