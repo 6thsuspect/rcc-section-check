@@ -324,6 +324,15 @@ export function RebarPanel({
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
   const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
 
+  const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
+  const [status, setStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'ok'; count: number }
+    | { kind: 'empty'; message: string }
+    | { kind: 'errors'; errors: { line: number; message: string }[] }
+  >({ kind: 'idle' })
+
+  // Excel paste handler that automatically expands rows and populates values
   const handleExcelPaste = (e: React.ClipboardEvent) => {
     const rawText = e.clipboardData.getData('text')
     if (!rawText) return
@@ -349,8 +358,30 @@ export function RebarPanel({
     }
 
     if (pastedBars.length > 0) {
-      update(pastedBars)
+      if (pasteMode === 'replace') {
+        update(pastedBars)
+      } else {
+        update([...bars, ...pastedBars])
+      }
+      setStatus({ kind: 'ok', count: pastedBars.length })
     }
+  }
+
+  const validate = () => {
+    if (bars.length === 0) {
+      setStatus({ kind: 'empty', message: 'No reinforcement bars defined — paste Excel rows or add a bar.' })
+      return
+    }
+
+    const errs: { line: number; message: string }[] = []
+    bars.forEach((b, i) => {
+      if (!Number.isFinite(b.x)) errs.push({ line: i + 1, message: 'X Coordinate must be numeric' })
+      if (!Number.isFinite(b.y)) errs.push({ line: i + 1, message: 'Y Coordinate must be numeric' })
+      if (!Number.isFinite(b.dia) || b.dia <= 0) errs.push({ line: i + 1, message: 'Bar Diameter must be greater than zero' })
+    })
+
+    if (errs.length > 0) setStatus({ kind: 'errors', errors: errs })
+    else setStatus({ kind: 'ok', count: bars.length })
   }
 
   return (
@@ -368,102 +399,199 @@ export function RebarPanel({
         </span>
       }
     >
-      <div
-        className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
-        onPaste={handleExcelPaste}
-        tabIndex={0}
-        title="Paste Excel cells directly into this table (Ctrl+V / Cmd+V) — rows will auto-expand"
-      >
-        <table className="w-full text-[12.5px] border-collapse">
-          <thead>
-            <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
-              <th className="text-left px-2 py-1 w-8">#</th>
-              <th className="text-left px-1.5 py-1">X Coordinate (<code className="font-mono text-accent">x</code>)</th>
-              <th className="text-left px-1.5 py-1">Y Coordinate (<code className="font-mono text-accent">y</code>)</th>
-              <th className="text-left px-1.5 py-1">Bar Diameter (<code className="font-mono text-accent">Bar Dia</code>)</th>
-              <th className="px-1 py-1 w-8"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bars.length > 0 ? (
-              bars.map((b, i) => (
-                <tr key={i} className="border-t border-edge hover:bg-panel/50">
-                  <td className="px-2 py-0.5 text-ink-3 tnum font-mono">{i + 1}</td>
-                  <td className="px-1.5 py-0.5">
-                    <input
-                      className={cellCls}
-                      type="number"
-                      value={b.x}
-                      placeholder="0"
-                      onChange={(e) =>
-                        update(
-                          bars.map((q, j) =>
-                            j === i ? { ...q, x: num(e.target.value) } : q
+      <div className="flex flex-col gap-3">
+        {/* Action Mode Toggle: Append vs Replace */}
+        <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
+          <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
+            Action Mode:
+          </span>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="tabPasteMode"
+                value="append"
+                checked={pasteMode === 'append'}
+                onChange={() => setPasteMode('append')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'append' ? 'font-semibold text-accent' : 'text-ink-2'}>
+                Append on Paste
+              </span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="tabPasteMode"
+                value="replace"
+                checked={pasteMode === 'replace'}
+                onChange={() => setPasteMode('replace')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'replace' ? 'font-semibold text-bad' : 'text-ink-2'}>
+                Replace All on Paste
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* 3-Column Interactive Excel Table */}
+        <div
+          className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
+          onPaste={handleExcelPaste}
+          tabIndex={0}
+          title="Paste Excel cells directly into this table (Ctrl+V / Cmd+V) — rows will auto-expand"
+        >
+          <table className="w-full text-[12.5px] border-collapse">
+            <thead>
+              <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
+                <th className="text-left px-2 py-1 w-8">#</th>
+                <th className="text-left px-1.5 py-1">X Coordinate (<code className="font-mono text-accent">x</code>)</th>
+                <th className="text-left px-1.5 py-1">Y Coordinate (<code className="font-mono text-accent">y</code>)</th>
+                <th className="text-left px-1.5 py-1">Bar Diameter (<code className="font-mono text-accent">Bar Dia</code>)</th>
+                <th className="px-1 py-1 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {bars.length > 0 ? (
+                bars.map((b, i) => (
+                  <tr key={i} className="border-t border-edge hover:bg-panel/50">
+                    <td className="px-2 py-0.5 text-ink-3 tnum font-mono">{i + 1}</td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={b.x}
+                        placeholder="0"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, x: num(e.target.value) } : q
+                            )
                           )
-                        )
-                      }
-                      onPaste={handleExcelPaste}
-                    />
-                  </td>
-                  <td className="px-1.5 py-0.5">
-                    <input
-                      className={cellCls}
-                      type="number"
-                      value={b.y}
-                      placeholder="0"
-                      onChange={(e) =>
-                        update(
-                          bars.map((q, j) =>
-                            j === i ? { ...q, y: num(e.target.value) } : q
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={b.y}
+                        placeholder="0"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, y: num(e.target.value) } : q
+                            )
                           )
-                        )
-                      }
-                      onPaste={handleExcelPaste}
-                    />
-                  </td>
-                  <td className="px-1.5 py-0.5">
-                    <select
-                      className={cellCls}
-                      value={b.dia}
-                      onChange={(e) =>
-                        update(
-                          bars.map((q, j) =>
-                            j === i ? { ...q, dia: Number(e.target.value) } : q
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <select
+                        className={cellCls}
+                        value={b.dia}
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, dia: Number(e.target.value) } : q
+                            )
                           )
-                        )
-                      }
-                    >
-                      {DIAS.map((d) => (
-                        <option key={d} value={d}>
-                          ⌀ {d} mm
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-1 py-0.5 text-center">
-                    <button
-                      className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
-                      title="Remove bar"
-                      onClick={() => update(bars.filter((_, j) => j !== i))}
-                    >
-                      ×
-                    </button>
+                        }}
+                      >
+                        {DIAS.map((d) => (
+                          <option key={d} value={d}>
+                            ⌀ {d} mm
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-1 py-0.5 text-center">
+                      <button
+                        className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
+                        title="Remove bar"
+                        onClick={() => {
+                          setStatus({ kind: 'idle' })
+                          update(bars.filter((_, j) => j !== i))
+                        }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
+                    No reinforcement bars defined. Click <b>+ Add Row</b> or press <b>Ctrl+V</b> to paste Excel rows.
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
-                  No reinforcement bars defined. Click <b>+ bar</b> or press <b>Ctrl+V</b> to paste Excel rows.
-                </td>
-              </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Validation & Status Message Banner */}
+        {status.kind === 'errors' && (
+          <div className="bg-bad/10 border border-bad/40 rounded px-2.5 py-1.5 text-[11.5px] text-bad">
+            <b className="font-display text-[10px] uppercase tracking-wider">
+              {status.errors.length} invalid {status.errors.length === 1 ? 'bar' : 'bars'}
+            </b>
+            <ul className="mt-0.5 max-h-20 overflow-y-auto font-mono tnum">
+              {status.errors.map((err, i) => (
+                <li key={i}>
+                  Row {err.line}: {err.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {status.kind === 'ok' && (
+          <div className="bg-ok/10 border border-ok/40 rounded px-2.5 py-1.5 text-[11.5px] text-ok">
+            <b className="font-display text-[10px] uppercase tracking-wider">Valid</b>
+            <span className="ml-1.5">{status.count} reinforcement {status.count === 1 ? 'bar' : 'bars'} configured.</span>
+          </div>
+        )}
+        {status.kind === 'empty' && (
+          <div className="bg-panel border border-edge-strong rounded px-2.5 py-1.5 text-[11.5px] text-ink-2">
+            {status.message}
+          </div>
+        )}
+
+        {/* Table Toolbar & Action Buttons */}
+        <div className="flex items-center justify-between pt-0.5">
+          <div className="flex items-center gap-2">
+            <button className={btnCls} onClick={validate}>
+              Validate
+            </button>
+            <button className={btnCls} onClick={() => { setStatus({ kind: 'idle' }); update([...bars, { x: 0, y: 0, dia: 20 }]) }}>
+              + Add Row
+            </button>
+            {bars.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-bad hover:underline ml-1"
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all reinforcement bars?')) {
+                    setStatus({ kind: 'idle' })
+                    update([])
+                  }
+                }}
+              >
+                Clear Table
+              </button>
             )}
-          </tbody>
-        </table>
+          </div>
+          <span className="text-[11px] text-ink-3 tnum font-mono">
+            {bars.length} {bars.length === 1 ? 'bar' : 'bars'}
+          </span>
+        </div>
       </div>
-      <p className="text-[11px] text-ink-3 mt-1.5">
-        Tip: You can paste Excel cell ranges (<code className="font-mono text-accent">x</code>, <code className="font-mono text-accent">y</code>, <code className="font-mono text-accent">Bar Dia</code>) directly into this table with <code className="font-mono">Ctrl+V</code>.
-      </p>
     </Card>
   )
 }
