@@ -9,8 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
-import { Card, NumField } from './ui'
-import { PasteReinforcement } from './PasteReinforcement'
+import { Card, InfoTooltip, NumField } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -107,14 +106,17 @@ export function SectionPanel({
 }) {
   const [shape, setShape] = useState<PredefinedSection>(state.predefined ?? defaultPredefined('rect'))
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
+  const [frozen, setFrozen] = useState(false)
 
   const apply = (def: PredefinedSection) => {
+    if (frozen) return
     const gen = generateSection(def, { cover: state.cover, tieDia: state.tieDia, barDia: state.barDia })
     update({ geometry: gen.geometry, bars: gen.bars, predefined: def, shapeClass: gen.shapeClass })
   }
 
   const poly = loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]
   const setPoly = (p: { x: number; y: number }[]) => {
+    if (frozen) return
     const geometry: SectionGeometry =
       loop === 0
         ? { ...state.geometry, boundary: p }
@@ -125,73 +127,133 @@ export function SectionPanel({
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
 
   return (
-    <Card title="Section geometry">
-      <div className="flex flex-wrap gap-1 mb-2">
-        {(Object.keys(SHAPE_LABELS) as PredefinedSection['kind'][]).map((k) => (
-          <button
-            key={k}
-            className={`font-display text-[11px] font-semibold rounded border px-1.5 py-1 ${
-              shape.kind === k ? 'border-accent bg-accent-wash text-accent-strong' : 'border-edge text-ink-2'
-            }`}
-            onClick={() => {
-              const def = defaultPredefined(k)
-              setShape(def)
-              apply(def)
-              setLoop(0)
-            }}
-          >
-            {SHAPE_LABELS[k]}
-          </button>
-        ))}
-      </div>
+    <Card
+      title="Section geometry"
+      action={
+        <button
+          type="button"
+          onClick={() => setFrozen(!frozen)}
+          className={`font-display text-[11px] font-semibold tracking-wide uppercase border rounded px-2 py-1 flex items-center gap-1.5 transition-colors ${
+            frozen
+              ? 'border-bad/60 bg-bad/10 text-bad hover:bg-bad/20'
+              : 'border-edge-strong bg-panel text-ink-2 hover:border-accent hover:text-accent'
+          }`}
+          title={frozen ? 'Section geometry is frozen (click to unfreeze)' : 'Freeze section geometry to prevent changes'}
+        >
+          <span>{frozen ? '🔒 Frozen' : '🧊 Freeze'}</span>
+        </button>
+      }
+    >
+      <div className={`flex flex-col gap-3 ${frozen ? 'pointer-events-none opacity-60' : ''}`}>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {(Object.keys(SHAPE_LABELS) as PredefinedSection['kind'][]).map((k) => (
+            <button
+              key={k}
+              disabled={frozen}
+              className={`font-display text-[11px] font-semibold rounded border px-1.5 py-1 ${
+                shape.kind === k ? 'border-accent bg-accent-wash text-accent-strong' : 'border-edge text-ink-2'
+              } ${frozen ? 'disabled:cursor-not-allowed' : ''}`}
+              onClick={() => {
+                const def = defaultPredefined(k)
+                setShape(def)
+                apply(def)
+                setLoop(0)
+              }}
+            >
+              {SHAPE_LABELS[k]}
+            </button>
+          ))}
+        </div>
 
-      <ShapeParams shape={shape} onChange={(def) => { setShape(def); apply(def) }} barDia={state.barDia} setBarDia={(v) => update({ barDia: v })} />
+        <ShapeParams
+          shape={shape}
+          disabled={frozen}
+          onChange={(def) => {
+            setShape(def)
+            apply(def)
+          }}
+          barDia={state.barDia}
+          setBarDia={(v) => !frozen && update({ barDia: v })}
+        />
 
-      <div className="flex items-center justify-between mt-4 mb-1.5">
-        <span className="text-[11px] text-ink-3 font-display tracking-wide uppercase">
-          Boundary coordinates (mm) — {state.predefined ? 'generated, editable' : 'custom'}
-        </span>
-        {state.geometry.voids.length > 0 && (
-          <select className={`${cellCls} !w-auto`} value={loop} onChange={(e) => setLoop(Number(e.target.value))}>
-            <option value={0}>outer boundary</option>
-            {state.geometry.voids.map((_, i) => (
-              <option key={i} value={i + 1}>
-                void {i + 1}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div className="max-h-56 overflow-y-auto border border-edge rounded">
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-              <th className="text-left px-2 py-1">#</th>
-              <th className="text-left px-1 py-1">x</th>
-              <th className="text-left px-1 py-1">y</th>
-              <th className="px-1 py-1"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {poly.map((p, i) => (
-              <tr key={i} className="border-t border-edge">
-                <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={p.x} onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={p.y} onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5 text-center">
-                  <button className="text-bad text-[13px] leading-none" title="Remove vertex" onClick={() => setPoly(poly.filter((_, j) => j !== i))}>×</button>
-                </td>
+        <div className="flex items-center justify-between mt-4 mb-1.5">
+          <span className="text-[11px] text-ink-3 font-display tracking-wide uppercase flex items-center gap-1.5">
+            <span>Boundary coordinates (mm) — {state.predefined ? 'generated, editable' : 'custom'}</span>
+            {frozen && <span className="text-bad font-semibold lowercase text-[10px]">(frozen)</span>}
+          </span>
+          {state.geometry.voids.length > 0 && (
+            <select
+              className={`${cellCls} !w-auto`}
+              value={loop}
+              disabled={frozen}
+              onChange={(e) => setLoop(Number(e.target.value))}
+            >
+              <option value={0}>outer boundary</option>
+              {state.geometry.voids.map((_, i) => (
+                <option key={i} value={i + 1}>
+                  void {i + 1}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="max-h-56 overflow-y-auto border border-edge rounded">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3 bg-panel border-b border-edge">
+                <th className="text-left px-2 py-1">#</th>
+                <th className="text-left px-1 py-1">x</th>
+                <th className="text-left px-1 py-1">y</th>
+                <th className="px-1 py-1"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-1.5">
-        <button className={btnCls} onClick={() => setPoly([...poly, { x: 0, y: 0 }])}>+ vertex</button>
+            </thead>
+            <tbody>
+              {poly.map((p, i) => (
+                <tr key={i} className="border-t border-edge">
+                  <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={p.x}
+                      disabled={frozen}
+                      onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))}
+                    />
+                  </td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={p.y}
+                      disabled={frozen}
+                      onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))}
+                    />
+                  </td>
+                  <td className="px-1 py-0.5 text-center">
+                    <button
+                      className="text-bad text-[13px] leading-none disabled:opacity-40"
+                      title="Remove vertex"
+                      disabled={frozen}
+                      onClick={() => setPoly(poly.filter((_, j) => j !== i))}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          <button className={btnCls} disabled={frozen} onClick={() => setPoly([...poly, { x: 0, y: 0 }])}>
+            + vertex
+          </button>
+          {frozen && (
+            <span className="text-[11px] text-bad font-mono">
+              🔒 Section geometry is locked
+            </span>
+          )}
+        </div>
       </div>
     </Card>
   )
@@ -202,11 +264,13 @@ function ShapeParams({
   onChange,
   barDia,
   setBarDia,
+  disabled,
 }: {
   shape: PredefinedSection
   onChange: (s: PredefinedSection) => void
   barDia: number
   setBarDia: (v: number) => void
+  disabled?: boolean
 }) {
   const f = (label: string, key: string, step = 10) => {
     const value = (shape as unknown as Record<string, number>)[key]
@@ -216,6 +280,7 @@ function ShapeParams({
         unit="mm"
         value={value}
         step={step}
+        disabled={disabled}
         onChange={(v) => onChange({ ...shape, [key]: v } as PredefinedSection)}
       />
     )
@@ -228,6 +293,7 @@ function ShapeParams({
         value={value}
         step={1}
         min={0}
+        disabled={disabled}
         onChange={(v) => onChange({ ...shape, [key]: Math.round(v) } as PredefinedSection)}
       />
     )
@@ -238,7 +304,7 @@ function ShapeParams({
         <>
           {f('Width B', 'B')}
           {f('Depth D', 'D')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
         </>
@@ -247,7 +313,7 @@ function ShapeParams({
         <>
           {f('Diameter D', 'D')}
           {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'tee' && (
@@ -258,7 +324,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'ishape' && (
@@ -271,7 +337,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'angle' && (
@@ -280,7 +346,7 @@ function ShapeParams({
           {f('Leg D', 'D')}
           {f('Thk tw', 'tw')}
           {f('Thk tf', 'tf')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'box' && (
@@ -291,7 +357,7 @@ function ShapeParams({
           {f('Wall tf', 'tf')}
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'hollowCircle' && (
@@ -299,10 +365,11 @@ function ShapeParams({
           {f('Outer Do', 'Do')}
           {f('Inner Di', 'Di')}
           {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
           <label className="flex items-end gap-1.5 text-[12px] text-ink-2 pb-1">
             <input
               type="checkbox"
+              disabled={disabled}
               checked={shape.innerRing}
               onChange={(e) => onChange({ ...shape, innerRing: e.target.checked })}
             />
@@ -323,53 +390,283 @@ export function RebarPanel({
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
   const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+
+  const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
+  const [status, setStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'ok'; count: number }
+    | { kind: 'empty'; message: string }
+    | { kind: 'errors'; errors: { line: number; message: string }[] }
+  >({ kind: 'idle' })
+
+  // Excel paste handler that automatically expands rows and populates values
+  const handleExcelPaste = (e: React.ClipboardEvent) => {
+    const rawText = e.clipboardData.getData('text')
+    if (!rawText) return
+
+    const lines = rawText.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '')
+    if (lines.length === 0) return
+
+    e.preventDefault()
+
+    const pastedBars: Rebar[] = []
+    for (const line of lines) {
+      const parts = line.split(/[\t,]+/).map((p) => p.trim())
+      if (parts.length >= 2) {
+        const x = Number(parts[0])
+        const y = Number(parts[1])
+        const dia = Number(parts[2] ?? 20)
+        pastedBars.push({
+          x: Number.isFinite(x) ? x : 0,
+          y: Number.isFinite(y) ? y : 0,
+          dia: Number.isFinite(dia) && dia > 0 ? dia : 20,
+        })
+      }
+    }
+
+    if (pastedBars.length > 0) {
+      if (pasteMode === 'replace') {
+        update(pastedBars)
+      } else {
+        update([...bars, ...pastedBars])
+      }
+      setStatus({ kind: 'ok', count: pastedBars.length })
+    }
+  }
+
+  const validate = () => {
+    if (bars.length === 0) {
+      setStatus({ kind: 'empty', message: 'No reinforcement bars defined — paste Excel rows or add a bar.' })
+      return
+    }
+
+    const errs: { line: number; message: string }[] = []
+    bars.forEach((b, i) => {
+      if (!Number.isFinite(b.x)) errs.push({ line: i + 1, message: 'X Coordinate must be numeric' })
+      if (!Number.isFinite(b.y)) errs.push({ line: i + 1, message: 'Y Coordinate must be numeric' })
+      if (!Number.isFinite(b.dia) || b.dia <= 0) errs.push({ line: i + 1, message: 'Bar Diameter must be greater than zero' })
+    })
+
+    if (errs.length > 0) setStatus({ kind: 'errors', errors: errs })
+    else setStatus({ kind: 'ok', count: bars.length })
+  }
+
   return (
     <Card
-      title={`Reinforcement bars (${bars.length})`}
-      action={
+      title={
         <span className="flex items-center gap-1.5">
-          <PasteReinforcement onAdd={(newBars) => update([...bars, ...newBars])} />
-          <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
-            + bar
-          </button>
+          <span>Reinforcement bars ({bars.length})</span>
+          <InfoTooltip
+            content={
+              <span>
+                Copy cells directly from <b>Excel</b> and paste (
+                <code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">
+                  Ctrl+V
+                </code>
+                ) anywhere into the table below. The table will <b>automatically add rows</b> and populate X, Y, and Bar Dia.
+              </span>
+            }
+          />
         </span>
       }
+      action={
+        <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
+          + bar
+        </button>
+      }
     >
-      <div className="max-h-64 overflow-y-auto border border-edge rounded">
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-              <th className="text-left px-2 py-1">#</th>
-              <th className="text-left px-1 py-1">x (mm)</th>
-              <th className="text-left px-1 py-1">y (mm)</th>
-              <th className="text-left px-1 py-1">⌀</th>
-              <th className="px-1 py-1"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bars.map((b, i) => (
-              <tr key={i} className="border-t border-edge">
-                <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={b.x} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={b.y} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <select className={cellCls} value={b.dia} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, dia: Number(e.target.value) } : q)))}>
-                    {DIAS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-1 py-0.5 text-center">
-                  <button className="text-bad text-[13px] leading-none" title="Remove bar" onClick={() => update(bars.filter((_, j) => j !== i))}>×</button>
-                </td>
+      <div className="flex flex-col gap-3">
+        {/* Action Mode Toggle: Append vs Replace */}
+        <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
+          <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
+            Action Mode:
+          </span>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="tabPasteMode"
+                value="append"
+                checked={pasteMode === 'append'}
+                onChange={() => setPasteMode('append')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'append' ? 'font-semibold text-accent' : 'text-ink-2'}>
+                Append on Paste
+              </span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="tabPasteMode"
+                value="replace"
+                checked={pasteMode === 'replace'}
+                onChange={() => setPasteMode('replace')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'replace' ? 'font-semibold text-bad' : 'text-ink-2'}>
+                Replace All on Paste
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* 3-Column Interactive Excel Table */}
+        <div
+          className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
+          onPaste={handleExcelPaste}
+          tabIndex={0}
+          title="Paste Excel cells directly into this table (Ctrl+V / Cmd+V) — rows will auto-expand"
+        >
+          <table className="w-full text-[12.5px] border-collapse">
+            <thead>
+              <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
+                <th className="text-left px-2 py-1 w-8">#</th>
+                <th className="text-left px-1.5 py-1">X Coordinate (<code className="font-mono text-accent">x</code>)</th>
+                <th className="text-left px-1.5 py-1">Y Coordinate (<code className="font-mono text-accent">y</code>)</th>
+                <th className="text-left px-1.5 py-1">Bar Diameter (<code className="font-mono text-accent">Bar Dia</code>)</th>
+                <th className="px-1 py-1 w-8"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {bars.length > 0 ? (
+                bars.map((b, i) => (
+                  <tr key={i} className="border-t border-edge hover:bg-panel/50">
+                    <td className="px-2 py-0.5 text-ink-3 tnum font-mono">{i + 1}</td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={b.x}
+                        placeholder="0"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, x: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={b.y}
+                        placeholder="0"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, y: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <select
+                        className={cellCls}
+                        value={b.dia}
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            bars.map((q, j) =>
+                              j === i ? { ...q, dia: Number(e.target.value) } : q
+                            )
+                          )
+                        }}
+                      >
+                        {DIAS.map((d) => (
+                          <option key={d} value={d}>
+                            ⌀ {d} mm
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-1 py-0.5 text-center">
+                      <button
+                        className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
+                        title="Remove bar"
+                        onClick={() => {
+                          setStatus({ kind: 'idle' })
+                          update(bars.filter((_, j) => j !== i))
+                        }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
+                    No reinforcement bars defined. Click <b>+ Add Row</b> or press <b>Ctrl+V</b> to paste Excel rows.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Validation & Status Message Banner */}
+        {status.kind === 'errors' && (
+          <div className="bg-bad/10 border border-bad/40 rounded px-2.5 py-1.5 text-[11.5px] text-bad">
+            <b className="font-display text-[10px] uppercase tracking-wider">
+              {status.errors.length} invalid {status.errors.length === 1 ? 'bar' : 'bars'}
+            </b>
+            <ul className="mt-0.5 max-h-20 overflow-y-auto font-mono tnum">
+              {status.errors.map((err, i) => (
+                <li key={i}>
+                  Row {err.line}: {err.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {status.kind === 'ok' && (
+          <div className="bg-ok/10 border border-ok/40 rounded px-2.5 py-1.5 text-[11.5px] text-ok">
+            <b className="font-display text-[10px] uppercase tracking-wider">Valid</b>
+            <span className="ml-1.5">{status.count} reinforcement {status.count === 1 ? 'bar' : 'bars'} configured.</span>
+          </div>
+        )}
+        {status.kind === 'empty' && (
+          <div className="bg-panel border border-edge-strong rounded px-2.5 py-1.5 text-[11.5px] text-ink-2">
+            {status.message}
+          </div>
+        )}
+
+        {/* Table Toolbar & Action Buttons */}
+        <div className="flex items-center justify-between pt-0.5">
+          <div className="flex items-center gap-2">
+            <button className={btnCls} onClick={validate}>
+              Validate
+            </button>
+            <button className={btnCls} onClick={() => { setStatus({ kind: 'idle' }); update([...bars, { x: 0, y: 0, dia: 20 }]) }}>
+              + Add Row
+            </button>
+            {bars.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-bad hover:underline ml-1"
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all reinforcement bars?')) {
+                    setStatus({ kind: 'idle' })
+                    update([])
+                  }
+                }}
+              >
+                Clear Table
+              </button>
+            )}
+          </div>
+          <span className="text-[11px] text-ink-3 tnum font-mono">
+            {bars.length} {bars.length === 1 ? 'bar' : 'bars'}
+          </span>
+        </div>
       </div>
     </Card>
   )
@@ -387,57 +684,345 @@ export function LoadCasesPanel({
   select: (id: string) => void
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
+
+  const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
+  const [status, setStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'ok'; count: number }
+    | { kind: 'empty'; message: string }
+    | { kind: 'errors'; errors: { line: number; message: string }[] }
+  >({ kind: 'idle' })
+
+  // Excel paste handler that automatically expands rows and populates 4 columns
+  const handleExcelPaste = (e: React.ClipboardEvent) => {
+    const rawText = e.clipboardData.getData('text')
+    if (!rawText) return
+
+    const lines = rawText.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '')
+    if (lines.length === 0) return
+
+    e.preventDefault()
+
+    const pastedCases: LoadCase[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const parts = lines[i].split(/[\t,]+/).map((p) => p.trim())
+      if (parts.length >= 3) {
+        let name = `LC${pastedCases.length + (pasteMode === 'append' ? cases.length : 0) + 1}`
+        let puVal = 0
+        let muxVal = 0
+        let muyVal = 0
+
+        if (parts.length >= 4) {
+          name = parts[0] || name
+          puVal = Number(parts[1])
+          muxVal = Number(parts[2])
+          muyVal = Number(parts[3])
+        } else {
+          puVal = Number(parts[0])
+          muxVal = Number(parts[1])
+          muyVal = Number(parts[2])
+        }
+
+        pastedCases.push({
+          id: newCaseId(),
+          name,
+          Pu: Number.isFinite(puVal) ? puVal : 1000,
+          Mux: Number.isFinite(muxVal) ? muxVal : 0,
+          Muy: Number.isFinite(muyVal) ? muyVal : 0,
+        })
+      }
+    }
+
+    if (pastedCases.length > 0) {
+      if (pasteMode === 'replace') {
+        update(pastedCases)
+        if (pastedCases[0]) select(pastedCases[0].id)
+      } else {
+        const nextCases = [...cases, ...pastedCases]
+        update(nextCases)
+        if (!selected && nextCases[0]) select(nextCases[0].id)
+      }
+      setStatus({ kind: 'ok', count: pastedCases.length })
+    }
+  }
+
+  const validate = () => {
+    if (cases.length === 0) {
+      setStatus({ kind: 'empty', message: 'No load cases defined — paste Excel rows or add a load case.' })
+      return
+    }
+
+    const errs: { line: number; message: string }[] = []
+    cases.forEach((c, i) => {
+      if (!c.name || c.name.trim() === '') errs.push({ line: i + 1, message: 'Load case name cannot be empty' })
+      if (!Number.isFinite(c.Pu)) errs.push({ line: i + 1, message: 'Pu must be numeric' })
+      if (!Number.isFinite(c.Mux)) errs.push({ line: i + 1, message: 'Mux must be numeric' })
+      if (!Number.isFinite(c.Muy)) errs.push({ line: i + 1, message: 'Muy must be numeric' })
+    })
+
+    if (errs.length > 0) setStatus({ kind: 'errors', errors: errs })
+    else setStatus({ kind: 'ok', count: cases.length })
+  }
+
+  const addCase = () => {
+    setStatus({ kind: 'idle' })
+    const newCase = {
+      id: newCaseId(),
+      name: `LC${cases.length + 1}`,
+      Pu: 1000,
+      Mux: 100,
+      Muy: 50,
+    }
+    const nextCases = [...cases, newCase]
+    update(nextCases)
+    if (!selected) select(newCase.id)
+  }
+
   return (
     <Card
-      title="Load cases (factored)"
+      title={
+        <span className="flex items-center gap-1.5">
+          <span>Load cases (factored) ({cases.length})</span>
+          <InfoTooltip
+            content={
+              <span>
+                Copy cells directly from <b>Excel</b> and paste (
+                <code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">
+                  Ctrl+V
+                </code>
+                ) anywhere into the table below. The table will <b>automatically add rows</b> and populate Name, Pu, Mux, and Muy.
+              </span>
+            }
+          />
+        </span>
+      }
       action={
-        <button
-          className={btnCls}
-          onClick={() => update([...cases, { id: newCaseId(), name: `LC${cases.length + 1}`, Pu: 1000, Mux: 100, Muy: 50 }])}
-        >
+        <button className={btnCls} onClick={addCase}>
           + case
         </button>
       }
     >
-      <table className="w-full text-[12.5px]">
-        <thead>
-          <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-            <th className="px-1 py-1" title="Plot focus"></th>
-            <th className="text-left px-1 py-1">Name</th>
-            <th className="text-left px-1 py-1">Pu (kN)</th>
-            <th className="text-left px-1 py-1">Mux (kN·m)</th>
-            <th className="text-left px-1 py-1">Muy (kN·m)</th>
-            <th className="px-1 py-1"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {cases.map((c, i) => (
-            <tr key={c.id} className="border-t border-edge">
-              <td className="px-1 py-0.5 text-center">
-                <input type="radio" name="sel-case" checked={selected === c.id} onChange={() => select(c.id)} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} value={c.name} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, name: e.target.value } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Pu} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Pu: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Mux} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Mux: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Muy} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Muy: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5 text-center">
-                <button className="text-bad text-[13px] leading-none" title="Remove case" onClick={() => update(cases.filter((_, j) => j !== i))}>×</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-[11px] text-ink-3 mt-2">
-        Compression positive. +Mux compresses the +Y face, +Muy the +X face. Moments about centroidal axes;
-        include second-order effects upstream for slender members.
+      <div className="flex flex-col gap-3">
+        {/* Action Mode Toggle: Append vs Replace */}
+        <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
+          <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
+            Action Mode:
+          </span>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="casePasteMode"
+                value="append"
+                checked={pasteMode === 'append'}
+                onChange={() => setPasteMode('append')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'append' ? 'font-semibold text-accent' : 'text-ink-2'}>
+                Append on Paste
+              </span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="casePasteMode"
+                value="replace"
+                checked={pasteMode === 'replace'}
+                onChange={() => setPasteMode('replace')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'replace' ? 'font-semibold text-bad' : 'text-ink-2'}>
+                Replace All on Paste
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* 4-Column Interactive Excel Table */}
+        <div
+          className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
+          onPaste={handleExcelPaste}
+          tabIndex={0}
+          title="Paste 4 Excel columns directly into this table (Name, Pu, Mux, Muy) — rows will auto-expand"
+        >
+          <table className="w-full text-[12.5px] border-collapse">
+            <thead>
+              <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
+                <th className="px-1 py-1 w-6" title="Plot focus"></th>
+                <th className="text-left px-1.5 py-1">Name</th>
+                <th className="text-left px-1.5 py-1">Pu (<code className="font-mono text-accent">kN</code>)</th>
+                <th className="text-left px-1.5 py-1">Mux (<code className="font-mono text-accent">kN·m</code>)</th>
+                <th className="text-left px-1.5 py-1">Muy (<code className="font-mono text-accent">kN·m</code>)</th>
+                <th className="px-1 py-1 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.length > 0 ? (
+                cases.map((c, i) => (
+                  <tr key={c.id} className="border-t border-edge hover:bg-panel/50">
+                    <td className="px-1 py-0.5 text-center">
+                      <input
+                        type="radio"
+                        name="sel-case"
+                        checked={selected === c.id}
+                        onChange={() => select(c.id)}
+                        className="accent-accent"
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        value={c.name}
+                        placeholder={`LC${i + 1}`}
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, name: e.target.value } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Pu}
+                        placeholder="1000"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Pu: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Mux}
+                        placeholder="100"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Mux: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Muy}
+                        placeholder="50"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Muy: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1 py-0.5 text-center">
+                      <button
+                        className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
+                        title="Remove load case"
+                        onClick={() => {
+                          setStatus({ kind: 'idle' })
+                          const filtered = cases.filter((_, j) => j !== i)
+                          update(filtered)
+                          if (selected === c.id && filtered.length > 0) {
+                            select(filtered[0].id)
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
+                    No load cases defined. Click <b>+ Add Case</b> or press <b>Ctrl+V</b> to paste Excel rows.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Validation & Status Message Banner */}
+        {status.kind === 'errors' && (
+          <div className="bg-bad/10 border border-bad/40 rounded px-2.5 py-1.5 text-[11.5px] text-bad">
+            <b className="font-display text-[10px] uppercase tracking-wider">
+              {status.errors.length} invalid {status.errors.length === 1 ? 'case' : 'cases'}
+            </b>
+            <ul className="mt-0.5 max-h-20 overflow-y-auto font-mono tnum">
+              {status.errors.map((err, i) => (
+                <li key={i}>
+                  Row {err.line}: {err.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {status.kind === 'ok' && (
+          <div className="bg-ok/10 border border-ok/40 rounded px-2.5 py-1.5 text-[11.5px] text-ok">
+            <b className="font-display text-[10px] uppercase tracking-wider">Valid</b>
+            <span className="ml-1.5">{status.count} load {status.count === 1 ? 'case' : 'cases'} configured.</span>
+          </div>
+        )}
+        {status.kind === 'empty' && (
+          <div className="bg-panel border border-edge-strong rounded px-2.5 py-1.5 text-[11.5px] text-ink-2">
+            {status.message}
+          </div>
+        )}
+
+        {/* Table Toolbar & Action Buttons */}
+        <div className="flex items-center justify-between pt-0.5">
+          <div className="flex items-center gap-2">
+            <button className={btnCls} onClick={validate}>
+              Validate
+            </button>
+            <button className={btnCls} onClick={addCase}>
+              + Add Case
+            </button>
+            {cases.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-bad hover:underline ml-1"
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all load cases?')) {
+                    setStatus({ kind: 'idle' })
+                    update([])
+                  }
+                }}
+              >
+                Clear Cases
+              </button>
+            )}
+          </div>
+          <span className="text-[11px] text-ink-3 tnum font-mono">
+            {cases.length} {cases.length === 1 ? 'case' : 'cases'}
+          </span>
+        </div>
+      </div>
+      <p className="text-[11px] text-ink-3 mt-2 leading-relaxed">
+        Compression positive (+Pu). +Mux compresses +Y face, +Muy compresses +X face. Moments about centroidal axes.
       </p>
     </Card>
   )

@@ -1,14 +1,31 @@
 import { useRef, useState, type ReactNode, type PointerEvent } from 'react'
 
-export function Card({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+export function Card({ title, children, action }: { title: ReactNode; children: ReactNode; action?: ReactNode }) {
   return (
     <section className="bg-card border border-edge rounded-lg overflow-hidden">
       <header className="flex items-center justify-between px-3.5 py-2 border-b border-edge bg-panel">
-        <h2 className="font-display text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-2">{title}</h2>
+        <h2 className="font-display text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-2 flex items-center gap-1.5">{title}</h2>
         {action}
       </header>
       <div className="p-3.5">{children}</div>
     </section>
+  )
+}
+
+export function InfoTooltip({ content }: { content: ReactNode }) {
+  return (
+    <div className="relative group inline-flex items-center">
+      <button
+        type="button"
+        className="w-4 h-4 rounded-full border border-edge-strong bg-card text-ink-3 hover:text-accent hover:border-accent font-serif text-[11px] font-bold italic flex items-center justify-center cursor-help transition-colors leading-none"
+        aria-label="Information"
+      >
+        i
+      </button>
+      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 hidden group-hover:block z-50 w-72 p-2.5 bg-card border border-edge-strong rounded-md shadow-2xl text-[11.5px] text-ink-2 font-sans font-normal normal-case leading-relaxed pointer-events-none">
+        {content}
+      </div>
+    </div>
   )
 }
 
@@ -20,6 +37,7 @@ export function NumField({
   step,
   min,
   w,
+  disabled,
 }: {
   label: string
   value: number
@@ -28,14 +46,16 @@ export function NumField({
   step?: number
   min?: number
   w?: string
+  disabled?: boolean
 }) {
   return (
-    <label className={`flex flex-col gap-0.5 ${w ?? ''}`}>
+    <label className={`flex flex-col gap-0.5 ${w ?? ''} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
       <span className="text-[11px] text-ink-3 font-display tracking-wide">{label}</span>
       <span className="flex items-center gap-1">
         <input
           type="number"
-          className="w-full border border-edge rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:border-accent"
+          disabled={disabled}
+          className="w-full border border-edge rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:border-accent disabled:bg-panel disabled:cursor-not-allowed"
           value={Number.isFinite(value) ? value : ''}
           step={step ?? 1}
           min={min}
