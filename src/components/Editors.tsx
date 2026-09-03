@@ -323,6 +323,36 @@ export function RebarPanel({
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
   const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+
+  const handleExcelPaste = (e: React.ClipboardEvent) => {
+    const rawText = e.clipboardData.getData('text')
+    if (!rawText) return
+
+    const lines = rawText.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '')
+    if (lines.length === 0) return
+
+    e.preventDefault()
+
+    const pastedBars: Rebar[] = []
+    for (const line of lines) {
+      const parts = line.split(/[\t,]+/).map((p) => p.trim())
+      if (parts.length >= 2) {
+        const x = Number(parts[0])
+        const y = Number(parts[1])
+        const dia = Number(parts[2] ?? 20)
+        pastedBars.push({
+          x: Number.isFinite(x) ? x : 0,
+          y: Number.isFinite(y) ? y : 0,
+          dia: Number.isFinite(dia) && dia > 0 ? dia : 20,
+        })
+      }
+    }
+
+    if (pastedBars.length > 0) {
+      update(pastedBars)
+    }
+  }
+
   return (
     <Card
       title={`Reinforcement bars (${bars.length})`}
@@ -338,42 +368,102 @@ export function RebarPanel({
         </span>
       }
     >
-      <div className="max-h-64 overflow-y-auto border border-edge rounded">
-        <table className="w-full text-[12.5px]">
+      <div
+        className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
+        onPaste={handleExcelPaste}
+        tabIndex={0}
+        title="Paste Excel cells directly into this table (Ctrl+V / Cmd+V) — rows will auto-expand"
+      >
+        <table className="w-full text-[12.5px] border-collapse">
           <thead>
-            <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-              <th className="text-left px-2 py-1">#</th>
-              <th className="text-left px-1 py-1">x (mm)</th>
-              <th className="text-left px-1 py-1">y (mm)</th>
-              <th className="text-left px-1 py-1">⌀</th>
-              <th className="px-1 py-1"></th>
+            <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
+              <th className="text-left px-2 py-1 w-8">#</th>
+              <th className="text-left px-1.5 py-1">X Coordinate (<code className="font-mono text-accent">x</code>)</th>
+              <th className="text-left px-1.5 py-1">Y Coordinate (<code className="font-mono text-accent">y</code>)</th>
+              <th className="text-left px-1.5 py-1">Bar Diameter (<code className="font-mono text-accent">Bar Dia</code>)</th>
+              <th className="px-1 py-1 w-8"></th>
             </tr>
           </thead>
           <tbody>
-            {bars.map((b, i) => (
-              <tr key={i} className="border-t border-edge">
-                <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={b.x} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={b.y} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <select className={cellCls} value={b.dia} onChange={(e) => update(bars.map((q, j) => (j === i ? { ...q, dia: Number(e.target.value) } : q)))}>
-                    {DIAS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-1 py-0.5 text-center">
-                  <button className="text-bad text-[13px] leading-none" title="Remove bar" onClick={() => update(bars.filter((_, j) => j !== i))}>×</button>
+            {bars.length > 0 ? (
+              bars.map((b, i) => (
+                <tr key={i} className="border-t border-edge hover:bg-panel/50">
+                  <td className="px-2 py-0.5 text-ink-3 tnum font-mono">{i + 1}</td>
+                  <td className="px-1.5 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={b.x}
+                      placeholder="0"
+                      onChange={(e) =>
+                        update(
+                          bars.map((q, j) =>
+                            j === i ? { ...q, x: num(e.target.value) } : q
+                          )
+                        )
+                      }
+                      onPaste={handleExcelPaste}
+                    />
+                  </td>
+                  <td className="px-1.5 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={b.y}
+                      placeholder="0"
+                      onChange={(e) =>
+                        update(
+                          bars.map((q, j) =>
+                            j === i ? { ...q, y: num(e.target.value) } : q
+                          )
+                        )
+                      }
+                      onPaste={handleExcelPaste}
+                    />
+                  </td>
+                  <td className="px-1.5 py-0.5">
+                    <select
+                      className={cellCls}
+                      value={b.dia}
+                      onChange={(e) =>
+                        update(
+                          bars.map((q, j) =>
+                            j === i ? { ...q, dia: Number(e.target.value) } : q
+                          )
+                        )
+                      }
+                    >
+                      {DIAS.map((d) => (
+                        <option key={d} value={d}>
+                          ⌀ {d} mm
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-1 py-0.5 text-center">
+                    <button
+                      className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
+                      title="Remove bar"
+                      onClick={() => update(bars.filter((_, j) => j !== i))}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
+                  No reinforcement bars defined. Click <b>+ bar</b> or press <b>Ctrl+V</b> to paste Excel rows.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
+      <p className="text-[11px] text-ink-3 mt-1.5">
+        Tip: You can paste Excel cell ranges (<code className="font-mono text-accent">x</code>, <code className="font-mono text-accent">y</code>, <code className="font-mono text-accent">Bar Dia</code>) directly into this table with <code className="font-mono">Ctrl+V</code>.
+      </p>
     </Card>
   )
 }
