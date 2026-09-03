@@ -330,7 +330,14 @@ export function RebarPanel({
       title={`Reinforcement bars (${bars.length})`}
       action={
         <span className="flex items-center gap-1.5">
-          <PasteReinforcement existingBars={bars} geometry={geometry} onAdd={(newBars) => update([...bars, ...newBars])} />
+          <PasteReinforcement
+            existingBars={bars}
+            geometry={geometry}
+            onAdd={(newBars) => update([...bars, ...newBars])}
+            onReplace={(newBars) => update(newBars)}
+            onDeleteBar={(index) => update(bars.filter((_, i) => i !== index))}
+            onDeleteAllBars={() => update([])}
+          />
           <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
             + bar
           </button>
