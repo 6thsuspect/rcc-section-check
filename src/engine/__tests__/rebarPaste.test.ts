@@ -80,4 +80,14 @@ describe('parseRebarPaste', () => {
     expect(r.errors).toEqual([])
     expect(r.count).toBe(0)
   })
+
+  it('accepts tab-separated values pasted directly from Excel', () => {
+    const r = parseRebarPaste('-250\t300\t20\n0\t300\t20\n250\t300\t25')
+    expect(r.errors).toEqual([])
+    expect(r.bars).toEqual([
+      { x: -250, y: 300, dia: 20 },
+      { x: 0, y: 300, dia: 20 },
+      { x: 250, y: 300, dia: 25 },
+    ])
+  })
 })

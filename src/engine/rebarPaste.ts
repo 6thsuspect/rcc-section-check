@@ -1,9 +1,9 @@
 /**
  * Parser/validator for the "Paste Reinforcement" feature.
  *
- * Accepts pasted lines of `x,y,dia` (one bar per line) in the section's
- * existing user coordinate system (origin at 0,0), and converts them into
- * plain `Rebar` objects identical to bars entered via the rebar table.
+ * Accepts pasted lines of `x,y,dia` or tab-separated `x\ty\tdia` (Excel format)
+ * (one bar per line) in the section's existing user coordinate system (origin at 0,0),
+ * and converts them into plain `Rebar` objects identical to bars entered via the rebar table.
  *
  * The text is never modified: surrounding whitespace around tokens is
  * tolerated, values are parsed strictly, and any invalid line is reported
@@ -43,9 +43,9 @@ export function parseRebarPaste(text: string): RebarPasteResult {
     const trimmed = lines[i].trim()
     if (trimmed === '') continue // empty lines are ignored (line numbers stay physical)
 
-    const parts = trimmed.split(',').map((p) => p.trim())
+    const parts = trimmed.split(/,|\t/).map((p) => p.trim())
     if (parts.length !== 3) {
-      errors.push({ line: lineNo, message: 'Invalid format — expected exactly 3 comma-separated values (x,y,dia)' })
+      errors.push({ line: lineNo, message: 'Invalid format — expected exactly 3 comma or tab-separated values (x,y,dia)' })
       continue
     }
 
