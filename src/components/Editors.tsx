@@ -400,6 +400,9 @@ export function RebarPanel({
       }
     >
       <div className="flex flex-col gap-3">
+        <p className="text-[12px] text-ink-3 leading-relaxed">
+          Copy cells directly from <b>Excel</b> and paste (<code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">Ctrl+V</code>) anywhere into the table below. The table will <b>automatically add rows</b> and populate X, Y, and Bar Dia.
+        </p>
         {/* Action Mode Toggle: Append vs Replace */}
         <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
           <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
@@ -712,6 +715,9 @@ export function LoadCasesPanel({
       }
     >
       <div className="flex flex-col gap-3">
+        <p className="text-[12px] text-ink-3 leading-relaxed">
+          Copy cells directly from <b>Excel</b> and paste (<code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">Ctrl+V</code>) anywhere into the table below. The table will <b>automatically add rows</b> and populate Name, Pu, Mux, and Muy.
+        </p>
         {/* Action Mode Toggle: Append vs Replace */}
         <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
           <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
