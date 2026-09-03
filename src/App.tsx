@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { CaseResult } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
@@ -6,6 +6,7 @@ import { buildAnalysisModel } from './engine/integrator'
 import { checkLoadCase, flexuralCapacity, generateSurface, naForDirection } from './engine/surface'
 import { complianceChecks } from './engine/checks'
 import { exportReport } from './report'
+import { exportProjectFile, parseProjectFile } from './projectFile'
 import { initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
@@ -16,7 +17,45 @@ import { Card } from './components/ui'
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const update = (patch: Partial<AppState>) => setState((s) => ({ ...s, ...patch }))
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string
+        const newAppState = parseProjectFile(text)
+        setState(newAppState)
+        if (newAppState.cases.length > 0) {
+          setSelCase(newAppState.cases[0].id)
+        }
+        setImportError(null)
+        setImportSuccess(`Successfully imported project from "${file.name}"`)
+        setTimeout(() => setImportSuccess(null), 5000)
+      } catch (err: any) {
+        setImportSuccess(null)
+        setImportError(err.message || 'Failed to parse project file.')
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const handleExportClick = () => {
+    exportProjectFile(state)
+  }
 
   const spec = CODES[state.code]
   const grade = spec.steelGrades.find((g) => g.label === state.steelGrade) ?? spec.steelGrades[0]
@@ -137,34 +176,79 @@ export default function App() {
   return (
     <div className="min-h-full">
       <header className="border-b-2 border-ink bg-card">
-        <div className="max-w-[1500px] mx-auto px-5 py-3 flex items-baseline justify-between flex-wrap gap-2">
+        <div className="max-w-[1500px] mx-auto px-5 py-3 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-baseline gap-3">
             <h1 className="font-display text-[20px] font-bold tracking-tight">RCC Section Check</h1>
             <span className="text-[12px] text-ink-3">
               biaxial P–Mx–My interaction · {spec.name}
             </span>
           </div>
-          {surface && props && (
-            <div className="flex items-center gap-4 text-[12px] tnum text-ink-2">
-              <span>Puz = {(surface.Puz / 1e3).toFixed(0)} kN</span>
-              <span>Pt = {(surface.Pt / 1e3).toFixed(0)} kN</span>
-              <span
-                className={`font-display font-bold text-[13px] px-2 py-0.5 rounded ${
-                  anyFail ? 'bg-bad/10 text-bad' : 'bg-accent-wash text-ok'
-                }`}
-              >
-                {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-              </span>
-              <button
-                className="font-display text-[12px] font-semibold tracking-wide uppercase border border-accent text-accent rounded px-2.5 py-1 hover:bg-accent-wash"
-                onClick={exportPdf}
-                title="Open the full calculation report in a print window — use 'Save as PDF'"
-              >
-                ⭳ PDF report
-              </button>
-            </div>
-          )}
+
+          <div className="flex items-center gap-2 flex-wrap text-[12px]">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".json,.rcc"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={handleImportClick}
+              className="font-display font-semibold tracking-wide uppercase border border-edge-strong bg-panel text-ink-2 rounded px-2.5 py-1 hover:border-accent hover:text-accent transition-colors flex items-center gap-1.5"
+              title="Import a saved project JSON file"
+            >
+              <span>📂 Import project</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportClick}
+              className="font-display font-semibold tracking-wide uppercase border border-edge-strong bg-panel text-ink-2 rounded px-2.5 py-1 hover:border-accent hover:text-accent transition-colors flex items-center gap-1.5"
+              title="Export current project state to a JSON file"
+            >
+              <span>💾 Export project</span>
+            </button>
+
+            {surface && props && (
+              <div className="flex items-center gap-3 tnum text-ink-2 ml-2 pl-3 border-l border-edge">
+                <span>Puz = {(surface.Puz / 1e3).toFixed(0)} kN</span>
+                <span>Pt = {(surface.Pt / 1e3).toFixed(0)} kN</span>
+                <span
+                  className={`font-display font-bold text-[13px] px-2 py-0.5 rounded ${
+                    anyFail ? 'bg-bad/10 text-bad' : 'bg-accent-wash text-ok'
+                  }`}
+                >
+                  {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+                </span>
+                <button
+                  className="font-display font-semibold tracking-wide uppercase border border-accent text-accent rounded px-2.5 py-1 hover:bg-accent-wash"
+                  onClick={exportPdf}
+                  title="Open the full calculation report in a print window — use 'Save as PDF'"
+                >
+                  ⭳ PDF report
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Status Notification Banner for Import Success / Error */}
+        {(importError || importSuccess) && (
+          <div className="max-w-[1500px] mx-auto px-5 pb-2">
+            {importError && (
+              <div className="bg-bad/10 border border-bad/40 text-bad rounded px-3 py-1.5 text-[12px] flex items-center justify-between">
+                <span>⚠️ {importError}</span>
+                <button onClick={() => setImportError(null)} className="font-bold text-[14px] leading-none">×</button>
+              </div>
+            )}
+            {importSuccess && (
+              <div className="bg-ok/10 border border-ok/40 text-ok rounded px-3 py-1.5 text-[12px] flex items-center justify-between">
+                <span>✓ {importSuccess}</span>
+                <button onClick={() => setImportSuccess(null)} className="font-bold text-[14px] leading-none">×</button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       <main className="max-w-[1500px] mx-auto px-5 py-4 grid gap-4 lg:grid-cols-[400px_1fr]">
