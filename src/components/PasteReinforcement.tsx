@@ -3,17 +3,14 @@
  * `x,y,dia` lines (bar-centre coordinates in the section's existing 0,0
  * coordinate system, dia in mm).
  *
- * Self-contained: renders its own trigger button and modal dialog, owns the
- * open state, and reports validated bars through `onAdd`. The parent appends
- * them through its existing rebar `update` path, so pasted bars behave
- * exactly like bars typed into the rebar table.
+ * Displays existing coordinates and bar diameters present in the active section
+ * for quick selection and formatting.
  */
-import { useEffect, useState } from 'react'
-import type { Rebar } from '../engine/types'
+import { useEffect, useState, useMemo } from 'react'
+import type { Rebar, SectionGeometry } from '../engine/types'
 import { parseRebarPaste, type RebarPasteError } from '../engine/rebarPaste'
 
-/* Same visual language as the panel buttons in Editors.tsx (kept local so
-   the existing module stays untouched). */
+/* Same visual language as the panel buttons in Editors.tsx */
 const btnCls =
   'font-display text-[11px] font-semibold tracking-wide uppercase border border-edge-strong rounded px-2 py-1 text-ink-2 hover:border-accent hover:text-accent inline-flex items-center gap-1'
 const primaryCls =
@@ -36,20 +33,30 @@ type PasteStatus =
   | { kind: 'empty'; message: string }
   | { kind: 'errors'; errors: RebarPasteError[] }
 
-export function PasteReinforcement({ onAdd }: { onAdd: (newBars: Rebar[]) => void }) {
+export function PasteReinforcement({
+  existingBars = [],
+  geometry,
+  onAdd,
+}: {
+  existingBars?: Rebar[]
+  geometry?: SectionGeometry
+  onAdd: (newBars: Rebar[]) => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <>
       <button
         className={btnCls}
         onClick={() => setOpen(true)}
-        title="Paste customized reinforcement coordinates (x,y,dia)"
+        title="Paste customized reinforcement coordinates and bar diameters"
       >
         <PasteIcon />
-        Paste
+        Customize Paste
       </button>
       {open && (
         <PasteReinforcementModal
+          existingBars={existingBars}
+          geometry={geometry}
           onClose={() => setOpen(false)}
           onAdd={(newBars) => {
             onAdd(newBars)
@@ -62,14 +69,57 @@ export function PasteReinforcement({ onAdd }: { onAdd: (newBars: Rebar[]) => voi
 }
 
 function PasteReinforcementModal({
+  existingBars = [],
+  geometry,
   onClose,
   onAdd,
 }: {
+  existingBars?: Rebar[]
+  geometry?: SectionGeometry
   onClose: () => void
   onAdd: (newBars: Rebar[]) => void
 }) {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<PasteStatus>({ kind: 'idle' })
+
+  // Extract unique coordinates present in existing bars & geometry
+  const existingCoords = useMemo(() => {
+    const coords: { x: number; y: number; label: string }[] = []
+    const seen = new Set<string>()
+
+    // From existing bars
+    existingBars.forEach((b, i) => {
+      const key = `${b.x},${b.y}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        coords.push({ x: b.x, y: b.y, label: `Bar #${i + 1}` })
+      }
+    })
+
+    // From boundary geometry
+    if (geometry?.boundary) {
+      geometry.boundary.forEach((v, i) => {
+        const key = `${v.x},${v.y}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          coords.push({ x: v.x, y: v.y, label: `Vertex #${i + 1}` })
+        }
+      })
+    }
+
+    return coords
+  }, [existingBars, geometry])
+
+  // Extract unique existing bar diameters present in current project
+  const existingDias = useMemo(() => {
+    const set = new Set<number>()
+    existingBars.forEach((b) => set.add(b.dia))
+    const standardDias = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+    standardDias.forEach((d) => set.add(d))
+    return Array.from(set).sort((a, b) => a - b)
+  }, [existingBars])
+
+  const [selectedDia, setSelectedDia] = useState<number>(existingDias[0] ?? 20)
 
   const lineCount = text.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '').length
 
@@ -82,10 +132,22 @@ function PasteReinforcementModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const appendLine = (line: string) => {
+    setText((prev) => (prev.trim().length > 0 ? `${prev.trim()}\n${line}` : line))
+    setStatus({ kind: 'idle' })
+  }
+
+  const populateAllExisting = () => {
+    if (existingBars.length === 0) return
+    const formatted = existingBars.map((b) => `${b.x},${b.y},${b.dia}`).join('\n')
+    setText(formatted)
+    setStatus({ kind: 'idle' })
+  }
+
   const validate = () => {
     const r = parseRebarPaste(text)
     if (r.errors.length > 0) setStatus({ kind: 'errors', errors: r.errors })
-    else if (r.count === 0) setStatus({ kind: 'empty', message: 'No bars found — paste at least one line (x,y,dia).' })
+    else if (r.count === 0) setStatus({ kind: 'empty', message: 'No bars found — select existing coordinates or paste at least one line (x,y,dia).' })
     else setStatus({ kind: 'ok', count: r.bars.length })
   }
 
@@ -96,7 +158,7 @@ function PasteReinforcementModal({
       return
     }
     if (r.bars.length === 0) {
-      setStatus({ kind: 'empty', message: 'No bars to add — paste at least one line (x,y,dia).' })
+      setStatus({ kind: 'empty', message: 'No bars to add — select existing coordinates or paste at least one line (x,y,dia).' })
       return
     }
     onAdd(r.bars)
@@ -113,7 +175,7 @@ function PasteReinforcementModal({
         role="dialog"
         aria-modal="true"
         aria-label="Paste customized reinforcement"
-        className="w-full max-w-lg bg-card border border-edge rounded-lg overflow-hidden shadow-2xl"
+        className="w-full max-w-xl bg-card border border-edge rounded-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
       >
         <header className="flex items-center justify-between px-3.5 py-2 border-b border-edge bg-panel">
           <h2 className="font-display text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-2">
@@ -129,15 +191,90 @@ function PasteReinforcementModal({
           </button>
         </header>
 
-        <div className="p-3.5 flex flex-col gap-2.5">
+        <div className="p-3.5 flex flex-col gap-3 overflow-y-auto">
+          {/* Active Document Existing Values Panel */}
+          <div className="bg-panel border border-edge-strong rounded-md p-3 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-display text-[11px] font-semibold uppercase tracking-wider text-accent">
+                Existing Section Coordinates & Bar Diameters
+              </span>
+              {existingBars.length > 0 && (
+                <button
+                  type="button"
+                  className="text-[10.5px] font-display uppercase tracking-wide border border-accent bg-accent/10 text-accent rounded px-2 py-0.5 hover:bg-accent hover:text-white transition-colors"
+                  onClick={populateAllExisting}
+                  title="Populate current section bars as x,y,dia template"
+                >
+                  Populate All Existing ({existingBars.length})
+                </button>
+              )}
+            </div>
+
+            {/* Existing Bar Diameters Selection */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] text-ink-3 font-display">
+                Select Bar Diameter (⌀ mm):
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {existingDias.map((d) => {
+                  const isPresentInDoc = existingBars.some((b) => b.dia === d)
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setSelectedDia(d)}
+                      className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                        selectedDia === d
+                          ? 'border-accent bg-accent text-white font-bold'
+                          : isPresentInDoc
+                          ? 'border-accent/50 bg-accent/10 text-accent hover:border-accent'
+                          : 'border-edge bg-card text-ink-2 hover:border-edge-strong'
+                      }`}
+                      title={isPresentInDoc ? `⌀${d} mm is currently present in active section` : `Standard ⌀${d} mm`}
+                    >
+                      ⌀{d}{isPresentInDoc ? '★' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Existing Coordinates Selector */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] text-ink-3 font-display">
+                Click Existing Coordinate to Insert (`X,Y,⌀${selectedDia}`):
+              </span>
+              {existingCoords.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 bg-card border border-edge rounded">
+                  {existingCoords.map((c, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => appendLine(`${c.x},${c.y},${selectedDia}`)}
+                      className="text-[11px] font-mono border border-edge hover:border-accent hover:bg-accent/10 rounded px-2 py-1 text-ink flex items-center gap-1 transition-colors text-left"
+                      title={`Click to insert: ${c.x},${c.y},${selectedDia}`}
+                    >
+                      <span className="text-accent font-semibold">+</span>
+                      <span>({c.x}, {c.y})</span>
+                      <span className="text-[10px] text-ink-3">[{c.label}]</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-ink-3 italic bg-card p-2 border border-edge rounded">
+                  No existing coordinates found in active section. Type coordinates below.
+                </div>
+              )}
+            </div>
+          </div>
+
           <p className="text-[12px] text-ink-3 leading-relaxed">
             One bar per line. Format: <code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">x,y,dia</code>
-            &nbsp;(x, y = bar centre in the section coordinate system, mm; dia = bar diameter, mm; comma-separated).
-            Empty lines are ignored. Negative and zero coordinates are allowed.
+            &nbsp;(x, y = bar centre in section coordinate system, mm; dia = bar diameter, mm; comma-separated).
           </p>
 
           <textarea
-            className="w-full h-44 border border-edge rounded p-2 font-mono text-[12.5px] tnum bg-card text-ink resize-y focus:outline-none focus:border-accent"
+            className="w-full h-36 border border-edge rounded p-2 font-mono text-[12.5px] tnum bg-card text-ink resize-y focus:outline-none focus:border-accent"
             placeholder={'-250,300,20\n0,300,20\n250,300,20\n-250,100,16'}
             value={text}
             autoFocus
@@ -152,6 +289,18 @@ function PasteReinforcementModal({
             <span className="text-[11px] text-ink-3 tnum">
               {lineCount} non-empty {lineCount === 1 ? 'line' : 'lines'}
             </span>
+            {text.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-bad hover:underline"
+                onClick={() => {
+                  setText('')
+                  setStatus({ kind: 'idle' })
+                }}
+              >
+                Clear Buffer
+              </button>
+            )}
           </div>
 
           {status.kind === 'errors' && (

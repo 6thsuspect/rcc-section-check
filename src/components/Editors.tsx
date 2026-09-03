@@ -316,9 +316,11 @@ function ShapeParams({
 
 export function RebarPanel({
   bars,
+  geometry,
   update,
 }: {
   bars: Rebar[]
+  geometry?: SectionGeometry
   update: (bars: Rebar[]) => void
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
@@ -328,7 +330,7 @@ export function RebarPanel({
       title={`Reinforcement bars (${bars.length})`}
       action={
         <span className="flex items-center gap-1.5">
-          <PasteReinforcement onAdd={(newBars) => update([...bars, ...newBars])} />
+          <PasteReinforcement existingBars={bars} geometry={geometry} onAdd={(newBars) => update([...bars, ...newBars])} />
           <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
             + bar
           </button>
