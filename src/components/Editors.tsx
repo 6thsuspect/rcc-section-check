@@ -107,14 +107,17 @@ export function SectionPanel({
 }) {
   const [shape, setShape] = useState<PredefinedSection>(state.predefined ?? defaultPredefined('rect'))
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
+  const [frozen, setFrozen] = useState(false)
 
   const apply = (def: PredefinedSection) => {
+    if (frozen) return
     const gen = generateSection(def, { cover: state.cover, tieDia: state.tieDia, barDia: state.barDia })
     update({ geometry: gen.geometry, bars: gen.bars, predefined: def, shapeClass: gen.shapeClass })
   }
 
   const poly = loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]
   const setPoly = (p: { x: number; y: number }[]) => {
+    if (frozen) return
     const geometry: SectionGeometry =
       loop === 0
         ? { ...state.geometry, boundary: p }
@@ -125,73 +128,133 @@ export function SectionPanel({
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
 
   return (
-    <Card title="Section geometry">
-      <div className="flex flex-wrap gap-1 mb-2">
-        {(Object.keys(SHAPE_LABELS) as PredefinedSection['kind'][]).map((k) => (
-          <button
-            key={k}
-            className={`font-display text-[11px] font-semibold rounded border px-1.5 py-1 ${
-              shape.kind === k ? 'border-accent bg-accent-wash text-accent-strong' : 'border-edge text-ink-2'
-            }`}
-            onClick={() => {
-              const def = defaultPredefined(k)
-              setShape(def)
-              apply(def)
-              setLoop(0)
-            }}
-          >
-            {SHAPE_LABELS[k]}
-          </button>
-        ))}
-      </div>
+    <Card
+      title="Section geometry"
+      action={
+        <button
+          type="button"
+          onClick={() => setFrozen(!frozen)}
+          className={`font-display text-[11px] font-semibold tracking-wide uppercase border rounded px-2 py-1 flex items-center gap-1.5 transition-colors ${
+            frozen
+              ? 'border-bad/60 bg-bad/10 text-bad hover:bg-bad/20'
+              : 'border-edge-strong bg-panel text-ink-2 hover:border-accent hover:text-accent'
+          }`}
+          title={frozen ? 'Section geometry is frozen (click to unfreeze)' : 'Freeze section geometry to prevent changes'}
+        >
+          <span>{frozen ? '🔒 Frozen' : '🧊 Freeze'}</span>
+        </button>
+      }
+    >
+      <div className={`flex flex-col gap-3 ${frozen ? 'pointer-events-none opacity-60' : ''}`}>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {(Object.keys(SHAPE_LABELS) as PredefinedSection['kind'][]).map((k) => (
+            <button
+              key={k}
+              disabled={frozen}
+              className={`font-display text-[11px] font-semibold rounded border px-1.5 py-1 ${
+                shape.kind === k ? 'border-accent bg-accent-wash text-accent-strong' : 'border-edge text-ink-2'
+              } ${frozen ? 'disabled:cursor-not-allowed' : ''}`}
+              onClick={() => {
+                const def = defaultPredefined(k)
+                setShape(def)
+                apply(def)
+                setLoop(0)
+              }}
+            >
+              {SHAPE_LABELS[k]}
+            </button>
+          ))}
+        </div>
 
-      <ShapeParams shape={shape} onChange={(def) => { setShape(def); apply(def) }} barDia={state.barDia} setBarDia={(v) => update({ barDia: v })} />
+        <ShapeParams
+          shape={shape}
+          disabled={frozen}
+          onChange={(def) => {
+            setShape(def)
+            apply(def)
+          }}
+          barDia={state.barDia}
+          setBarDia={(v) => !frozen && update({ barDia: v })}
+        />
 
-      <div className="flex items-center justify-between mt-4 mb-1.5">
-        <span className="text-[11px] text-ink-3 font-display tracking-wide uppercase">
-          Boundary coordinates (mm) — {state.predefined ? 'generated, editable' : 'custom'}
-        </span>
-        {state.geometry.voids.length > 0 && (
-          <select className={`${cellCls} !w-auto`} value={loop} onChange={(e) => setLoop(Number(e.target.value))}>
-            <option value={0}>outer boundary</option>
-            {state.geometry.voids.map((_, i) => (
-              <option key={i} value={i + 1}>
-                void {i + 1}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div className="max-h-56 overflow-y-auto border border-edge rounded">
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-              <th className="text-left px-2 py-1">#</th>
-              <th className="text-left px-1 py-1">x</th>
-              <th className="text-left px-1 py-1">y</th>
-              <th className="px-1 py-1"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {poly.map((p, i) => (
-              <tr key={i} className="border-t border-edge">
-                <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={p.x} onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5">
-                  <input className={cellCls} type="number" value={p.y} onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))} />
-                </td>
-                <td className="px-1 py-0.5 text-center">
-                  <button className="text-bad text-[13px] leading-none" title="Remove vertex" onClick={() => setPoly(poly.filter((_, j) => j !== i))}>×</button>
-                </td>
+        <div className="flex items-center justify-between mt-4 mb-1.5">
+          <span className="text-[11px] text-ink-3 font-display tracking-wide uppercase flex items-center gap-1.5">
+            <span>Boundary coordinates (mm) — {state.predefined ? 'generated, editable' : 'custom'}</span>
+            {frozen && <span className="text-bad font-semibold lowercase text-[10px]">(frozen)</span>}
+          </span>
+          {state.geometry.voids.length > 0 && (
+            <select
+              className={`${cellCls} !w-auto`}
+              value={loop}
+              disabled={frozen}
+              onChange={(e) => setLoop(Number(e.target.value))}
+            >
+              <option value={0}>outer boundary</option>
+              {state.geometry.voids.map((_, i) => (
+                <option key={i} value={i + 1}>
+                  void {i + 1}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="max-h-56 overflow-y-auto border border-edge rounded">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3 bg-panel border-b border-edge">
+                <th className="text-left px-2 py-1">#</th>
+                <th className="text-left px-1 py-1">x</th>
+                <th className="text-left px-1 py-1">y</th>
+                <th className="px-1 py-1"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-1.5">
-        <button className={btnCls} onClick={() => setPoly([...poly, { x: 0, y: 0 }])}>+ vertex</button>
+            </thead>
+            <tbody>
+              {poly.map((p, i) => (
+                <tr key={i} className="border-t border-edge">
+                  <td className="px-2 py-0.5 text-ink-3 tnum">{i + 1}</td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={p.x}
+                      disabled={frozen}
+                      onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: num(e.target.value) } : q)))}
+                    />
+                  </td>
+                  <td className="px-1 py-0.5">
+                    <input
+                      className={cellCls}
+                      type="number"
+                      value={p.y}
+                      disabled={frozen}
+                      onChange={(e) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: num(e.target.value) } : q)))}
+                    />
+                  </td>
+                  <td className="px-1 py-0.5 text-center">
+                    <button
+                      className="text-bad text-[13px] leading-none disabled:opacity-40"
+                      title="Remove vertex"
+                      disabled={frozen}
+                      onClick={() => setPoly(poly.filter((_, j) => j !== i))}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between">
+          <button className={btnCls} disabled={frozen} onClick={() => setPoly([...poly, { x: 0, y: 0 }])}>
+            + vertex
+          </button>
+          {frozen && (
+            <span className="text-[11px] text-bad font-mono">
+              🔒 Section geometry is locked
+            </span>
+          )}
+        </div>
       </div>
     </Card>
   )
@@ -202,11 +265,13 @@ function ShapeParams({
   onChange,
   barDia,
   setBarDia,
+  disabled,
 }: {
   shape: PredefinedSection
   onChange: (s: PredefinedSection) => void
   barDia: number
   setBarDia: (v: number) => void
+  disabled?: boolean
 }) {
   const f = (label: string, key: string, step = 10) => {
     const value = (shape as unknown as Record<string, number>)[key]
@@ -216,6 +281,7 @@ function ShapeParams({
         unit="mm"
         value={value}
         step={step}
+        disabled={disabled}
         onChange={(v) => onChange({ ...shape, [key]: v } as PredefinedSection)}
       />
     )
@@ -228,6 +294,7 @@ function ShapeParams({
         value={value}
         step={1}
         min={0}
+        disabled={disabled}
         onChange={(v) => onChange({ ...shape, [key]: Math.round(v) } as PredefinedSection)}
       />
     )
@@ -238,7 +305,7 @@ function ShapeParams({
         <>
           {f('Width B', 'B')}
           {f('Depth D', 'D')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
         </>
@@ -247,7 +314,7 @@ function ShapeParams({
         <>
           {f('Diameter D', 'D')}
           {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'tee' && (
@@ -258,7 +325,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'ishape' && (
@@ -271,7 +338,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'angle' && (
@@ -280,7 +347,7 @@ function ShapeParams({
           {f('Leg D', 'D')}
           {f('Thk tw', 'tw')}
           {f('Thk tf', 'tf')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'box' && (
@@ -291,7 +358,7 @@ function ShapeParams({
           {f('Wall tf', 'tf')}
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'hollowCircle' && (
@@ -299,10 +366,11 @@ function ShapeParams({
           {f('Outer Do', 'Do')}
           {f('Inner Di', 'Di')}
           {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} onChange={setBarDia} />
+          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
           <label className="flex items-end gap-1.5 text-[12px] text-ink-2 pb-1">
             <input
               type="checkbox"
+              disabled={disabled}
               checked={shape.innerRing}
               onChange={(e) => onChange({ ...shape, innerRing: e.target.checked })}
             />
