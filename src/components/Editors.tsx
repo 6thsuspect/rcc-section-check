@@ -608,57 +608,330 @@ export function LoadCasesPanel({
   select: (id: string) => void
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
+
+  const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
+  const [status, setStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'ok'; count: number }
+    | { kind: 'empty'; message: string }
+    | { kind: 'errors'; errors: { line: number; message: string }[] }
+  >({ kind: 'idle' })
+
+  // Excel paste handler that automatically expands rows and populates 4 columns
+  const handleExcelPaste = (e: React.ClipboardEvent) => {
+    const rawText = e.clipboardData.getData('text')
+    if (!rawText) return
+
+    const lines = rawText.split(/\r\n|\r|\n/).filter((l) => l.trim() !== '')
+    if (lines.length === 0) return
+
+    e.preventDefault()
+
+    const pastedCases: LoadCase[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const parts = lines[i].split(/[\t,]+/).map((p) => p.trim())
+      if (parts.length >= 3) {
+        let name = `LC${pastedCases.length + (pasteMode === 'append' ? cases.length : 0) + 1}`
+        let puVal = 0
+        let muxVal = 0
+        let muyVal = 0
+
+        if (parts.length >= 4) {
+          name = parts[0] || name
+          puVal = Number(parts[1])
+          muxVal = Number(parts[2])
+          muyVal = Number(parts[3])
+        } else {
+          puVal = Number(parts[0])
+          muxVal = Number(parts[1])
+          muyVal = Number(parts[2])
+        }
+
+        pastedCases.push({
+          id: newCaseId(),
+          name,
+          Pu: Number.isFinite(puVal) ? puVal : 1000,
+          Mux: Number.isFinite(muxVal) ? muxVal : 0,
+          Muy: Number.isFinite(muyVal) ? muyVal : 0,
+        })
+      }
+    }
+
+    if (pastedCases.length > 0) {
+      if (pasteMode === 'replace') {
+        update(pastedCases)
+        if (pastedCases[0]) select(pastedCases[0].id)
+      } else {
+        const nextCases = [...cases, ...pastedCases]
+        update(nextCases)
+        if (!selected && nextCases[0]) select(nextCases[0].id)
+      }
+      setStatus({ kind: 'ok', count: pastedCases.length })
+    }
+  }
+
+  const validate = () => {
+    if (cases.length === 0) {
+      setStatus({ kind: 'empty', message: 'No load cases defined — paste Excel rows or add a load case.' })
+      return
+    }
+
+    const errs: { line: number; message: string }[] = []
+    cases.forEach((c, i) => {
+      if (!c.name || c.name.trim() === '') errs.push({ line: i + 1, message: 'Load case name cannot be empty' })
+      if (!Number.isFinite(c.Pu)) errs.push({ line: i + 1, message: 'Pu must be numeric' })
+      if (!Number.isFinite(c.Mux)) errs.push({ line: i + 1, message: 'Mux must be numeric' })
+      if (!Number.isFinite(c.Muy)) errs.push({ line: i + 1, message: 'Muy must be numeric' })
+    })
+
+    if (errs.length > 0) setStatus({ kind: 'errors', errors: errs })
+    else setStatus({ kind: 'ok', count: cases.length })
+  }
+
+  const addCase = () => {
+    setStatus({ kind: 'idle' })
+    const newCase = {
+      id: newCaseId(),
+      name: `LC${cases.length + 1}`,
+      Pu: 1000,
+      Mux: 100,
+      Muy: 50,
+    }
+    const nextCases = [...cases, newCase]
+    update(nextCases)
+    if (!selected) select(newCase.id)
+  }
+
   return (
     <Card
-      title="Load cases (factored)"
+      title={`Load cases (factored) (${cases.length})`}
       action={
-        <button
-          className={btnCls}
-          onClick={() => update([...cases, { id: newCaseId(), name: `LC${cases.length + 1}`, Pu: 1000, Mux: 100, Muy: 50 }])}
-        >
+        <button className={btnCls} onClick={addCase}>
           + case
         </button>
       }
     >
-      <table className="w-full text-[12.5px]">
-        <thead>
-          <tr className="text-[10.5px] font-display uppercase tracking-wider text-ink-3">
-            <th className="px-1 py-1" title="Plot focus"></th>
-            <th className="text-left px-1 py-1">Name</th>
-            <th className="text-left px-1 py-1">Pu (kN)</th>
-            <th className="text-left px-1 py-1">Mux (kN·m)</th>
-            <th className="text-left px-1 py-1">Muy (kN·m)</th>
-            <th className="px-1 py-1"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {cases.map((c, i) => (
-            <tr key={c.id} className="border-t border-edge">
-              <td className="px-1 py-0.5 text-center">
-                <input type="radio" name="sel-case" checked={selected === c.id} onChange={() => select(c.id)} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} value={c.name} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, name: e.target.value } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Pu} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Pu: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Mux} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Mux: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5">
-                <input className={cellCls} type="number" value={c.Muy} onChange={(e) => update(cases.map((q, j) => (j === i ? { ...q, Muy: num(e.target.value) } : q)))} />
-              </td>
-              <td className="px-1 py-0.5 text-center">
-                <button className="text-bad text-[13px] leading-none" title="Remove case" onClick={() => update(cases.filter((_, j) => j !== i))}>×</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-[11px] text-ink-3 mt-2">
-        Compression positive. +Mux compresses the +Y face, +Muy the +X face. Moments about centroidal axes;
-        include second-order effects upstream for slender members.
+      <div className="flex flex-col gap-3">
+        {/* Action Mode Toggle: Append vs Replace */}
+        <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
+          <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
+            Action Mode:
+          </span>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="casePasteMode"
+                value="append"
+                checked={pasteMode === 'append'}
+                onChange={() => setPasteMode('append')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'append' ? 'font-semibold text-accent' : 'text-ink-2'}>
+                Append on Paste
+              </span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="casePasteMode"
+                value="replace"
+                checked={pasteMode === 'replace'}
+                onChange={() => setPasteMode('replace')}
+                className="accent-accent"
+              />
+              <span className={pasteMode === 'replace' ? 'font-semibold text-bad' : 'text-ink-2'}>
+                Replace All on Paste
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* 4-Column Interactive Excel Table */}
+        <div
+          className="max-h-64 overflow-y-auto border border-edge rounded focus:outline-none focus:border-accent"
+          onPaste={handleExcelPaste}
+          tabIndex={0}
+          title="Paste 4 Excel columns directly into this table (Name, Pu, Mux, Muy) — rows will auto-expand"
+        >
+          <table className="w-full text-[12.5px] border-collapse">
+            <thead>
+              <tr className="bg-panel border-b border-edge text-[10.5px] font-display uppercase tracking-wider text-ink-3 sticky top-0 z-10">
+                <th className="px-1 py-1 w-6" title="Plot focus"></th>
+                <th className="text-left px-1.5 py-1">Name</th>
+                <th className="text-left px-1.5 py-1">Pu (<code className="font-mono text-accent">kN</code>)</th>
+                <th className="text-left px-1.5 py-1">Mux (<code className="font-mono text-accent">kN·m</code>)</th>
+                <th className="text-left px-1.5 py-1">Muy (<code className="font-mono text-accent">kN·m</code>)</th>
+                <th className="px-1 py-1 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.length > 0 ? (
+                cases.map((c, i) => (
+                  <tr key={c.id} className="border-t border-edge hover:bg-panel/50">
+                    <td className="px-1 py-0.5 text-center">
+                      <input
+                        type="radio"
+                        name="sel-case"
+                        checked={selected === c.id}
+                        onChange={() => select(c.id)}
+                        className="accent-accent"
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        value={c.name}
+                        placeholder={`LC${i + 1}`}
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, name: e.target.value } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Pu}
+                        placeholder="1000"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Pu: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Mux}
+                        placeholder="100"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Mux: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1.5 py-0.5">
+                      <input
+                        className={cellCls}
+                        type="number"
+                        value={c.Muy}
+                        placeholder="50"
+                        onChange={(e) => {
+                          setStatus({ kind: 'idle' })
+                          update(
+                            cases.map((q, j) =>
+                              j === i ? { ...q, Muy: num(e.target.value) } : q
+                            )
+                          )
+                        }}
+                        onPaste={handleExcelPaste}
+                      />
+                    </td>
+                    <td className="px-1 py-0.5 text-center">
+                      <button
+                        className="text-bad hover:bg-bad/10 rounded px-1 text-[13px] leading-none"
+                        title="Remove load case"
+                        onClick={() => {
+                          setStatus({ kind: 'idle' })
+                          const filtered = cases.filter((_, j) => j !== i)
+                          update(filtered)
+                          if (selected === c.id && filtered.length > 0) {
+                            select(filtered[0].id)
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-ink-3 italic text-[12px]">
+                    No load cases defined. Click <b>+ Add Case</b> or press <b>Ctrl+V</b> to paste Excel rows.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Validation & Status Message Banner */}
+        {status.kind === 'errors' && (
+          <div className="bg-bad/10 border border-bad/40 rounded px-2.5 py-1.5 text-[11.5px] text-bad">
+            <b className="font-display text-[10px] uppercase tracking-wider">
+              {status.errors.length} invalid {status.errors.length === 1 ? 'case' : 'cases'}
+            </b>
+            <ul className="mt-0.5 max-h-20 overflow-y-auto font-mono tnum">
+              {status.errors.map((err, i) => (
+                <li key={i}>
+                  Row {err.line}: {err.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {status.kind === 'ok' && (
+          <div className="bg-ok/10 border border-ok/40 rounded px-2.5 py-1.5 text-[11.5px] text-ok">
+            <b className="font-display text-[10px] uppercase tracking-wider">Valid</b>
+            <span className="ml-1.5">{status.count} load {status.count === 1 ? 'case' : 'cases'} configured.</span>
+          </div>
+        )}
+        {status.kind === 'empty' && (
+          <div className="bg-panel border border-edge-strong rounded px-2.5 py-1.5 text-[11.5px] text-ink-2">
+            {status.message}
+          </div>
+        )}
+
+        {/* Table Toolbar & Action Buttons */}
+        <div className="flex items-center justify-between pt-0.5">
+          <div className="flex items-center gap-2">
+            <button className={btnCls} onClick={validate}>
+              Validate
+            </button>
+            <button className={btnCls} onClick={addCase}>
+              + Add Case
+            </button>
+            {cases.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-bad hover:underline ml-1"
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all load cases?')) {
+                    setStatus({ kind: 'idle' })
+                    update([])
+                  }
+                }}
+              >
+                Clear Cases
+              </button>
+            )}
+          </div>
+          <span className="text-[11px] text-ink-3 tnum font-mono">
+            {cases.length} {cases.length === 1 ? 'case' : 'cases'}
+          </span>
+        </div>
+      </div>
+      <p className="text-[11px] text-ink-3 mt-2 leading-relaxed">
+        Compression positive (+Pu). +Mux compresses +Y face, +Muy compresses +X face. Moments about centroidal axes. You can paste 4 Excel columns (<code className="font-mono text-accent">Name</code>, <code className="font-mono text-accent">Pu</code>, <code className="font-mono text-accent">Mux</code>, <code className="font-mono text-accent">Muy</code>) directly with <code className="font-mono">Ctrl+V</code>.
       </p>
     </Card>
   )
