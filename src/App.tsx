@@ -11,6 +11,7 @@ import { initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
+import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, ResultsTable } from './components/Results'
 import { Card } from './components/ui'
 
@@ -255,6 +256,29 @@ export default function App() {
         <div className="flex flex-col gap-4 min-w-0">
           <CodeMaterialsPanel state={state} update={update} />
           <SectionPanel state={state} update={update} />
+          {isCircularSection(state.predefined) && (
+            <CircularRebarPanel
+              predefined={state.predefined}
+              cover={state.cover}
+              tieDia={state.tieDia}
+              barDia={state.barDia}
+              setBarDia={(barDia) => update({ barDia })}
+              onApply={(bars, meta) => {
+                const patch: Partial<AppState> = { bars }
+                if (meta?.barDia) patch.barDia = meta.barDia
+                // Keep predefined nBars in sync for uniform layouts so re-opening
+                // the shape params still reflects the current count.
+                if (
+                  state.predefined &&
+                  (state.predefined.kind === 'circle' || state.predefined.kind === 'hollowCircle') &&
+                  meta?.nBarsHint
+                ) {
+                  patch.predefined = { ...state.predefined, nBars: meta.nBarsHint }
+                }
+                update(patch)
+              }}
+            />
+          )}
           <RebarPanel bars={state.bars} update={(bars) => update({ bars, predefined: state.predefined })} />
           <LoadCasesPanel
             cases={state.cases}

@@ -51,9 +51,10 @@ The steel grade is a single, section-wide selection (§3.4). Bars are treated as
 areas at their centres; the concrete displaced by each bar in the compression zone is
 deducted automatically (§5.4), so the user never adjusts for it.
 
-Bulk tools — "generate bars along an edge at spacing s, offset c" and "generate N bars on
-a circle of radius r" — fill the same table; every generated bar remains individually
-editable.
+Bulk tools — "generate bars along an edge at spacing s, offset c" and circular-section
+arrangements (uniform ring, alternate bars, bundles, triples, layered rings; see
+[§4.3](04-predefined-sections.md)) — fill the same table; every generated bar remains
+individually editable.
 
 ## 3.4 Materials
 
