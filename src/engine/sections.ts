@@ -51,7 +51,7 @@ function barsOnLine(p1: Point, p2: Point, n: number, dia: number, includeEnds: b
   return out
 }
 
-function barsOnRing(cx: number, cy: number, r: number, n: number, dia: number, startAngle = 0): Rebar[] {
+export function barsOnRing(cx: number, cy: number, r: number, n: number, dia: number, startAngle = 0): Rebar[] {
   const out: Rebar[] = []
   for (let i = 0; i < n; i++) {
     const a = startAngle + (2 * Math.PI * i) / n

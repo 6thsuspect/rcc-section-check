@@ -108,10 +108,19 @@ export function SectionPanel({
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
   const [frozen, setFrozen] = useState(false)
 
-  const apply = (def: PredefinedSection) => {
+  const apply = (def: PredefinedSection, opts?: { keepBars?: boolean }) => {
     if (frozen) return
     const gen = generateSection(def, { cover: state.cover, tieDia: state.tieDia, barDia: state.barDia })
-    update({ geometry: gen.geometry, bars: gen.bars, predefined: def, shapeClass: gen.shapeClass })
+    // Circular sections own their bar layout via CircularRebarPanel — keep existing
+    // bars when only geometry params change so arrangement settings are not wiped.
+    const isCirc = def.kind === 'circle' || def.kind === 'hollowCircle'
+    const keepBars = opts?.keepBars ?? (isCirc && state.predefined?.kind === def.kind && state.bars.length > 0)
+    update({
+      geometry: gen.geometry,
+      bars: keepBars ? state.bars : gen.bars,
+      predefined: def,
+      shapeClass: gen.shapeClass,
+    })
   }
 
   const poly = loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]
@@ -312,8 +321,9 @@ function ShapeParams({
       {shape.kind === 'circle' && (
         <>
           {f('Diameter D', 'D')}
-          {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <p className="col-span-2 text-[11px] text-ink-3 self-end pb-1 leading-snug">
+            Reinforcement layout is configured in the <b>Circular reinforcement</b> panel below.
+          </p>
         </>
       )}
       {shape.kind === 'tee' && (
@@ -364,17 +374,9 @@ function ShapeParams({
         <>
           {f('Outer Do', 'Do')}
           {f('Inner Di', 'Di')}
-          {n('Bars', 'nBars')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
-          <label className="flex items-end gap-1.5 text-[12px] text-ink-2 pb-1">
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={shape.innerRing}
-              onChange={(e) => onChange({ ...shape, innerRing: e.target.checked })}
-            />
-            inner ring
-          </label>
+          <p className="col-span-1 text-[11px] text-ink-3 self-end pb-1 leading-snug">
+            Use the <b>Circular reinforcement</b> panel — choose <b>Layered</b> for an inner ring.
+          </p>
         </>
       )}
     </div>
