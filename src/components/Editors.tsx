@@ -9,8 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
-import { Card, NumField } from './ui'
-import { PasteReinforcement } from './PasteReinforcement'
+import { Card, InfoTooltip, NumField } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -454,23 +453,29 @@ export function RebarPanel({
 
   return (
     <Card
-      title={`Reinforcement bars (${bars.length})`}
-      action={
+      title={
         <span className="flex items-center gap-1.5">
-          <PasteReinforcement
-            onAdd={(newBars) => update([...bars, ...newBars])}
-            onReplace={(newBars) => update(newBars)}
+          <span>Reinforcement bars ({bars.length})</span>
+          <InfoTooltip
+            content={
+              <span>
+                Copy cells directly from <b>Excel</b> and paste (
+                <code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">
+                  Ctrl+V
+                </code>
+                ) anywhere into the table below. The table will <b>automatically add rows</b> and populate X, Y, and Bar Dia.
+              </span>
+            }
           />
-          <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
-            + bar
-          </button>
         </span>
+      }
+      action={
+        <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
+          + bar
+        </button>
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[12px] text-ink-3 leading-relaxed">
-          Copy cells directly from <b>Excel</b> and paste (<code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">Ctrl+V</code>) anywhere into the table below. The table will <b>automatically add rows</b> and populate X, Y, and Bar Dia.
-        </p>
         {/* Action Mode Toggle: Append vs Replace */}
         <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
           <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
@@ -775,7 +780,22 @@ export function LoadCasesPanel({
 
   return (
     <Card
-      title={`Load cases (factored) (${cases.length})`}
+      title={
+        <span className="flex items-center gap-1.5">
+          <span>Load cases (factored) ({cases.length})</span>
+          <InfoTooltip
+            content={
+              <span>
+                Copy cells directly from <b>Excel</b> and paste (
+                <code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">
+                  Ctrl+V
+                </code>
+                ) anywhere into the table below. The table will <b>automatically add rows</b> and populate Name, Pu, Mux, and Muy.
+              </span>
+            }
+          />
+        </span>
+      }
       action={
         <button className={btnCls} onClick={addCase}>
           + case
@@ -783,9 +803,6 @@ export function LoadCasesPanel({
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[12px] text-ink-3 leading-relaxed">
-          Copy cells directly from <b>Excel</b> and paste (<code className="font-mono text-ink-2 bg-panel border border-edge rounded px-1 py-px">Ctrl+V</code>) anywhere into the table below. The table will <b>automatically add rows</b> and populate Name, Pu, Mux, and Muy.
-        </p>
         {/* Action Mode Toggle: Append vs Replace */}
         <div className="flex items-center justify-between bg-panel border border-edge rounded px-2.5 py-1.5 text-[11.5px]">
           <span className="font-display font-semibold text-[10.5px] uppercase tracking-wider text-ink-2">
@@ -1005,7 +1022,7 @@ export function LoadCasesPanel({
         </div>
       </div>
       <p className="text-[11px] text-ink-3 mt-2 leading-relaxed">
-        Compression positive (+Pu). +Mux compresses +Y face, +Muy compresses +X face. Moments about centroidal axes. You can paste 4 Excel columns (<code className="font-mono text-accent">Name</code>, <code className="font-mono text-accent">Pu</code>, <code className="font-mono text-accent">Mux</code>, <code className="font-mono text-accent">Muy</code>) directly with <code className="font-mono">Ctrl+V</code>.
+        Compression positive (+Pu). +Mux compresses +Y face, +Muy compresses +X face. Moments about centroidal axes.
       </p>
     </Card>
   )
