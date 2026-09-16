@@ -92,12 +92,10 @@ export function DiameterField({
   disabled?: boolean
 }) {
   const [customized, setCustomized] = useState(() => !STANDARD_BAR_DIAMETERS.includes(value))
-  const [customDraft, setCustomDraft] = useState(() => (Number.isFinite(value) ? String(value) : ''))
 
   // An imported project or another editor may supply a non-standard value.
   // Switch to the custom input rather than rendering a select with no option.
   useEffect(() => {
-    setCustomDraft(Number.isFinite(value) ? String(value) : '')
     if (!STANDARD_BAR_DIAMETERS.includes(value)) setCustomized(true)
   }, [value])
 
@@ -105,25 +103,15 @@ export function DiameterField({
     if (disabled) return
     if (customized) {
       setCustomized(false)
-      const draftValue = parseFloat(customDraft)
-      onChange(nearestStandardDiameter(Number.isFinite(draftValue) && draftValue > 0 ? draftValue : value))
+      onChange(nearestStandardDiameter(value))
     } else {
-      setCustomDraft(Number.isFinite(value) ? String(value) : '')
       setCustomized(true)
     }
   }
 
   const setCustomValue = (raw: string) => {
-    // Keep an unfinished decimal in the input so values such as 2.1234 can
-    // be typed naturally instead of being collapsed after every keystroke.
-    const match = raw.match(/^(\\d*)(?:\\.(\\d*))?$/)
-    if (!match) return
-    const fraction = match[2]
-    const normalized = fraction === undefined ? match[1] : `${match[1]}.${fraction.slice(0, 4)}`
-    setCustomDraft(normalized)
-
-    const parsed = parseFloat(normalized)
-    if (!Number.isFinite(parsed) || parsed <= 0) return
+    const parsed = parseFloat(raw)
+    if (!Number.isFinite(parsed)) return
     const rounded = Math.round(parsed * 10000) / 10000
     onChange(Math.max(0.0001, rounded))
   }
@@ -152,18 +140,12 @@ export function DiameterField({
           <input
             type="number"
             className="w-full border border-accent rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:ring-1 focus:ring-accent"
-            value={customDraft}
+            value={Number.isFinite(value) ? value : ''}
             min={0.0001}
             step={0.0001}
             disabled={disabled}
             aria-label={`${label} (custom)`}
             onChange={(e) => setCustomValue(e.target.value)}
-            onBlur={() => {
-              const parsed = parseFloat(customDraft)
-              if (!Number.isFinite(parsed) || parsed <= 0) {
-                setCustomDraft(Number.isFinite(value) ? String(value) : '')
-              }
-            }}
           />
           <span className="text-[11px] text-ink-3 shrink-0">mm</span>
         </span>
