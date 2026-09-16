@@ -9,7 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
-import { Card, InfoTooltip, NumField } from './ui'
+import { Card, DiameterField, InfoTooltip, NumField } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -313,7 +313,7 @@ function ShapeParams({
         <>
           {f('Width B', 'B')}
           {f('Depth D', 'D')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
         </>
@@ -334,7 +334,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'ishape' && (
@@ -347,7 +347,7 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'angle' && (
@@ -356,7 +356,7 @@ function ShapeParams({
           {f('Leg D', 'D')}
           {f('Thk tw', 'tw')}
           {f('Thk tf', 'tf')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'box' && (
@@ -367,7 +367,7 @@ function ShapeParams({
           {f('Wall tf', 'tf')}
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
-          <NumField label="Bar ⌀" unit="mm" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
         </>
       )}
       {shape.kind === 'hollowCircle' && (
