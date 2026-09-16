@@ -9,7 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
-import { Card, DiameterField, InfoTooltip, NumField } from './ui'
+import { Card, DiameterField, InfoTooltip, NumField, STANDARD_BAR_DIAMETERS } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -100,9 +100,11 @@ export function CodeMaterialsPanel({
 export function SectionPanel({
   state,
   update,
+  onBarDiaCustomizeChange,
 }: {
   state: AppState
   update: (patch: Partial<AppState>) => void
+  onBarDiaCustomizeChange?: (enabled: boolean) => void
 }) {
   const [shape, setShape] = useState<PredefinedSection>(state.predefined ?? defaultPredefined('rect'))
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
@@ -182,7 +184,14 @@ export function SectionPanel({
             apply(def)
           }}
           barDia={state.barDia}
-          setBarDia={(v) => !frozen && update({ barDia: v })}
+          setBarDia={(v) => {
+            if (frozen) return
+            update({
+              barDia: v,
+              bars: state.bars.map((bar) => ({ ...bar, dia: v })),
+            })
+          }}
+          onBarDiaCustomizeChange={onBarDiaCustomizeChange}
         />
 
         <div className="flex items-center justify-between mt-4 mb-1.5">
@@ -273,12 +282,14 @@ function ShapeParams({
   onChange,
   barDia,
   setBarDia,
+  onBarDiaCustomizeChange,
   disabled,
 }: {
   shape: PredefinedSection
   onChange: (s: PredefinedSection) => void
   barDia: number
   setBarDia: (v: number) => void
+  onBarDiaCustomizeChange?: (enabled: boolean) => void
   disabled?: boolean
 }) {
   const f = (label: string, key: string, step = 10) => {
@@ -313,7 +324,13 @@ function ShapeParams({
         <>
           {f('Width B', 'B')}
           {f('Depth D', 'D')}
-          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField
+            label="Bar ⌀"
+            value={barDia}
+            disabled={disabled}
+            onChange={setBarDia}
+            onCustomizeChange={onBarDiaCustomizeChange}
+          />
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
         </>
@@ -334,7 +351,13 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField
+            label="Bar ⌀"
+            value={barDia}
+            disabled={disabled}
+            onChange={setBarDia}
+            onCustomizeChange={onBarDiaCustomizeChange}
+          />
         </>
       )}
       {shape.kind === 'ishape' && (
@@ -347,7 +370,13 @@ function ShapeParams({
           {f('Depth D', 'D')}
           {n('Flange bars', 'nFlange')}
           {n('Web bars', 'nWeb')}
-          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField
+            label="Bar ⌀"
+            value={barDia}
+            disabled={disabled}
+            onChange={setBarDia}
+            onCustomizeChange={onBarDiaCustomizeChange}
+          />
         </>
       )}
       {shape.kind === 'angle' && (
@@ -356,7 +385,13 @@ function ShapeParams({
           {f('Leg D', 'D')}
           {f('Thk tw', 'tw')}
           {f('Thk tf', 'tf')}
-          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField
+            label="Bar ⌀"
+            value={barDia}
+            disabled={disabled}
+            onChange={setBarDia}
+            onCustomizeChange={onBarDiaCustomizeChange}
+          />
         </>
       )}
       {shape.kind === 'box' && (
@@ -367,7 +402,13 @@ function ShapeParams({
           {f('Wall tf', 'tf')}
           {n('Bars/face (x)', 'nx')}
           {n('Side bars (y)', 'ny')}
-          <DiameterField label="Bar ⌀" value={barDia} disabled={disabled} onChange={setBarDia} />
+          <DiameterField
+            label="Bar ⌀"
+            value={barDia}
+            disabled={disabled}
+            onChange={setBarDia}
+            onCustomizeChange={onBarDiaCustomizeChange}
+          />
         </>
       )}
       {shape.kind === 'hollowCircle' && (
@@ -386,12 +427,16 @@ function ShapeParams({
 export function RebarPanel({
   bars,
   update,
+  customizeBarDiameter,
 }: {
   bars: Rebar[]
   update: (bars: Rebar[]) => void
+  customizeBarDiameter: boolean
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
-  const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+  const DIAS = STANDARD_BAR_DIAMETERS
+  const diameterOptions = (value: number) =>
+    DIAS.includes(value) ? DIAS : [...DIAS, value].sort((a, b) => a - b)
 
   const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
   const [status, setStatus] = useState<
@@ -570,24 +615,46 @@ export function RebarPanel({
                       />
                     </td>
                     <td className="px-1.5 py-0.5">
-                      <select
-                        className={cellCls}
-                        value={b.dia}
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            bars.map((q, j) =>
-                              j === i ? { ...q, dia: Number(e.target.value) } : q
+                      {customizeBarDiameter ? (
+                        <input
+                          className={cellCls}
+                          type="number"
+                          value={b.dia}
+                          min={0.0001}
+                          step={0.0001}
+                          aria-label={`Bar ${i + 1} diameter (custom)`}
+                          onChange={(e) => {
+                            const raw = parseFloat(e.target.value)
+                            if (!Number.isFinite(raw) || raw <= 0) return
+                            const dia = Math.max(0.0001, Math.round(raw * 10000) / 10000)
+                            setStatus({ kind: 'idle' })
+                            update(
+                              bars.map((q, j) =>
+                                j === i ? { ...q, dia } : q
+                              )
                             )
-                          )
-                        }}
-                      >
-                        {DIAS.map((d) => (
-                          <option key={d} value={d}>
-                            ⌀ {d} mm
-                          </option>
-                        ))}
-                      </select>
+                          }}
+                        />
+                      ) : (
+                        <select
+                          className={cellCls}
+                          value={b.dia}
+                          onChange={(e) => {
+                            setStatus({ kind: 'idle' })
+                            update(
+                              bars.map((q, j) =>
+                                j === i ? { ...q, dia: Number(e.target.value) } : q
+                              )
+                            )
+                          }}
+                        >
+                          {diameterOptions(b.dia).map((d) => (
+                            <option key={d} value={d}>
+                              ⌀ {d} mm{DIAS.includes(d) ? '' : ' (custom)'}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="px-1 py-0.5 text-center">
                       <button

@@ -85,11 +85,13 @@ export function DiameterField({
   value,
   onChange,
   disabled,
+  onCustomizeChange,
 }: {
   label: string
   value: number
   onChange: (v: number) => void
   disabled?: boolean
+  onCustomizeChange?: (enabled: boolean) => void
 }) {
   const [customized, setCustomized] = useState(() => !STANDARD_BAR_DIAMETERS.includes(value))
 
@@ -103,9 +105,11 @@ export function DiameterField({
     if (disabled) return
     if (customized) {
       setCustomized(false)
+      onCustomizeChange?.(false)
       onChange(nearestStandardDiameter(value))
     } else {
       setCustomized(true)
+      onCustomizeChange?.(true)
     }
   }
 

@@ -13,10 +13,11 @@ import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, ResultsTable } from './components/Results'
-import { Card } from './components/ui'
+import { Card, STANDARD_BAR_DIAMETERS } from './components/ui'
 
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
+  const [customizeBarDiameter, setCustomizeBarDiameter] = useState(false)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
@@ -38,6 +39,7 @@ export default function App() {
         const text = event.target?.result as string
         const newAppState = parseProjectFile(text)
         setState(newAppState)
+        setCustomizeBarDiameter(!STANDARD_BAR_DIAMETERS.includes(newAppState.barDia))
         if (newAppState.cases.length > 0) {
           setSelCase(newAppState.cases[0].id)
         }
@@ -255,7 +257,11 @@ export default function App() {
       <main className="max-w-[1500px] mx-auto px-5 py-4 grid gap-4 lg:grid-cols-[400px_1fr]">
         <div className="flex flex-col gap-4 min-w-0">
           <CodeMaterialsPanel state={state} update={update} />
-          <SectionPanel state={state} update={update} />
+          <SectionPanel
+            state={state}
+            update={update}
+            onBarDiaCustomizeChange={setCustomizeBarDiameter}
+          />
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
               predefined={state.predefined}
@@ -263,6 +269,7 @@ export default function App() {
               tieDia={state.tieDia}
               barDia={state.barDia}
               setBarDia={(barDia) => update({ barDia })}
+              onBarDiaCustomizeChange={setCustomizeBarDiameter}
               onApply={(bars, meta) => {
                 const patch: Partial<AppState> = { bars }
                 if (meta?.barDia) patch.barDia = meta.barDia
@@ -279,7 +286,11 @@ export default function App() {
               }}
             />
           )}
-          <RebarPanel bars={state.bars} update={(bars) => update({ bars, predefined: state.predefined })} />
+          <RebarPanel
+            bars={state.bars}
+            customizeBarDiameter={customizeBarDiameter}
+            update={(bars) => update({ bars, predefined: state.predefined })}
+          />
           <LoadCasesPanel
             cases={state.cases}
             selected={selected?.id ?? null}

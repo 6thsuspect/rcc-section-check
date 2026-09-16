@@ -54,6 +54,7 @@ export function CircularRebarPanel({
   tieDia,
   barDia,
   setBarDia,
+  onBarDiaCustomizeChange,
   onApply,
 }: {
   predefined: PredefinedSection | null
@@ -61,6 +62,7 @@ export function CircularRebarPanel({
   tieDia: number
   barDia: number
   setBarDia: (v: number) => void
+  onBarDiaCustomizeChange?: (enabled: boolean) => void
   onApply: (bars: Rebar[], meta?: { barDia: number; nBarsHint?: number }) => void
 }) {
   const R = sectionOuterRadius(predefined)
@@ -260,7 +262,12 @@ export function CircularRebarPanel({
             cfg.kind === 'alternate' ||
             cfg.kind === 'bundle' ||
             cfg.kind === 'triple') && (
-            <DiameterField label="Bar diameter" value={cfg.barDia} onChange={(v) => patch({ barDia: v, altBarDia: cfg.kind === 'alternate' ? cfg.altBarDia : v })} />
+            <DiameterField
+              label="Bar diameter"
+              value={cfg.barDia}
+              onChange={(v) => patch({ barDia: v, altBarDia: cfg.kind === 'alternate' ? cfg.altBarDia : v })}
+              onCustomizeChange={onBarDiaCustomizeChange}
+            />
           )}
 
           {cfg.kind === 'uniform' && (
@@ -280,6 +287,7 @@ export function CircularRebarPanel({
                 label="Alternate bar ⌀"
                 value={cfg.altBarDia}
                 onChange={(v) => patch({ altBarDia: v })}
+                onCustomizeChange={onBarDiaCustomizeChange}
               />
             </>
           )}
@@ -412,6 +420,7 @@ export function CircularRebarPanel({
                       label="Bar ⌀"
                       value={layer.barDia}
                       onChange={(v) => updateLayer(layer.id, { barDia: v })}
+                      onCustomizeChange={onBarDiaCustomizeChange}
                     />
                     <NumField
                       label="Bars"
