@@ -77,9 +77,8 @@ function nearestStandardDiameter(value: number): number {
 
 /**
  * Bar diameter selector with a small opt-in customizer. Standard IS 1786
- * diameters stay easy to pick, while generated layouts can also use an
- * application-defined diameter (6–50 mm, matching the circular layout
- * sanitizer).
+ * diameters stay easy to pick, while generated layouts can also use any
+ * positive diameter, entered to a maximum of four decimal places.
  */
 export function DiameterField({
   label,
@@ -113,7 +112,8 @@ export function DiameterField({
   const setCustomValue = (raw: string) => {
     const parsed = parseFloat(raw)
     if (!Number.isFinite(parsed)) return
-    onChange(Math.max(6, Math.min(50, parsed)))
+    const rounded = Math.round(parsed * 10000) / 10000
+    onChange(Math.max(0.0001, rounded))
   }
 
   return (
@@ -141,9 +141,8 @@ export function DiameterField({
             type="number"
             className="w-full border border-accent rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:ring-1 focus:ring-accent"
             value={Number.isFinite(value) ? value : ''}
-            min={6}
-            max={50}
-            step={0.5}
+            min={0.0001}
+            step={0.0001}
             disabled={disabled}
             aria-label={`${label} (custom)`}
             onChange={(e) => setCustomValue(e.target.value)}

@@ -432,11 +432,18 @@ export const ARRANGEMENT_LABELS: Record<CircularArrangementKind, string> = {
   layered: 'Layered reinforcement',
 }
 
-/** Clamp a user-edited config into safe numeric ranges. */
+/** Round a positive diameter to the precision accepted by the custom input. */
+function sanitizeDiameter(value: number, fallback: number): number {
+  const safe = Number.isFinite(value) && value > 0 ? value : fallback
+  return Math.max(0.0001, Math.round(safe * 10000) / 10000)
+}
+
+/** Sanitize a user-edited config without restricting custom bar diameters. */
 export function sanitizeCircularConfig(cfg: CircularRebarConfig): CircularRebarConfig {
+  const barDia = sanitizeDiameter(cfg.barDia, 20)
   return {
     ...cfg,
-    barDia: clamp(cfg.barDia || 20, 6, 50),
+    barDia,
     cover: clamp(cfg.cover || 0, 0, cfg.sectionRadius),
     tieDia: clamp(cfg.tieDia || 0, 0, 32),
     sectionRadius: Math.max(1, cfg.sectionRadius),
@@ -444,7 +451,7 @@ export function sanitizeCircularConfig(cfg: CircularRebarConfig): CircularRebarC
     angularSpacingDeg:
       cfg.angularSpacingDeg != null && cfg.angularSpacingDeg > 0 ? cfg.angularSpacingDeg : null,
     nBars: clamp(Math.round(cfg.nBars || 0), 0, 200),
-    altBarDia: clamp(cfg.altBarDia || cfg.barDia, 6, 50),
+    altBarDia: sanitizeDiameter(cfg.altBarDia, barDia),
     barsPerBundle: clamp(Math.round(cfg.barsPerBundle || 1), 1, 8),
     nBundles: clamp(Math.round(cfg.nBundles || 0), 0, 100),
     nGroups: clamp(Math.round(cfg.nGroups || 0), 0, 100),
@@ -453,7 +460,7 @@ export function sanitizeCircularConfig(cfg: CircularRebarConfig): CircularRebarC
       ...l,
       id: l.id || newLayerId(),
       radius: l.radius != null && l.radius > 0 ? l.radius : null,
-      barDia: clamp(l.barDia || cfg.barDia, 6, 50),
+      barDia: sanitizeDiameter(l.barDia, barDia),
       nBars: clamp(Math.round(l.nBars || 0), 0, 200),
       startAngleDeg: Number.isFinite(l.startAngleDeg) ? l.startAngleDeg : 90,
       angularSpacingDeg:
