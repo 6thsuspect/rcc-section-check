@@ -12,7 +12,7 @@ import {
   type CircularLayerDef,
   type CircularRebarConfig,
 } from '../engine/circularRebar'
-import { Card, NumField } from './ui'
+import { Card, DiameterField, NumField } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -20,8 +20,6 @@ const btnCls =
   'font-display text-[11px] font-semibold tracking-wide uppercase border border-edge-strong rounded px-2 py-1 text-ink-2 hover:border-accent hover:text-accent'
 const btnPrimaryCls =
   'font-display text-[11px] font-semibold tracking-wide uppercase border border-accent bg-accent-wash text-accent-strong rounded px-2.5 py-1 hover:bg-accent/20'
-
-const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
 
 const KINDS: CircularArrangementKind[] = ['uniform', 'alternate', 'bundle', 'triple', 'layered']
 
@@ -56,6 +54,7 @@ export function CircularRebarPanel({
   tieDia,
   barDia,
   setBarDia,
+  onBarDiaCustomizeChange,
   onApply,
 }: {
   predefined: PredefinedSection | null
@@ -63,6 +62,7 @@ export function CircularRebarPanel({
   tieDia: number
   barDia: number
   setBarDia: (v: number) => void
+  onBarDiaCustomizeChange?: (enabled: boolean) => void
   onApply: (bars: Rebar[], meta?: { barDia: number; nBarsHint?: number }) => void
 }) {
   const R = sectionOuterRadius(predefined)
@@ -262,7 +262,12 @@ export function CircularRebarPanel({
             cfg.kind === 'alternate' ||
             cfg.kind === 'bundle' ||
             cfg.kind === 'triple') && (
-            <DiaSelect label="Bar diameter" value={cfg.barDia} onChange={(v) => patch({ barDia: v, altBarDia: cfg.kind === 'alternate' ? cfg.altBarDia : v })} />
+            <DiameterField
+              label="Bar diameter"
+              value={cfg.barDia}
+              onChange={(v) => patch({ barDia: v, altBarDia: cfg.kind === 'alternate' ? cfg.altBarDia : v })}
+              onCustomizeChange={onBarDiaCustomizeChange}
+            />
           )}
 
           {cfg.kind === 'uniform' && (
@@ -278,10 +283,11 @@ export function CircularRebarPanel({
                 step={1}
                 onChange={(v) => patch({ nBars: Math.round(v) })}
               />
-              <DiaSelect
+              <DiameterField
                 label="Alternate bar ⌀"
                 value={cfg.altBarDia}
                 onChange={(v) => patch({ altBarDia: v })}
+                onCustomizeChange={onBarDiaCustomizeChange}
               />
             </>
           )}
@@ -410,10 +416,11 @@ export function CircularRebarPanel({
                         }}
                       />
                     </label>
-                    <DiaSelect
+                    <DiameterField
                       label="Bar ⌀"
                       value={layer.barDia}
                       onChange={(v) => updateLayer(layer.id, { barDia: v })}
+                      onCustomizeChange={onBarDiaCustomizeChange}
                     />
                     <NumField
                       label="Bars"
@@ -501,29 +508,5 @@ export function CircularRebarPanel({
         </div>
       </div>
     </Card>
-  )
-}
-
-function DiaSelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: number
-  onChange: (v: number) => void
-}) {
-  const opts = DIAS.includes(value) ? DIAS : [...DIAS, value].sort((a, b) => a - b)
-  return (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-ink-3 font-display tracking-wide">{label}</span>
-      <select className={cellCls + ' py-1 px-2 text-[13px]'} value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        {opts.map((d) => (
-          <option key={d} value={d}>
-            ⌀ {d} mm
-          </option>
-        ))}
-      </select>
-    </label>
   )
 }

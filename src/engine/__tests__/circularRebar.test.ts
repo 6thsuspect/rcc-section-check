@@ -159,15 +159,15 @@ describe('validation', () => {
 })
 
 describe('sanitize', () => {
-  it('clamps extremes and fills defaults', () => {
+  it('keeps positive custom diameters to four decimal places', () => {
     const s = sanitizeCircularConfig({
       ...base('uniform'),
       nBars: 999,
-      barDia: 2,
+      barDia: 2.123456,
       angularSpacingDeg: -10,
     })
     expect(s.nBars).toBeLessThanOrEqual(200)
-    expect(s.barDia).toBeGreaterThanOrEqual(6)
+    expect(s.barDia).toBe(2.1235)
     expect(s.angularSpacingDeg).toBeNull()
   })
 })

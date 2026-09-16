@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type PointerEvent } from 'react'
 
 export function Card({ title, children, action }: { title: ReactNode; children: ReactNode; action?: ReactNode }) {
   return (
@@ -63,6 +63,111 @@ export function NumField({
         />
         {unit && <span className="text-[11px] text-ink-3 shrink-0">{unit}</span>}
       </span>
+    </label>
+  )
+}
+
+export const STANDARD_BAR_DIAMETERS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+
+function nearestStandardDiameter(value: number): number {
+  return STANDARD_BAR_DIAMETERS.reduce((nearest, diameter) =>
+    Math.abs(diameter - value) < Math.abs(nearest - value) ? diameter : nearest,
+  )
+}
+
+/**
+ * Bar diameter selector with a small opt-in customizer. Standard IS 1786
+ * diameters stay easy to pick, while generated layouts can also use any
+ * positive diameter, entered to a maximum of four decimal places.
+ */
+export function DiameterField({
+  label,
+  value,
+  onChange,
+  disabled,
+  onCustomizeChange,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  onCustomizeChange?: (enabled: boolean) => void
+}) {
+  const [customized, setCustomized] = useState(() => !STANDARD_BAR_DIAMETERS.includes(value))
+
+  // An imported project or another editor may supply a non-standard value.
+  // Switch to the custom input rather than rendering a select with no option.
+  useEffect(() => {
+    if (!STANDARD_BAR_DIAMETERS.includes(value)) setCustomized(true)
+  }, [value])
+
+  const toggleCustomization = () => {
+    if (disabled) return
+    if (customized) {
+      setCustomized(false)
+      onCustomizeChange?.(false)
+      onChange(nearestStandardDiameter(value))
+    } else {
+      setCustomized(true)
+      onCustomizeChange?.(true)
+    }
+  }
+
+  const setCustomValue = (raw: string) => {
+    const parsed = parseFloat(raw)
+    if (!Number.isFinite(parsed)) return
+    const rounded = Math.round(parsed * 10000) / 10000
+    onChange(Math.max(0.0001, rounded))
+  }
+
+  return (
+    <label className={`flex flex-col gap-0.5 ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+      <span className="flex items-center justify-between gap-1 text-[11px] text-ink-3 font-display tracking-wide">
+        <span>{label}</span>
+        <button
+          type="button"
+          aria-pressed={customized}
+          disabled={disabled}
+          onClick={toggleCustomization}
+          className={`rounded border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+            customized
+              ? 'border-accent bg-accent-wash text-accent-strong'
+              : 'border-edge-strong text-ink-3 hover:border-accent hover:text-accent'
+          }`}
+          title={customized ? 'Use a standard bar diameter' : 'Enable a custom bar diameter'}
+        >
+          {customized ? 'Use standard' : 'Customize'}
+        </button>
+      </span>
+      {customized ? (
+        <span className="flex items-center gap-1">
+          <input
+            type="number"
+            className="w-full border border-accent rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:ring-1 focus:ring-accent"
+            value={Number.isFinite(value) ? value : ''}
+            min={0.0001}
+            step={0.0001}
+            disabled={disabled}
+            aria-label={`${label} (custom)`}
+            onChange={(e) => setCustomValue(e.target.value)}
+          />
+          <span className="text-[11px] text-ink-3 shrink-0">mm</span>
+        </span>
+      ) : (
+        <select
+          className="w-full border border-edge rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:border-accent"
+          value={value}
+          disabled={disabled}
+          aria-label={label}
+          onChange={(e) => onChange(Number(e.target.value))}
+        >
+          {STANDARD_BAR_DIAMETERS.map((diameter) => (
+            <option key={diameter} value={diameter}>
+              ⌀ {diameter} mm
+            </option>
+          ))}
+        </select>
+      )}
     </label>
   )
 }
