@@ -9,7 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
-import { Card, DiameterField, InfoTooltip, NumField } from './ui'
+import { Card, DiameterField, InfoTooltip, NumField, STANDARD_BAR_DIAMETERS } from './ui'
 
 const cellCls =
   'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
@@ -182,7 +182,15 @@ export function SectionPanel({
             apply(def)
           }}
           barDia={state.barDia}
-          setBarDia={(v) => !frozen && update({ barDia: v })}
+          setBarDia={(v) => {
+            if (frozen) return
+            // Keep the generated reinforcement table in sync with the shared
+            // diameter control while preserving each bar's coordinates.
+            update({
+              barDia: v,
+              bars: state.bars.map((bar) => ({ ...bar, dia: v })),
+            })
+          }}
         />
 
         <div className="flex items-center justify-between mt-4 mb-1.5">
@@ -391,7 +399,10 @@ export function RebarPanel({
   update: (bars: Rebar[]) => void
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
-  const DIAS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
+  const diameterOptions = (value: number) =>
+    STANDARD_BAR_DIAMETERS.includes(value)
+      ? STANDARD_BAR_DIAMETERS
+      : [...STANDARD_BAR_DIAMETERS, value].sort((a, b) => a - b)
 
   const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append')
   const [status, setStatus] = useState<
@@ -582,9 +593,9 @@ export function RebarPanel({
                           )
                         }}
                       >
-                        {DIAS.map((d) => (
+                        {diameterOptions(b.dia).map((d) => (
                           <option key={d} value={d}>
-                            ⌀ {d} mm
+                            ⌀ {d} mm{STANDARD_BAR_DIAMETERS.includes(d) ? '' : ' (custom)'}
                           </option>
                         ))}
                       </select>
