@@ -83,3 +83,41 @@ partial safety factors internally but never load factors. Any number of rows:
 > Cl. 39.7, IRC 112 Cl. 11, IRS CBC slender-column rules). The module flags the
 > slenderness limits (§6–§8) when the user supplies member length, but moment
 > magnification is performed upstream of this check.
+
+## 3.6 Nominal clear cover — per face
+
+Cover is entered **independently for each concrete face** instead of as one
+section-wide value, so an exposed soffit, a splash zone or a marine face can be
+detailed thicker than the rest of the member. Two blocks of values are held:
+
+| Group | Faces | Applies to |
+|---|---|---|
+| Outer faces | `bottom` (−Y), `right` (+X), `top` (+Y), `left` (−X) | every bar set back from that face of the section |
+| Void (inner) faces | `bottom`, `right`, `top`, `left` of the void | bars lining an internal void — box-cell walls, void-deck soffits, the inner ring of a hollow circle |
+
+Each void face left blank inherits the outer face of the same orientation, so a
+solid or uniformly lined section needs only the four outer values (one linked
+field while they are equal). **Link faces** mirrors one value across all four.
+
+- **Datum:** nominal cover is measured from the concrete face to the *outside of
+  the links* — the datum of IRC 112 Cl 14.3.2.1 and IRS CBC Cl 15.9.2.1. IS 456
+  Table 16 covers are read to the same datum, so a link diameter is required
+  (default ⌀8) before a bar centre can be placed.
+- **Bar placement:** every generated bar sits at `cover(face) + ⌀tie + ⌀bar/2`
+  from the face it lies against ([§4.2](04-predefined-sections.md)), so the
+  achieved cover equals the value entered for that face.
+- **Circular sections** are radially symmetric: the ring is placed at the
+  *governing* (largest) face cover, which keeps every face at or above its
+  required value; the inner ring of a hollow circle uses the governing void-face
+  value in the same way.
+- **Verification:** the audit ([§9](09-validation.md) V3) classifies each bar by
+  the nearest face of the *actual* polygon — including void faces — so a bar
+  edited by hand is checked against the requirement of the face it really sits
+  against, not against a single global number. *Snap bars to cover* shifts short
+  bars inward, away from the face they fail, and reports any bar that cannot be
+  satisfied inside the section.
+- **Reported:** the per-face values are echoed in the report's input table and
+  the audited minimum is listed in the compliance table with its clause.
+
+Legacy project files (a single `cover` number) load unchanged: the value is
+applied to every face.

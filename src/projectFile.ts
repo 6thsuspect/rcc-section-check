@@ -1,5 +1,6 @@
 import type { AppState } from './state'
 import { initialState } from './state'
+import { normalizeCover } from './engine/cover'
 
 export interface ProjectFile {
   version: string
@@ -13,7 +14,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.0',
+    version: '1.1',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -91,7 +92,8 @@ export function parseProjectFile(jsonText: string): AppState {
     shapeClass: ['rect', 'circ'].includes(rawState.shapeClass) ? rawState.shapeClass : defState.shapeClass,
     fck: Number.isFinite(rawState.fck) && rawState.fck > 0 ? Number(rawState.fck) : defState.fck,
     steelGrade: typeof rawState.steelGrade === 'string' ? rawState.steelGrade : defState.steelGrade,
-    cover: Number.isFinite(rawState.cover) ? Number(rawState.cover) : defState.cover,
+    // v1.0 files stored a single cover number; v1.1 stores it per face.
+    cover: normalizeCover(rawState.cover, defState.cover),
     tieDia: Number.isFinite(rawState.tieDia) ? Number(rawState.tieDia) : defState.tieDia,
     barDia: Number.isFinite(rawState.barDia) ? Number(rawState.barDia) : defState.barDia,
     memberLength: Number.isFinite(rawState.memberLength) ? Number(rawState.memberLength) : defState.memberLength,

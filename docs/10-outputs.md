@@ -37,8 +37,9 @@ dialog ("Save as PDF" produces the file). Contents, so an independent reviewer c
 follow the check without the software:
 
 1. Header: selected code and edition, date, method statement line.
-2. Input echo: materials, cover/tie, member length, partial factors, boundary-vertex
-   table, void polygons, bar table, load-case table.
+2. Input echo: materials, the nominal cover of each concrete face (outer faces, and the
+   void faces where they are set independently) with the link diameter, member length,
+   partial factors, boundary-vertex table, void polygons, bar table, load-case table.
 3. Section properties: Ag, centroid, Ixx/Iyy/Ixy, Asc, p%, bounding box.
 4. Design material parameters: fcd, εc2, εcu, n, fyd (and fyc where applicable), pivot
    rules, surface mesh — the full basis for reproducing the interaction diagram.

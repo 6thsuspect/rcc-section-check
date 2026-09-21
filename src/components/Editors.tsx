@@ -78,7 +78,6 @@ export function CodeMaterialsPanel({
             ))}
           </select>
         </label>
-        <NumField label="Clear cover" unit="mm" value={state.cover} min={20} onChange={(v) => update({ cover: v })} />
         <NumField label="Tie / link dia" unit="mm" value={state.tieDia} min={6} onChange={(v) => update({ tieDia: v })} />
         <NumField
           label="Unsupported length (0 = n/a)"

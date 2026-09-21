@@ -5,12 +5,14 @@ import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './eng
 import { buildAnalysisModel } from './engine/integrator'
 import { checkLoadCase, flexuralCapacity, generateSurface, naForDirection } from './engine/surface'
 import { complianceChecks } from './engine/checks'
+import { auditCovers, radialCover } from './engine/cover'
 import { exportReport } from './report'
 import { exportProjectFile, parseProjectFile } from './projectFile'
 import { initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
+import { ClearCoverPanel } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, ResultsTable } from './components/Results'
 import { Card, STANDARD_BAR_DIAMETERS } from './components/ui'
@@ -91,6 +93,16 @@ export default function App() {
 
   const valid = issues.length === 0
 
+  /**
+   * Per-face cover audit (docs/09 V3): every bar's achieved cover against the
+   * cover entered for the face it lies against. Drives the preview overlay, the
+   * cover panel and the clause check — the layout never re-places bars on its own.
+   */
+  const coverAudit = useMemo(
+    () => auditCovers(state.bars, state.geometry, state.cover, state.tieDia),
+    [state.bars, state.geometry, state.cover, state.tieDia],
+  )
+
   const props = useMemo(
     () => (valid ? sectionProperties(state.geometry, state.bars) : null),
     [valid, state.geometry, state.bars],
@@ -131,8 +143,24 @@ export default function App() {
       cases: state.cases,
       shapeClass: state.shapeClass,
       memberLength: state.memberLength > 0 ? state.memberLength : undefined,
+      cover: state.cover,
+      tieDia: state.tieDia,
+      coverAudit,
     })
-  }, [props, spec, state.bars, state.geometry, state.fck, grade.fy, state.cases, state.shapeClass, state.memberLength])
+  }, [
+    props,
+    spec,
+    state.bars,
+    state.geometry,
+    state.fck,
+    grade.fy,
+    state.cases,
+    state.shapeClass,
+    state.memberLength,
+    state.cover,
+    state.tieDia,
+    coverAudit,
+  ])
 
   const selected = state.cases.find((c) => c.id === selCase) ?? state.cases[0] ?? null
   const selResult = results.find((r) => r.loadCase.id === selected?.id) ?? null
@@ -257,6 +285,7 @@ export default function App() {
       <main className="max-w-[1500px] mx-auto px-5 py-4 grid gap-4 lg:grid-cols-[400px_1fr]">
         <div className="flex flex-col gap-4 min-w-0">
           <CodeMaterialsPanel state={state} update={update} />
+          <ClearCoverPanel state={state} update={update} audit={coverAudit} />
           <SectionPanel
             state={state}
             update={update}
@@ -265,7 +294,7 @@ export default function App() {
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
               predefined={state.predefined}
-              cover={state.cover}
+              cover={radialCover(state.cover)}
               tieDia={state.tieDia}
               barDia={state.barDia}
               setBarDia={(barDia) => update({ barDia })}
@@ -313,7 +342,15 @@ export default function App() {
 
           <div className="grid gap-4 xl:grid-cols-2">
             <Card title="Section">
-              <SectionPreview geometry={state.geometry} bars={state.bars} props={props} na={naInfo} />
+              <SectionPreview
+                geometry={state.geometry}
+                bars={state.bars}
+                props={props}
+                na={naInfo}
+                cover={state.cover}
+                audit={coverAudit}
+                radialCoverOnly={state.shapeClass === 'circ'}
+              />
             </Card>
             <Card title={selected ? `Mx–My contour — ${selected.name}` : 'Mx–My contour'}>
               {surface ? (

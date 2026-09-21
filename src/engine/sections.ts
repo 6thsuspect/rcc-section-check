@@ -1,16 +1,32 @@
 import type { Point, Rebar, SectionGeometry } from './types'
+import { faceOffsets, uniformCover, type CoverSpec, type FaceOffsets } from './cover'
 
 /**
  * Predefined parametric sections. Each generator returns an ordinary
  * boundary/void/bar model — the user can edit everything afterwards.
- * All dimensions mm. Bar offset rule (docs/04 §4.2):
- *   offset = cover + tieDia + barDia/2, measured from the concrete face.
+ * All dimensions mm. Bar offset rule (docs/04 §4.2): every bar is set back from
+ * the concrete face it lies against by
+ *   offset(face) = cover(face) + tieDia + barDia/2
+ * where cover(face) is that face's nominal clear cover — entered independently
+ * for bottom / right / top / left, plus separate values for void faces.
  */
 
 export interface BarLayoutOpts {
-  cover: number
+  /** Per-face nominal clear cover, mm. A bare number = all faces equal. */
+  cover: CoverSpec | number
   tieDia: number
   barDia: number
+}
+
+export type CoverInput = CoverSpec | number
+
+export function toCoverSpec(cover: CoverInput): CoverSpec {
+  return typeof cover === 'number' ? uniformCover(cover) : cover
+}
+
+/** Bar-centre offsets per face (cover + link dia + half bar dia). */
+export function layoutOffsets(opts: BarLayoutOpts): FaceOffsets {
+  return faceOffsets(toCoverSpec(opts.cover), opts.tieDia, opts.barDia)
 }
 
 export type PredefinedSection =
@@ -61,8 +77,8 @@ export function barsOnRing(cx: number, cy: number, r: number, n: number, dia: nu
 }
 
 export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): GeneratedSection {
-  const off = opts.cover + opts.tieDia + opts.barDia / 2
   const dia = opts.barDia
+  const { outer: o, inner: vi, radial, radialInner } = layoutOffsets(opts)
 
   switch (def.kind) {
     case 'rect': {
@@ -76,11 +92,15 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
+      const xl = o.left
+      const xr = B - o.right
+      const yb = o.bottom
+      const yt = D - o.top
       const bars: Rebar[] = [
-        ...barsOnLine({ x: off, y: off }, { x: B - off, y: off }, Math.max(2, nx), dia, true),
-        ...barsOnLine({ x: off, y: D - off }, { x: B - off, y: D - off }, Math.max(2, nx), dia, true),
-        ...barsOnLine({ x: off, y: off }, { x: off, y: D - off }, ny, dia, false),
-        ...barsOnLine({ x: B - off, y: off }, { x: B - off, y: D - off }, ny, dia, false),
+        ...barsOnLine({ x: xl, y: yb }, { x: xr, y: yb }, Math.max(2, nx), dia, true),
+        ...barsOnLine({ x: xl, y: yt }, { x: xr, y: yt }, Math.max(2, nx), dia, true),
+        ...barsOnLine({ x: xl, y: yb }, { x: xl, y: yt }, ny, dia, false),
+        ...barsOnLine({ x: xr, y: yb }, { x: xr, y: yt }, ny, dia, false),
       ]
       return { geometry, bars, shapeClass: 'rect' }
     }
@@ -90,7 +110,7 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
       const R = D / 2
       return {
         geometry: { boundary: circlePoly(0, 0, R), voids: [] },
-        bars: barsOnRing(0, 0, R - off, Math.max(6, nBars), dia, Math.PI / 2),
+        bars: barsOnRing(0, 0, R - radial, Math.max(6, nBars), dia, Math.PI / 2),
         shapeClass: 'circ',
       }
     }
@@ -111,15 +131,28 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
+      const yFl = D - tf // flange underside — the face the tip bars sit above
       const bars: Rebar[] = [
         // flange top face
-        ...barsOnLine({ x: off, y: D - off }, { x: bf - off, y: D - off }, Math.max(2, nFlange), dia, true),
-        // flange soffit tips
-        { x: off, y: D - tf + off, dia },
-        { x: bf - off, y: D - tf + off, dia },
-        // web verticals, bottom corners included
-        ...barsOnLine({ x: wl + off, y: off }, { x: wl + off, y: D - tf - off }, Math.max(2, nWeb), dia, true),
-        ...barsOnLine({ x: wl + bw - off, y: off }, { x: wl + bw - off, y: D - tf - off }, Math.max(2, nWeb), dia, true),
+        ...barsOnLine({ x: o.left, y: D - o.top }, { x: bf - o.right, y: D - o.top }, Math.max(2, nFlange), dia, true),
+        // flange soffit tips: set back from the side faces and from the flange underside
+        { x: o.left, y: yFl + o.bottom, dia },
+        { x: bf - o.right, y: yFl + o.bottom, dia },
+        // web verticals, bottom corners included; top ends sit below the flange
+        ...barsOnLine(
+          { x: wl + o.left, y: o.bottom },
+          { x: wl + o.left, y: yFl - o.top },
+          Math.max(2, nWeb),
+          dia,
+          true,
+        ),
+        ...barsOnLine(
+          { x: wl + bw - o.right, y: o.bottom },
+          { x: wl + bw - o.right, y: yFl - o.top },
+          Math.max(2, nWeb),
+          dia,
+          true,
+        ),
       ]
       return { geometry, bars, shapeClass: 'rect' }
     }
@@ -148,10 +181,30 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         voids: [],
       }
       const bars: Rebar[] = [
-        ...barsOnLine({ x: t1 + off, y: D - off }, { x: t1 + bf1 - off, y: D - off }, Math.max(2, nFlange), dia, true),
-        ...barsOnLine({ x: b1 + off, y: off }, { x: b1 + bf2 - off, y: off }, Math.max(2, nFlange), dia, true),
-        ...barsOnLine({ x: wl + off, y: tf2 + off }, { x: wl + off, y: D - tf1 - off }, nWeb, dia, false),
-        ...barsOnLine({ x: wl + tw - off, y: tf2 + off }, { x: wl + tw - off, y: D - tf1 - off }, nWeb, dia, false),
+        ...barsOnLine(
+          { x: t1 + o.left, y: D - o.top },
+          { x: t1 + bf1 - o.right, y: D - o.top },
+          Math.max(2, nFlange),
+          dia,
+          true,
+        ),
+        ...barsOnLine(
+          { x: b1 + o.left, y: o.bottom },
+          { x: b1 + bf2 - o.right, y: o.bottom },
+          Math.max(2, nFlange),
+          dia,
+          true,
+        ),
+        // web bars run between the flange inner faces: bottom end above the
+        // bottom flange, top end below the top flange
+        ...barsOnLine({ x: wl + o.left, y: tf2 + o.bottom }, { x: wl + o.left, y: D - tf1 - o.top }, nWeb, dia, false),
+        ...barsOnLine(
+          { x: wl + tw - o.right, y: tf2 + o.bottom },
+          { x: wl + tw - o.right, y: D - tf1 - o.top },
+          nWeb,
+          dia,
+          false,
+        ),
       ]
       return { geometry, bars, shapeClass: 'rect' }
     }
@@ -170,12 +223,12 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         voids: [],
       }
       const bars: Rebar[] = [
-        // vertical leg
-        ...barsOnLine({ x: off, y: off }, { x: off, y: D - off }, 3, dia, true),
-        ...barsOnLine({ x: tw - off, y: tf + off }, { x: tw - off, y: D - off }, 2, dia, true),
+        // vertical leg — outer face at x = 0, inner face at x = tw
+        ...barsOnLine({ x: o.left, y: o.bottom }, { x: o.left, y: D - o.top }, 3, dia, true),
+        ...barsOnLine({ x: tw - o.right, y: tf + o.bottom }, { x: tw - o.right, y: D - o.top }, 2, dia, true),
         // horizontal leg (heel bar shared corner region)
-        ...barsOnLine({ x: tw + off, y: off }, { x: B - off, y: off }, 2, dia, true),
-        ...barsOnLine({ x: tw + off, y: tf - off }, { x: B - off, y: tf - off }, 2, dia, true),
+        ...barsOnLine({ x: tw + o.left, y: o.bottom }, { x: B - o.right, y: o.bottom }, 2, dia, true),
+        ...barsOnLine({ x: tw + o.left, y: tf - o.top }, { x: B - o.right, y: tf - o.top }, 2, dia, true),
       ]
       return { geometry, bars, shapeClass: 'rect' }
     }
@@ -199,17 +252,25 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
       }
       const nxi = Math.max(2, nx)
+      // Void-face keys name the void face the lining bars are set back from, which
+      // is exactly how the cover audit classifies a bar (see cover.ts): the bars
+      // hanging below the void's bottom face use inner.bottom, those above the
+      // void's top face use inner.top, and the cell walls use inner.left / right.
+      const vb = tf - vi.bottom // bottom slab, lining the void soffit
+      const vt = D - tf + vi.top // top slab, lining the void ceiling
+      const vl = tw - vi.left // left cell wall
+      const vr = B - tw + vi.right // right cell wall
       const bars: Rebar[] = [
         // outer ring
-        ...barsOnLine({ x: off, y: off }, { x: B - off, y: off }, nxi, dia, true),
-        ...barsOnLine({ x: off, y: D - off }, { x: B - off, y: D - off }, nxi, dia, true),
-        ...barsOnLine({ x: off, y: off }, { x: off, y: D - off }, ny, dia, false),
-        ...barsOnLine({ x: B - off, y: off }, { x: B - off, y: D - off }, ny, dia, false),
+        ...barsOnLine({ x: o.left, y: o.bottom }, { x: B - o.right, y: o.bottom }, nxi, dia, true),
+        ...barsOnLine({ x: o.left, y: D - o.top }, { x: B - o.right, y: D - o.top }, nxi, dia, true),
+        ...barsOnLine({ x: o.left, y: o.bottom }, { x: o.left, y: D - o.top }, ny, dia, false),
+        ...barsOnLine({ x: B - o.right, y: o.bottom }, { x: B - o.right, y: D - o.top }, ny, dia, false),
         // inner ring (void-side faces)
-        ...barsOnLine({ x: tw - off, y: tf - off }, { x: B - tw + off, y: tf - off }, nxi, dia, true),
-        ...barsOnLine({ x: tw - off, y: D - tf + off }, { x: B - tw + off, y: D - tf + off }, nxi, dia, true),
-        ...barsOnLine({ x: tw - off, y: tf - off }, { x: tw - off, y: D - tf + off }, ny, dia, false),
-        ...barsOnLine({ x: B - tw + off, y: tf - off }, { x: B - tw + off, y: D - tf + off }, ny, dia, false),
+        ...barsOnLine({ x: vl, y: vb }, { x: vr, y: vb }, nxi, dia, true),
+        ...barsOnLine({ x: vl, y: vt }, { x: vr, y: vt }, nxi, dia, true),
+        ...barsOnLine({ x: vl, y: vb }, { x: vl, y: vt }, ny, dia, false),
+        ...barsOnLine({ x: vr, y: vb }, { x: vr, y: vt }, ny, dia, false),
       ]
       return { geometry, bars, shapeClass: 'rect' }
     }
@@ -218,8 +279,8 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
       const { Do, Di, nBars, innerRing } = def
       const Ro = Do / 2
       const Ri = Di / 2
-      const bars: Rebar[] = barsOnRing(0, 0, Ro - off, Math.max(6, nBars), dia, Math.PI / 2)
-      if (innerRing) bars.push(...barsOnRing(0, 0, Ri + off, Math.max(6, nBars), dia, Math.PI / 2 + Math.PI / nBars))
+      const bars: Rebar[] = barsOnRing(0, 0, Ro - radial, Math.max(6, nBars), dia, Math.PI / 2)
+      if (innerRing) bars.push(...barsOnRing(0, 0, Ri + radialInner, Math.max(6, nBars), dia, Math.PI / 2 + Math.PI / nBars))
       return {
         geometry: { boundary: circlePoly(0, 0, Ro), voids: [circlePoly(0, 0, Ri)] },
         bars,

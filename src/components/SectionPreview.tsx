@@ -1,5 +1,17 @@
 import { useId, useState } from 'react'
 import type { Rebar, SectionGeometry, SectionProperties } from '../engine/types'
+import {
+  faceFromNormal,
+  formatCover,
+  inboundNormal,
+  innerCover,
+  outerCover,
+  radialCover,
+  type CoverAudit,
+  type BarCoverStatus,
+  type CoverSpec,
+} from '../engine/cover'
+import { signedArea } from '../engine/geometry'
 import { fmtN } from '../state'
 import { ZoomableSvg } from './ui'
 
@@ -15,6 +27,16 @@ const LABEL_COLORS = [
   { name: 'green', hex: '#0ca30c' },
 ]
 
+/** Hover text of a bar: coordinates, diameter and its cover audit result. */
+function barTooltip(i: number, b: Rebar, st: BarCoverStatus | null | undefined): string {
+  const head = `bar ${i + 1} — (${b.x}, ${b.y}) ⌀${b.dia}`
+  if (!st) return head
+  const where = `${st.surface === 'inner' ? 'void ' : ''}${st.face} face`
+  return `${head} · cover ${st.achieved.toFixed(1)} mm vs ${st.required.toFixed(1)} mm required at the ${where}${
+    st.ok ? '' : ' — SHORT'
+  }`
+}
+
 export interface NAInfo {
   /** NA orientation, rad (direction of the NA line). */
   theta: number
@@ -28,16 +50,26 @@ export function SectionPreview({
   bars,
   props,
   na,
+  cover,
+  audit,
+  radialCoverOnly = false,
 }: {
   geometry: SectionGeometry
   bars: Rebar[]
   props: SectionProperties | null
   na?: NAInfo | null
+  /** Per-face nominal cover; draws the cover envelope when supplied. */
+  cover?: CoverSpec | null
+  /** Achieved-cover audit — bars short of their face cover are ringed in red. */
+  audit?: CoverAudit | null
+  /** Circular rings use one governing radial value all around the section. */
+  radialCoverOnly?: boolean
 }) {
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
   const [labelColor, setLabelColor] = useState(LABEL_COLORS[1].hex)
   const [showNA, setShowNA] = useState(true)
+  const [showCover, setShowCover] = useState(true)
   const clipId = useId()
 
   const xs = geometry.boundary.map((p) => p.x)
@@ -80,6 +112,65 @@ export function SectionPreview({
       lx: X(P0.x + 0.15 * L * d.x + 6 / scale * n.x),
       ly: Y(P0.y + 0.15 * L * d.y) - 5,
     }
+  }
+
+  // --- per-face cover envelope ----------------------------------------------
+  // Each boundary edge is offset into the concrete by that face's nominal cover;
+  // void edges are offset away from the void, into the surrounding concrete.
+  const coverLines: { x1: number; y1: number; x2: number; y2: number }[] = []
+  const coverLabels: { x: number; y: number; text: string; bad: boolean }[] = []
+  if (cover && showCover) {
+    const faceCover = (face: ReturnType<typeof faceFromNormal>, inner: boolean) =>
+      radialCoverOnly
+        ? radialCover(cover, inner ? 'inner' : 'outer')
+        : inner
+          ? innerCover(cover, face)
+          : outerCover(cover, face)
+
+    const drawRing = (poly: { x: number; y: number }[], inner: boolean) => {
+      if (poly.length < 3) return
+      const ccw = signedArea(poly) >= 0
+      const seen = new Set<string>()
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]
+        const b = poly[(i + 1) % poly.length]
+        // unit normal into the region the polygon encloses (see cover.ts)
+        const { x: nx, y: ny } = inboundNormal(a, b, ccw)
+        // `n` points into the region the polygon encloses — the concrete for the
+        // boundary, the hole for a void — which is the convention faceFromNormal
+        // (and therefore the cover audit) uses for both rings.
+        const face = faceFromNormal(nx, ny)
+        const c = faceCover(face, inner)
+        if (!(c > 0)) continue
+        // into the concrete: with the normal for the boundary, against it for a void
+        const sx = inner ? -nx : nx
+        const sy = inner ? -ny : ny
+        coverLines.push({
+          x1: X(a.x + sx * c),
+          y1: Y(a.y + sy * c),
+          x2: X(b.x + sx * c),
+          y2: Y(b.y + sy * c),
+        })
+        const key = `${inner ? 'v' : 'o'}${face}`
+        if (!seen.has(key) && poly.length <= 12) {
+          seen.add(key)
+          const mx = (a.x + b.x) / 2
+          const my = (a.y + b.y) / 2
+          const short = audit
+            ? audit.bars.some((s) => !s.ok && s.surface === (inner ? 'inner' : 'outer') && s.face === face)
+            : false
+          coverLabels.push({
+            x: X(mx + sx * (c / 2) - 9),
+            y: Y(my + sy * (c / 2) + 3),
+            text: `${c}`,
+            bad: short,
+          })
+        }
+      }
+    }
+
+    drawRing(geometry.boundary, false)
+    for (const v of geometry.voids) drawRing(v, true)
   }
 
   return (
@@ -135,6 +226,15 @@ export function SectionPreview({
             Neutral axis
           </label>
         )}
+        {cover && (
+          <label
+            className="flex items-center gap-1.5 font-display font-semibold uppercase tracking-wide text-[10.5px]"
+            title="Show the nominal cover envelope of each face (to the outside of the links)"
+          >
+            <input type="checkbox" checked={showCover} onChange={(e) => setShowCover(e.target.checked)} />
+            Cover
+          </label>
+        )}
       </div>
 
       <ZoomableSvg W={W} H={H} id="fig-section" ariaLabel="Scaled preview of the section with reinforcement">
@@ -152,6 +252,28 @@ export function SectionPreview({
         {geometry.voids.map((v, i) => (
           <polygon key={i} points={toPts(v)} className="fill-paper stroke-ink" strokeWidth="1.4" />
         ))}
+
+        {/* per-face nominal cover envelope */}
+        {coverLines.length > 0 && (
+          <g>
+            {coverLines.map((l, i) => (
+              <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} className="stroke-ink-3" strokeWidth="0.9" strokeDasharray="5 3" />
+            ))}
+            {coverLabels.map((t, i) => (
+              <text
+                key={`cl-${i}`}
+                x={t.x}
+                y={t.y}
+                fontSize={Math.max(8, fontSize - 2)}
+                fontFamily={FONT}
+                fontWeight="600"
+                fill={t.bad ? 'var(--color-bad)' : 'var(--color-ink-3)'}
+              >
+                {t.text}
+              </text>
+            ))}
+          </g>
+        )}
 
         {/* compression zone + neutral axis */}
         {naEls && (
@@ -188,10 +310,19 @@ export function SectionPreview({
 
         {bars.map((b, i) => {
           const r = Math.max(2.2, (b.dia / 2) * scale)
+          const st = audit?.bars[i] ?? null
+          const bad = st !== null && !st.ok
           return (
             <g key={i}>
-              <circle cx={X(b.x)} cy={Y(b.y)} r={r} className="fill-capacity">
-                <title>{`bar ${i + 1} — (${b.x}, ${b.y}) ⌀${b.dia}`}</title>
+              <circle
+                cx={X(b.x)}
+                cy={Y(b.y)}
+                r={r}
+                className="fill-capacity"
+                stroke={bad ? 'var(--color-bad)' : 'none'}
+                strokeWidth={bad ? 1.6 : 0}
+              >
+                <title>{barTooltip(i, b, st)}</title>
               </circle>
               {showLabels && (
                 <text
@@ -210,6 +341,17 @@ export function SectionPreview({
       </ZoomableSvg>
 
       {na && showNA && <p className="text-[11px] text-ink-3 mt-1.5">{na.caption} — shaded side is in compression.</p>}
+
+      {cover && showCover && (
+        <p className="text-[11px] text-ink-3 mt-1.5">
+          Dashed envelope = nominal cover to the links, entered face by face: {formatCover(cover)}.
+          {audit && audit.nShort > 0 ? (
+            <span className="text-bad"> {audit.nShort} bar(s) ringed in red are short of their face cover.</span>
+          ) : (
+            <span className="text-ok"> All bars meet the cover of the face they lie against.</span>
+          )}
+        </p>
+      )}
 
       {props && (
         <div className="grid grid-cols-3 gap-x-4 gap-y-1 mt-2 text-[12px] text-ink-2 tnum">
