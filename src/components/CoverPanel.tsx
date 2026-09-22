@@ -18,12 +18,21 @@ import {
   type CoverSpec,
 } from '../engine/cover'
 import type { AppState } from '../state'
-import { Card, InfoTooltip, NumField } from './ui'
-
-const btnCls =
-  'font-display text-[11px] font-semibold tracking-wide uppercase border border-edge-strong rounded px-2 py-1 text-ink-2 hover:border-accent hover:text-accent'
-const btnPrimaryCls =
-  'font-display text-[11px] font-semibold tracking-wide uppercase border border-accent bg-accent-wash text-accent-strong rounded px-2.5 py-1 hover:bg-accent/20'
+import {
+  Banner,
+  btnCls,
+  btnPrimaryCls,
+  btnMiniCls,
+  Card,
+  Check,
+  fieldBoxCls,
+  fieldCls,
+  Icon,
+  InfoTooltip,
+  NumField,
+  SubCard,
+  noteSmCls,
+} from './ui'
 
 /** Stable fingerprint of a bar list — used to detect an out-of-date layout. */
 function barsKey(bars: AppState['bars']): string {
@@ -100,6 +109,7 @@ export function ClearCoverPanel({
     <Card
       title={
         <span className="flex items-center gap-1.5">
+          <Icon name="target" size={13} className="text-ink-3" />
           <span>Clear cover — per face</span>
           <InfoTooltip
             content={
@@ -114,79 +124,99 @@ export function ClearCoverPanel({
         </span>
       }
       action={
-        <label className="flex items-center gap-1.5 text-[11px] text-ink-2 cursor-pointer select-none">
-          <input type="checkbox" className="accent-accent" checked={linked} onChange={(e) => toggleLink(e.target.checked)} />
-          <span className="font-display font-semibold uppercase tracking-wide text-[10.5px]">Link faces</span>
-        </label>
+        <Check
+          checked={linked}
+          onChange={toggleLink}
+          label={
+            <span className="inline-flex items-center gap-1">
+              <Icon name={linked ? 'link' : 'close'} size={11} className={linked ? 'text-accent' : 'text-ink-3'} />
+              Link faces
+            </span>
+          }
+          title={linked ? 'All four faces share one value — click to detail them independently' : 'Use one value for every face'}
+        />
       }
     >
       <div className="flex flex-col gap-2.5">
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
           {COVER_FACES.map((face) => (
-            <div key={face} className="flex flex-col">
-              <NumField
-                label={`${FACE_LABELS[face]}${linked ? ' *' : ''}`}
-                unit="mm"
-                value={outerCover(cover, face)}
-                min={0}
-                step={5}
-                onChange={(v) => setFace(face, v)}
-              />
-              <span className="text-[9.5px] text-ink-3 mt-0.5 leading-tight">{FACE_HINTS[face]}</span>
-            </div>
+            <NumField
+              key={face}
+              label={`${FACE_LABELS[face]}${linked ? ' *' : ''}`}
+              unit="mm"
+              value={outerCover(cover, face)}
+              min={0}
+              step={5}
+              hint={FACE_HINTS[face]}
+              onChange={(v) => setFace(face, v)}
+            />
           ))}
         </div>
 
         {linked && (
-          <p className="text-[11px] text-ink-3 -mt-1">
+          <p className={`${noteSmCls} -mt-0.5`}>
             <b>*</b> Faces linked — editing any face sets all four to{' '}
             <b>{outerCover(cover, 'bottom')} mm</b>. Unlink to detail them independently.
           </p>
         )}
         {!allEqual && (
-          <p className="text-[11px] text-ink-3 -mt-1">
-            Independent faces: {COVER_FACES.map((f) => `${FACE_LABELS[f].toLowerCase()} ${outerCover(cover, f)}`).join(' / ')} mm.
-            <button type="button" className="ml-1.5 text-accent hover:underline" onClick={() => toggleLink(true)}>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-field border border-line bg-panel/60 px-2 py-1 text-[10.5px] text-ink-2">
+            <span className="tnum">
+              <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Faces</span>{' '}
+              {COVER_FACES.map((f) => `${FACE_LABELS[f].toLowerCase()} ${outerCover(cover, f)}`).join('  ·  ')} mm
+            </span>
+            <button
+              type="button"
+              className={`${btnMiniCls} ml-auto`}
+              onClick={() => toggleLink(true)}
+            >
+              <Icon name="link" size={10} />
               make equal
             </button>
-          </p>
+          </div>
         )}
 
         {circular && (
-          <p className="text-[11px] text-warn2 bg-warn2/10 border border-warn2/30 rounded px-2 py-1 leading-snug">
-            Circular ring: the section is radially symmetric, so the governing (largest) face cover —{' '}
+          <p className="flex items-start gap-1.5 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[11px] leading-snug text-warn2">
+            <Icon name="info" size={12} className="mt-px shrink-0" />
+            <span>
+              Circular ring: the section is radially symmetric, so the governing (largest) face cover —{' '}
             <b>{radialCover(cover)} mm</b> — is applied around the ring
-            {hasInnerOverrides(cover) ? `, and ${radialCover(cover, 'inner')} mm at the void face` : ''}.
+              {hasInnerOverrides(cover) ? `, and ${radialCover(cover, 'inner')} mm at the void face` : ''}.
+            </span>
           </p>
         )}
 
         {/* Void / internal faces */}
         {hasVoid && (
-          <div className="border border-edge rounded p-2 bg-panel/40">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="flex items-center gap-1.5 font-display font-semibold uppercase tracking-wide text-[10.5px] text-ink-2">
+          <SubCard
+            title={
+              <span className="flex items-center gap-1.5">
                 Void / inner faces ({state.geometry.voids.length} void{state.geometry.voids.length > 1 ? 's' : ''})
-                <InfoTooltip
-                  content={
-                    <span>
-                      Cover for bars lining the faces of an internal void — the cell walls of a box pier, the soffit
-                      under a voided deck. Leave a face blank to inherit the outer face of the same orientation.
-                    </span>
-                  }
-                />
-              </span>
-              {hasInnerOverrides(cover) && (
+                  <InfoTooltip
+                    content={
+                      <span>
+                        Cover for bars lining the faces of an internal void — the cell walls of a box pier, the soffit
+                        under a voided deck. Leave a face blank to inherit the outer face of the same orientation.
+                      </span>
+                    }
+                  />
+                </span>
+            }
+            action={
+              hasInnerOverrides(cover) ? (
                 <button
                   type="button"
-                  className="text-[10.5px] text-ink-3 hover:text-accent uppercase font-display font-semibold tracking-wide"
+                  className={btnMiniCls}
                   onClick={() => patchCover({ ...cover, inner: { bottom: null, right: null, top: null, left: null } })}
                   title="Clear the void-face values — they then follow the outer faces"
                 >
                   clear overrides
                 </button>
-              )}
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
+              ) : undefined
+            }
+          >
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
               {COVER_FACES.map((face) => (
                 <InnerCoverField
                   key={face}
@@ -197,43 +227,89 @@ export function ClearCoverPanel({
                 />
               ))}
             </div>
-          </div>
+          </SubCard>
         )}
 
-        <CoverDiagram cover={cover} hasVoid={hasVoid} audit={audit} />
-
-        {/* Achieved cover */}
-        <div
-          className={`text-[11.5px] rounded px-2 py-1.5 border ${
-            minOk ? 'bg-ok/10 border-ok/40 text-ok' : 'bg-bad/10 border-bad/40 text-bad'
-          }`}
-        >
-          <b className="font-display text-[10px] uppercase tracking-wider">{minOk ? 'Cover satisfied' : 'Cover short'}</b>{' '}
-          {audit.minAchieved == null ? (
-            <span>— no bars to audit.</span>
-          ) : (
-            <span className="tnum">
-              minimum achieved {audit.minAchieved.toFixed(1)} mm
-              {worst ? ` (bar ${worst.bar}, ${worst.surface === 'inner' ? 'void ' : ''}${FACE_LABELS[worst.face].toLowerCase()} face, needs ${worst.required.toFixed(1)} mm)` : ''}
-              {audit.nShort > 0 ? ` — ${audit.nShort} bar(s) below their face requirement` : ''}
+        <figure className="rounded-lg border border-line bg-panel/40 px-2 pb-1.5 pt-2">
+          <CoverDiagram cover={cover} hasVoid={hasVoid} audit={audit} />
+          <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-px w-4 bg-ok" aria-hidden="true" /> cover met
             </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-px w-4 bg-bad" aria-hidden="true" /> short
+            </span>
+            {(hasInnerOverrides(cover) ? 8 : 4) + ' faces audited'}
+          </figcaption>
+        </figure>
+
+        {/* Achieved cover: one line per face, from the audit */}
+        <Banner tone={minOk ? 'ok' : 'error'}>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+              {minOk ? 'Cover satisfied' : 'Cover short'}
+            </b>
+            {audit.minAchieved == null ? (
+              <span>— no bars to audit.</span>
+            ) : (
+              <span className="tnum">
+                minimum achieved {audit.minAchieved.toFixed(1)} mm
+                {worst
+                  ? ` (bar ${worst.bar}, ${worst.surface === 'inner' ? 'void ' : ''}${
+                      FACE_LABELS[worst.face].toLowerCase()
+                    } face, needs ${worst.required.toFixed(1)} mm)`
+                  : ''}
+                {audit.nShort > 0 ? ` — ${audit.nShort} bar(s) below their face requirement` : ''}
+              </span>
+            )}
+          </div>
+          {audit.minAchieved != null && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {COVER_FACES.map((face) => {
+                const st = audit.faces[face]
+                const bad = st.min != null && st.min < st.required - 1
+                return (
+                  <span
+                    key={face}
+                    title={`Smallest achieved cover at the ${FACE_LABELS[face].toLowerCase()} face, against ${st.required.toFixed(0)} mm required`}
+                    className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[10px] tnum ${
+                      bad ? 'border-bad/35 bg-bad/10 text-bad' : 'border-line bg-panel/80 text-ink-2'
+                    }`}
+                  >
+                    <span className="font-display text-[9px] font-bold uppercase tracking-[0.06em] text-ink-3">
+                      {FACE_LABELS[face]}
+                    </span>
+                    {st.min == null ? '—' : `${st.min.toFixed(1)}`}
+                    <span className="text-ink-3">/ {st.required.toFixed(0)}</span>
+                  </span>
+                )
+              })}
+            </div>
           )}
-        </div>
+        </Banner>
 
         {note && (
-          <p className={`text-[11px] ${note.kind === 'ok' ? 'text-ok' : 'text-warn2'}`}>{note.text}</p>
+          <p
+            className={`flex items-start gap-1.5 text-[11px] leading-snug ${
+              note.kind === 'ok' ? 'text-ok' : 'text-warn2'
+            }`}
+          >
+            <Icon name={note.kind === 'ok' ? 'check' : 'alert'} size={12} className="mt-px shrink-0" />
+            <span>{note.text}</span>
+          </p>
         )}
 
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="text-[11px] text-ink-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
+          <span className={`${noteSmCls} max-w-[34ch]`}>
             {isCircularDef
               ? 'The circular reinforcement panel re-generates at this cover automatically.'
-              : 'Bars are set back by cover + ⌀tie + ⌀bar/2 from the face they lie against.'}
+              : 'Bars sit back from their face by cover + ⌀tie + ⌀bar/2.'}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {audit.nShort > 0 && state.bars.length > 0 && (
               <button type="button" className={btnCls} onClick={snapBars} title="Move bars inward until each face's cover is met">
-                Snap bars to cover
+                <Icon name="target" size={12} />
+                <span>Snap bars to cover</span>
               </button>
             )}
             {gen && (
@@ -243,7 +319,12 @@ export function ClearCoverPanel({
                 onClick={applyToLayout}
                 title="Re-generate the predefined bar layout at the entered per-face cover"
               >
-                {outOfSync ? 'Apply cover to layout' : 'Layout up to date'}
+                {outOfSync ? (
+                  <Icon name="refresh" size={12} />
+                ) : (
+                  <Icon name="check" size={12} className="text-ok" />
+                )}
+                <span>{outOfSync ? 'Apply cover to layout' : 'Layout up to date'}</span>
               </button>
             )}
           </div>
@@ -264,13 +345,17 @@ function InnerCoverField({
   inherit: number
   onChange: (v: number | null) => void
 }) {
+  const inherited = value == null
   return (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-ink-3 font-display tracking-wide">{FACE_LABELS[face]}</span>
-      <span className="flex items-center gap-1">
+    <label className="flex min-w-0 flex-col gap-[3px]">
+      <span className="flex items-center justify-between gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+        {FACE_LABELS[face]}
+        {inherited && <span className="font-body text-[9px] font-normal normal-case tracking-normal text-ink-3">inherited</span>}
+      </span>
+      <span className={`${fieldBoxCls} ${inherited ? 'bg-panel/70' : 'border-accent/50'}`}>
         <input
           type="number"
-          className="w-full border border-edge rounded px-2 py-1 text-[13px] tnum bg-card focus:outline-none focus:border-accent"
+          className={fieldCls}
           value={value ?? ''}
           placeholder={`same (${inherit})`}
           min={0}
@@ -282,7 +367,9 @@ function InnerCoverField({
             else onChange(Number.isFinite(parseFloat(t)) ? parseFloat(t) : 0)
           }}
         />
-        <span className="text-[11px] text-ink-3 shrink-0">mm</span>
+        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+          mm
+        </span>
       </span>
     </label>
   )
@@ -359,8 +446,32 @@ export function CoverDiagram({
   }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[290px] mx-auto" role="img" aria-label="Per-face cover sketch">
-      <rect x={box.x} y={box.y} width={box.w} height={box.h} className="fill-concrete stroke-ink" strokeWidth="1.6" />
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="mx-auto block w-full max-w-[280px]"
+      role="img"
+      aria-label="Per-face cover sketch"
+    >
+      <rect x={box.x} y={box.y} width={box.w} height={box.h} className="fill-concrete stroke-ink" strokeWidth="1.6" rx="1.5" />
+      {[
+        { x: box.x + box.w / 2, y: H - 16, t: 'bottom' },
+        { x: box.x + box.w / 2, y: 11, t: 'top' },
+        { x: box.x - 14, y: box.y + box.h / 2, t: 'left' },
+        { x: box.x + box.w + 14, y: box.y + box.h / 2, t: 'right' },
+      ].map((f) => (
+        <text
+          key={f.t}
+          x={f.x}
+          y={f.y}
+          fontSize="7"
+          textAnchor="middle"
+          letterSpacing="0.5"
+          fill="var(--color-ink-3)"
+          style={{ textTransform: 'uppercase' }}
+        >
+          {f.t}
+        </text>
+      ))}
       {hasVoid && (
         <rect x={vx} y={vy} width={vw} height={vh} className="fill-paper stroke-ink" strokeWidth="1.2" />
       )}
@@ -381,8 +492,8 @@ export function CoverDiagram({
           {t.text}
         </text>
       ))}
-      <text x={box.x + box.w / 2} y={H - 4} fontSize="8" fill="var(--color-ink-3)" textAnchor="middle">
-        nominal cover to the links, per face — schematic spacing
+      <text x={box.x} y={H - 4} fontSize="8" fill="var(--color-ink-3)">
+        nominal cover to the links · spacing schematic, numbers in mm
       </text>
     </svg>
   )

@@ -15,7 +15,10 @@ import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './
 import { ClearCoverPanel } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, ResultsTable } from './components/Results'
-import { Card, STANDARD_BAR_DIAMETERS } from './components/ui'
+import { Banner, Card, EmptyState, Icon, STANDARD_BAR_DIAMETERS, btnCls, btnPrimaryCls } from './components/ui'
+
+/** Page container, shared by the header bar and the working area. */
+const shell = 'mx-auto w-full max-w-[1640px] px-3 sm:px-5'
 
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
@@ -206,16 +209,28 @@ export default function App() {
 
   return (
     <div className="min-h-full">
-      <header className="border-b-2 border-ink bg-card">
-        <div className="max-w-[1500px] mx-auto px-5 py-3 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-baseline gap-3">
-            <h1 className="font-display text-[20px] font-bold tracking-tight">RCC Section Check</h1>
-            <span className="text-[12px] text-ink-3">
-              biaxial P–Mx–My interaction · {spec.name}
+      <header className="sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
+        <div className={`${shell} flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5`}>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] bg-ink text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]"
+            >
+              <Icon name="bars" size={15} />
             </span>
+            <div className="min-w-0">
+              <h1 className="truncate font-display text-[16.5px] font-bold leading-none tracking-[-0.01em] text-ink">
+                RCC Section Check
+              </h1>
+              <p className="mt-[5px] truncate text-[11px] leading-none text-ink-3">
+                Biaxial P–Mx–My interaction · <span className="text-ink-2">{spec.name}</span>
+                <span className="mx-1 text-edge-strong">|</span>
+                {spec.edition}
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap text-[12px]">
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <input
               type="file"
               ref={fileInputRef}
@@ -223,67 +238,97 @@ export default function App() {
               accept=".json,.rcc"
               className="hidden"
             />
+            {surface && props && (
+              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
+                <span title="Pure axial (squash) capacity of the section">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Puz</span>
+                  {(surface.Puz / 1e3).toFixed(0)} kN
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span title="Tension limit of the section">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Pt</span>
+                  {(surface.Pt / 1e3).toFixed(0)} kN
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span
+                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
+                    anyFail ? 'text-bad' : 'text-ok'
+                  }`}
+                >
+                  <span
+                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${anyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
+                  >
+                    <Icon name={anyFail ? 'alert' : 'check'} size={10} />
+                  </span>
+                  {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+                </span>
+              </div>
+            )}
+
+            {surface && props && (
+              <span
+                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
+                  anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
+                }`}
+                title="Compliance verdict across all load cases"
+              >
+                <Icon name={anyFail ? 'alert' : 'check'} size={10} />
+                {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+              </span>
+            )}
+
             <button
               type="button"
               onClick={handleImportClick}
-              className="font-display font-semibold tracking-wide uppercase border border-edge-strong bg-panel text-ink-2 rounded px-2.5 py-1 hover:border-accent hover:text-accent transition-colors flex items-center gap-1.5"
+              className={btnCls}
               title="Import a saved project JSON file"
             >
-              <span>📂 Import project</span>
+              <Icon name="folder" size={13} />
+              <span className="hidden sm:inline">Import project</span>
             </button>
             <button
               type="button"
               onClick={handleExportClick}
-              className="font-display font-semibold tracking-wide uppercase border border-edge-strong bg-panel text-ink-2 rounded px-2.5 py-1 hover:border-accent hover:text-accent transition-colors flex items-center gap-1.5"
+              className={btnCls}
               title="Export current project state to a JSON file"
             >
-              <span>💾 Export project</span>
+              <Icon name="download" size={13} />
+              <span className="hidden sm:inline">Export project</span>
             </button>
-
-            {surface && props && (
-              <div className="flex items-center gap-3 tnum text-ink-2 ml-2 pl-3 border-l border-edge">
-                <span>Puz = {(surface.Puz / 1e3).toFixed(0)} kN</span>
-                <span>Pt = {(surface.Pt / 1e3).toFixed(0)} kN</span>
-                <span
-                  className={`font-display font-bold text-[13px] px-2 py-0.5 rounded ${
-                    anyFail ? 'bg-bad/10 text-bad' : 'bg-accent-wash text-ok'
-                  }`}
-                >
-                  {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-                </span>
-                <button
-                  className="font-display font-semibold tracking-wide uppercase border border-accent text-accent rounded px-2.5 py-1 hover:bg-accent-wash"
-                  onClick={exportPdf}
-                  title="Open the full calculation report in a print window — use 'Save as PDF'"
-                >
-                  ⭳ PDF report
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              className={btnPrimaryCls}
+              onClick={exportPdf}
+              disabled={!surface || !props}
+              title="Open the full calculation report in a print window — use 'Save as PDF'"
+            >
+              <Icon name="report" size={13} />
+              <span className="hidden sm:inline">PDF report</span>
+            </button>
           </div>
         </div>
 
         {/* Status Notification Banner for Import Success / Error */}
         {(importError || importSuccess) && (
-          <div className="max-w-[1500px] mx-auto px-5 pb-2">
+          <div className={`${shell} pb-2`}>
             {importError && (
-              <div className="bg-bad/10 border border-bad/40 text-bad rounded px-3 py-1.5 text-[12px] flex items-center justify-between">
-                <span>⚠️ {importError}</span>
-                <button onClick={() => setImportError(null)} className="font-bold text-[14px] leading-none">×</button>
-              </div>
+              <Banner tone="error" onDismiss={() => setImportError(null)}>
+                {importError}
+              </Banner>
             )}
             {importSuccess && (
-              <div className="bg-ok/10 border border-ok/40 text-ok rounded px-3 py-1.5 text-[12px] flex items-center justify-between">
-                <span>✓ {importSuccess}</span>
-                <button onClick={() => setImportSuccess(null)} className="font-bold text-[14px] leading-none">×</button>
-              </div>
+              <Banner tone="ok" onDismiss={() => setImportSuccess(null)}>
+                {importSuccess}
+              </Banner>
             )}
           </div>
         )}
       </header>
 
-      <main className="max-w-[1500px] mx-auto px-5 py-4 grid gap-4 lg:grid-cols-[400px_1fr]">
-        <div className="flex flex-col gap-4 min-w-0">
+      <main
+        className={`${shell} grid grid-cols-1 items-start gap-3.5 py-4 lg:grid-cols-[minmax(0,392px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]`}
+      >
+        <div className="flex min-w-0 flex-col gap-3.5">
           <CodeMaterialsPanel state={state} update={update} />
           <ClearCoverPanel state={state} update={update} audit={coverAudit} />
           <SectionPanel
@@ -328,20 +373,27 @@ export default function App() {
           />
         </div>
 
-        <div className="flex flex-col gap-4 min-w-0">
+        <div className="flex min-w-0 flex-col gap-3.5">
           {issues.length > 0 && (
-            <div className="bg-bad/10 border border-bad/40 rounded-lg px-4 py-3 text-[13px] text-bad">
-              <b className="font-display text-[11px] uppercase tracking-wider">Input errors</b>
-              <ul className="list-disc pl-5 mt-1">
+            <Banner tone="error">
+              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {issues.map((m, i) => (
                   <li key={i}>{m}</li>
                 ))}
               </ul>
-            </div>
+            </Banner>
           )}
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card title="Section">
+          <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
+            <Card
+              title="Section"
+              subtitle={
+                state.predefined
+                  ? 'generated from the shape parameters, editable'
+                  : 'custom boundary'
+              }
+            >
               <SectionPreview
                 geometry={state.geometry}
                 bars={state.bars}
@@ -352,35 +404,48 @@ export default function App() {
                 radialCoverOnly={state.shapeClass === 'circ'}
               />
             </Card>
-            <Card title={selected ? `Mx–My contour — ${selected.name}` : 'Mx–My contour'}>
-              {surface ? (
-                <ContourChart surface={surface} result={selResult} />
-              ) : (
-                <div className="text-sm text-ink-3 p-4">Fix input errors to run the analysis.</div>
-              )}
+            <Card
+              title={selected ? `Mx–My contour — ${selected.name}` : 'Mx–My contour'}
+              subtitle="capacity at the case's axial load"
+            >
+              {surface ? <ContourChart surface={surface} result={selResult} /> : <NoAnalysis />}
             </Card>
           </div>
 
-          <Card title={selected ? `P–M interaction — direction of ${selected.name}` : 'P–M interaction'}>
-            {surface ? (
-              <PMChart surface={surface} cases={state.cases} selected={selected} />
-            ) : (
-              <div className="text-sm text-ink-3 p-4">Fix input errors to run the analysis.</div>
-            )}
+          <Card
+            title={selected ? `P–M interaction — direction of ${selected.name}` : 'P–M interaction'}
+            subtitle="demand points over the generated surface"
+          >
+            {surface ? <PMChart surface={surface} cases={state.cases} selected={selected} /> : <NoAnalysis />}
           </Card>
 
           <ResultsTable results={results} selected={selected?.id ?? null} select={setSelCase} />
           <CompliancePanel checks={checks} />
 
-          <p className="text-[11px] text-ink-3 leading-relaxed pb-6">
-            Design aid only — the engineer of record remains responsible for the design, code applicability and
-            clause interpretation. Loads must be factored per the load-combination rules of the governing loading
-            standard (IS 875/1893, IRC:6 Annex B Table B.2, or IRS Bridge Rules). Second-order / slenderness
-            moments are not added by this tool. See <span className="font-mono">docs/</span> for the full method
-            statement and clause basis.
-          </p>
+          <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+            <p className="max-w-[92ch]">
+              Design aid only — the engineer of record remains responsible for the design, code applicability and
+              clause interpretation. Loads must be factored per the load-combination rules of the governing loading
+              standard (IS 875/1893, IRC:6 Annex B Table B.2, or IRS Bridge Rules). Second-order / slenderness
+              moments are not added by this tool.
+            </p>
+            <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              Method statement · docs/
+            </span>
+          </footer>
         </div>
       </main>
     </div>
+  )
+}
+
+/** Placeholder for the figures while the inputs are incomplete. */
+function NoAnalysis() {
+  return (
+    <EmptyState
+      icon="chart"
+      title="Fix input errors to run the analysis."
+      note="The interaction surface is generated from the section geometry, material grades and bar table."
+    />
   )
 }

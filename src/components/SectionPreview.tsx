@@ -13,7 +13,7 @@ import {
 } from '../engine/cover'
 import { signedArea } from '../engine/geometry'
 import { fmtN } from '../state'
-import { ZoomableSvg } from './ui'
+import { Check, chipGroupCls, EmptyState, noteSmCls, Readout, ZoomableSvg } from './ui'
 
 const W = 460
 const H = 340
@@ -74,7 +74,8 @@ export function SectionPreview({
 
   const xs = geometry.boundary.map((p) => p.x)
   const ys = geometry.boundary.map((p) => p.y)
-  if (xs.length < 3) return <div className="text-sm text-ink-3 p-4">Enter at least 3 boundary vertices.</div>
+  if (xs.length < 3)
+    return <EmptyState icon="ruler" title="Enter at least 3 boundary vertices." note="The preview and the analysis both need a closed polygon." />
   const xmin = Math.min(...xs)
   const xmax = Math.max(...xs)
   const ymin = Math.min(...ys)
@@ -176,65 +177,74 @@ export function SectionPreview({
   return (
     <div>
       {/* label & display controls */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 text-[11.5px] text-ink-2">
-        <label className="flex items-center gap-1.5 font-display font-semibold uppercase tracking-wide text-[10.5px]">
-          <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
-          Labels
-        </label>
-        <span className="flex items-center gap-1" title="Label font size">
-          <button
-            className="w-5 h-5 grid place-items-center border border-edge rounded text-[10px] hover:border-accent"
-            aria-label="Smaller labels"
-            onClick={() => setFontSize((s) => Math.max(8, s - 1))}
-          >
-            A−
-          </button>
-          <span className="tnum w-6 text-center">{fontSize}</span>
-          <button
-            className="w-5 h-5 grid place-items-center border border-edge rounded text-[12px] hover:border-accent"
-            aria-label="Larger labels"
-            onClick={() => setFontSize((s) => Math.min(20, s + 1))}
-          >
-            A+
-          </button>
-        </span>
-        <span className="flex items-center gap-1" title="Label colour">
-          {LABEL_COLORS.map((c) => (
-            <button
-              key={c.name}
-              aria-label={`Label colour ${c.name}`}
-              className="w-4 h-4 rounded-full border"
-              style={{
-                background: c.hex,
-                borderColor: labelColor === c.hex ? '#17222c' : 'transparent',
-                outline: labelColor === c.hex ? '2px solid var(--color-accent)' : 'none',
-              }}
-              onClick={() => setLabelColor(c.hex)}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-field border border-line bg-panel/55 px-2 py-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Check checked={showLabels} onChange={setShowLabels} label="Labels" />
+          {na && (
+            <Check
+              checked={showNA}
+              onChange={setShowNA}
+              label="Neutral axis"
+              title="Draw the governing neutral axis and compression zone of the selected case"
             />
-          ))}
-          <input
-            type="color"
-            value={labelColor}
-            aria-label="Custom label colour"
-            className="w-5 h-5 p-0 border border-edge rounded cursor-pointer"
-            onChange={(e) => setLabelColor(e.target.value)}
-          />
-        </span>
-        {na && (
-          <label className="flex items-center gap-1.5 font-display font-semibold uppercase tracking-wide text-[10.5px]">
-            <input type="checkbox" checked={showNA} onChange={(e) => setShowNA(e.target.checked)} />
-            Neutral axis
-          </label>
-        )}
-        {cover && (
-          <label
-            className="flex items-center gap-1.5 font-display font-semibold uppercase tracking-wide text-[10.5px]"
-            title="Show the nominal cover envelope of each face (to the outside of the links)"
+          )}
+          {cover && (
+            <Check
+              checked={showCover}
+              onChange={setShowCover}
+              label="Cover"
+              title="Show the nominal cover envelope of each face (to the outside of the links)"
+            />
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className={chipGroupCls}
+            title="Label font size"
           >
-            <input type="checkbox" checked={showCover} onChange={(e) => setShowCover(e.target.checked)} />
-            Cover
-          </label>
-        )}
+            <button
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[10px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              aria-label="Smaller labels"
+              onClick={() => setFontSize((v) => Math.max(8, v - 1))}
+            >
+              A−
+            </button>
+            <span className="w-5 text-center text-[10.5px] text-ink-3 tnum">{fontSize}</span>
+            <button
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[11px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              aria-label="Larger labels"
+              onClick={() => setFontSize((v) => Math.min(20, v + 1))}
+            >
+              A+
+            </button>
+          </span>
+          <span className={chipGroupCls} title="Label colour">
+            {LABEL_COLORS.map((c) => (
+              <button
+                key={c.name}
+                aria-label={`Label colour ${c.name}`}
+                aria-pressed={labelColor === c.hex}
+                title={`Label colour — ${c.name}`}
+                className="h-[13px] w-[13px] rounded-full border border-black/10 transition-transform duration-150 hover:scale-110"
+                style={{
+                  background: c.hex,
+                  outline: labelColor === c.hex ? '2px solid var(--color-accent)' : 'none',
+                  outlineOffset: '1px',
+                }}
+                onClick={() => setLabelColor(c.hex)}
+              />
+            ))}
+            <input
+              type="color"
+              value={labelColor}
+              aria-label="Custom label colour"
+              title="Custom label colour"
+              className="h-[15px] w-[17px] cursor-pointer rounded-[3px] border border-edge transition-transform duration-150 hover:scale-105"
+              onChange={(e) => setLabelColor(e.target.value)}
+            />
+          </span>
+        </div>
       </div>
 
       <ZoomableSvg W={W} H={H} id="fig-section" ariaLabel="Scaled preview of the section with reinforcement">
@@ -340,27 +350,46 @@ export function SectionPreview({
         })}
       </ZoomableSvg>
 
-      {na && showNA && <p className="text-[11px] text-ink-3 mt-1.5">{na.caption} — shaded side is in compression.</p>}
-
-      {cover && showCover && (
-        <p className="text-[11px] text-ink-3 mt-1.5">
-          Dashed envelope = nominal cover to the links, entered face by face: {formatCover(cover)}.
-          {audit && audit.nShort > 0 ? (
-            <span className="text-bad"> {audit.nShort} bar(s) ringed in red are short of their face cover.</span>
-          ) : (
-            <span className="text-ok"> All bars meet the cover of the face they lie against.</span>
-          )}
-        </p>
-      )}
+      {/* figure legend */}
+      <div className="mt-2 flex flex-col gap-1">
+        {cover && showCover && (
+          <p className={`${noteSmCls} flex items-start gap-1.5`}>
+            <span
+              aria-hidden="true"
+              className="mt-[5px] h-0 w-4 shrink-0 border-t border-dashed border-ink-3"
+            />
+            <span>
+              Dashed envelope = nominal cover to the links, entered face by face: {formatCover(cover)}.{' '}
+              {audit && audit.nShort > 0 ? (
+                <span className="font-semibold text-bad">
+                  {audit.nShort} bar(s) ringed in red are short of their face cover.
+                </span>
+              ) : (
+                <span className="text-ok">All bars meet the cover of the face they lie against.</span>
+              )}
+            </span>
+          </p>
+        )}
+        {na && showNA && (
+          <p className={`${noteSmCls} flex items-start gap-1.5`}>
+            <span aria-hidden="true" className="mt-[5px] h-0 w-4 shrink-0 border-t-2 border-dotted border-demand" />
+            <span>{na.caption} — shaded side is in compression.</span>
+          </p>
+        )}
+      </div>
 
       {props && (
-        <div className="grid grid-cols-3 gap-x-4 gap-y-1 mt-2 text-[12px] text-ink-2 tnum">
-          <span>Ag = {fmtN(props.area / 1e3, 1)}×10³ mm²</span>
-          <span>Asc = {fmtN(props.Asc, 0)} mm² ({fmtN(props.p, 2)}%)</span>
-          <span>{props.barCount} bars</span>
-          <span>Ixx = {fmtN(props.Ixx / 1e6, 0)}×10⁶ mm⁴</span>
-          <span>Iyy = {fmtN(props.Iyy / 1e6, 0)}×10⁶ mm⁴</span>
-          <span>G = ({fmtN(props.cx, 0)}, {fmtN(props.cy, 0)})</span>
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          <Readout label="Gross area Ag" value={`${fmtN(props.area / 1e3, 1)}×10³ mm²`} />
+          <Readout
+            label="Steel Asc · p"
+            value={`${fmtN(props.Asc, 0)} mm² · ${fmtN(props.p, 2)}%`}
+            title="Total area of longitudinal reinforcement and its percentage of the gross section"
+          />
+          <Readout label="Bars" value={`${props.barCount}`} />
+          <Readout label="Ixx" value={`${fmtN(props.Ixx / 1e6, 0)}×10⁶ mm⁴`} title="Second moment of area about the centroidal X axis" />
+          <Readout label="Iyy" value={`${fmtN(props.Iyy / 1e6, 0)}×10⁶ mm⁴`} title="Second moment of area about the centroidal Y axis" />
+          <Readout label="Centroid G" value={`(${fmtN(props.cx, 0)}, ${fmtN(props.cy, 0)})`} />
         </div>
       )}
     </div>
