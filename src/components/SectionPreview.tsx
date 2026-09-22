@@ -5,6 +5,7 @@ import {
   formatCover,
   inboundNormal,
   innerCover,
+  isAxisAlignedRect,
   outerCover,
   radialCover,
   type CoverAudit,
@@ -14,6 +15,7 @@ import {
 import { signedArea } from '../engine/geometry'
 import { fmtN } from '../state'
 import { Check, chipGroupCls, EmptyState, noteSmCls, Readout, ZoomableSvg } from './ui'
+import type { ActiveFace } from './CoverPanel'
 
 const W = 460
 const H = 340
@@ -31,8 +33,8 @@ const LABEL_COLORS = [
 function barTooltip(i: number, b: Rebar, st: BarCoverStatus | null | undefined): string {
   const head = `bar ${i + 1} — (${b.x}, ${b.y}) ⌀${b.dia}`
   if (!st) return head
-  const where = `${st.surface === 'inner' ? 'void ' : ''}${st.face} face`
-  return `${head} · cover ${st.achieved.toFixed(1)} mm vs ${st.required.toFixed(1)} mm required at the ${where}${
+  const where = `${st.surface === 'inner' ? 'void ' : ''}${st.faceName || st.face}`
+  return `${head} · cover ${st.achieved.toFixed(1)} mm vs ${st.required.toFixed(1)} mm required at ${where}${
     st.ok ? '' : ' — SHORT'
   }`
 }
@@ -53,6 +55,9 @@ export function SectionPreview({
   cover,
   audit,
   radialCoverOnly = false,
+  activeFace,
+  onHoverFace,
+  onSelectFace,
 }: {
   geometry: SectionGeometry
   bars: Rebar[]
@@ -64,6 +69,9 @@ export function SectionPreview({
   audit?: CoverAudit | null
   /** Circular rings use one governing radial value all around the section. */
   radialCoverOnly?: boolean
+  activeFace?: ActiveFace | null
+  onHoverFace?: (face: ActiveFace | null) => void
+  onSelectFace?: (face: ActiveFace | null) => void
 }) {
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
@@ -96,8 +104,8 @@ export function SectionPreview({
   // neutral-axis geometry in user coordinates
   let naEls: { x1: number; y1: number; x2: number; y2: number; poly: string; lx: number; ly: number } | null = null
   if (na && props && showNA) {
-    const d = { x: Math.cos(na.theta), y: Math.sin(na.theta) } // along the NA
-    const n = { x: -Math.sin(na.theta), y: Math.cos(na.theta) } // toward compression
+    const d = { x: Math.cos(na.theta), y: Math.sin(na.theta) }
+    const n = { x: -Math.sin(na.theta), y: Math.cos(na.theta) }
     const P0 = { x: props.cx + na.vna * n.x, y: props.cy + na.vna * n.y }
     const L = 2 * Math.max(xmax - xmin, ymax - ymin)
     const A = { x: P0.x - L * d.x, y: P0.y - L * d.y }
@@ -115,19 +123,10 @@ export function SectionPreview({
     }
   }
 
-  // --- per-face cover envelope ----------------------------------------------
-  // Each boundary edge is offset into the concrete by that face's nominal cover;
-  // void edges are offset away from the void, into the surrounding concrete.
+  // --- per-face cover envelope ---
   const coverLines: { x1: number; y1: number; x2: number; y2: number }[] = []
   const coverLabels: { x: number; y: number; text: string; bad: boolean }[] = []
   if (cover && showCover) {
-    const faceCover = (face: ReturnType<typeof faceFromNormal>, inner: boolean) =>
-      radialCoverOnly
-        ? radialCover(cover, inner ? 'inner' : 'outer')
-        : inner
-          ? innerCover(cover, face)
-          : outerCover(cover, face)
-
     const drawRing = (poly: { x: number; y: number }[], inner: boolean) => {
       if (poly.length < 3) return
       const ccw = signedArea(poly) >= 0
@@ -135,15 +134,14 @@ export function SectionPreview({
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i]
         const b = poly[(i + 1) % poly.length]
-        // unit normal into the region the polygon encloses (see cover.ts)
         const { x: nx, y: ny } = inboundNormal(a, b, ccw)
-        // `n` points into the region the polygon encloses — the concrete for the
-        // boundary, the hole for a void — which is the convention faceFromNormal
-        // (and therefore the cover audit) uses for both rings.
-        const face = faceFromNormal(nx, ny)
-        const c = faceCover(face, inner)
+        const legacyFace = faceFromNormal(nx, ny)
+        const c = radialCoverOnly
+          ? radialCover(cover, inner ? 'inner' : 'outer')
+          : inner
+            ? innerCover(cover, legacyFace)
+            : outerCover(cover, legacyFace)
         if (!(c > 0)) continue
-        // into the concrete: with the normal for the boundary, against it for a void
         const sx = inner ? -nx : nx
         const sy = inner ? -ny : ny
         coverLines.push({
@@ -152,18 +150,18 @@ export function SectionPreview({
           x2: X(b.x + sx * c),
           y2: Y(b.y + sy * c),
         })
-        const key = `${inner ? 'v' : 'o'}${face}`
-        if (!seen.has(key) && poly.length <= 12) {
+        const key = `${inner ? 'v' : 'o'}${i}`
+        if (!seen.has(key) && poly.length <= 16) {
           seen.add(key)
           const mx = (a.x + b.x) / 2
           const my = (a.y + b.y) / 2
           const short = audit
-            ? audit.bars.some((s) => !s.ok && s.surface === (inner ? 'inner' : 'outer') && s.face === face)
+            ? audit.bars.some((s) => !s.ok && s.surface === (inner ? 'inner' : 'outer') && s.faceIndex === i)
             : false
           coverLabels.push({
-            x: X(mx + sx * (c / 2) - 9),
-            y: Y(my + sy * (c / 2) + 3),
-            text: `${c}`,
+            x: X(mx + sx * (c / 2)),
+            y: Y(my + sy * (c / 2)),
+            text: `${c.toFixed(0)}`,
             bad: short,
           })
         }
@@ -171,8 +169,10 @@ export function SectionPreview({
     }
 
     drawRing(geometry.boundary, false)
-    for (const v of geometry.voids) drawRing(v, true)
+    for (let v = 0; v < geometry.voids.length; v++) drawRing(geometry.voids[v], true)
   }
+
+  const isRect = geometry.boundary.length === 4 && isAxisAlignedRect(geometry.boundary)
 
   return (
     <div>
@@ -199,10 +199,7 @@ export function SectionPreview({
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span
-            className={chipGroupCls}
-            title="Label font size"
-          >
+          <span className={chipGroupCls} title="Label font size">
             <button
               className="grid h-[18px] w-[19px] place-items-center rounded text-[10px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
               aria-label="Smaller labels"
@@ -262,6 +259,106 @@ export function SectionPreview({
         {geometry.voids.map((v, i) => (
           <polygon key={i} points={toPts(v)} className="fill-paper stroke-ink" strokeWidth="1.4" />
         ))}
+
+        {/* --- Interactive Face Highlight Lines --- */}
+        {geometry.boundary.map((p1, i) => {
+          const p2 = geometry.boundary[(i + 1) % geometry.boundary.length]
+          const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === i
+          const mx = (p1.x + p2.x) / 2
+          const my = (p1.y + p2.y) / 2
+          return (
+            <g key={`edge-outer-${i}`}>
+              <line
+                x1={X(p1.x)}
+                y1={Y(p1.y)}
+                x2={X(p2.x)}
+                y2={Y(p2.y)}
+                stroke="transparent"
+                strokeWidth="14"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => onHoverFace?.({ surface: 'outer', faceIndex: i })}
+                onMouseLeave={() => onHoverFace?.(null)}
+                onClick={() => onSelectFace?.({ surface: 'outer', faceIndex: i })}
+              />
+              {isActive && (
+                <line
+                  x1={X(p1.x)}
+                  y1={Y(p1.y)}
+                  x2={X(p2.x)}
+                  y2={Y(p2.y)}
+                  stroke="var(--color-accent)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
+              )}
+              {isActive && (
+                <text
+                  x={X(mx)}
+                  y={Y(my) - 6}
+                  fontSize="10"
+                  fontFamily={FONT}
+                  fontWeight="bold"
+                  fill="var(--color-accent)"
+                  textAnchor="middle"
+                >
+                  {isRect ? ['Bottom', 'Right', 'Top', 'Left'][i] : `Face ${i + 1}`}
+                </text>
+              )}
+            </g>
+          )
+        })}
+
+        {geometry.voids.map((vPoly, vIdx) =>
+          vPoly.map((p1, i) => {
+            const p2 = vPoly[(i + 1) % vPoly.length]
+            const isActive =
+              activeFace?.surface === 'inner' &&
+              activeFace?.faceIndex === i &&
+              (activeFace?.voidIndex ?? 0) === vIdx
+            const mx = (p1.x + p2.x) / 2
+            const my = (p1.y + p2.y) / 2
+            return (
+              <g key={`edge-inner-${vIdx}-${i}`}>
+                <line
+                  x1={X(p1.x)}
+                  y1={Y(p1.y)}
+                  x2={X(p2.x)}
+                  y2={Y(p2.y)}
+                  stroke="transparent"
+                  strokeWidth="14"
+                  style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => onHoverFace?.({ surface: 'inner', faceIndex: i, voidIndex: vIdx })}
+                  onMouseLeave={() => onHoverFace?.(null)}
+                  onClick={() => onSelectFace?.({ surface: 'inner', faceIndex: i, voidIndex: vIdx })}
+                />
+                {isActive && (
+                  <line
+                    x1={X(p1.x)}
+                    y1={Y(p1.y)}
+                    x2={X(p2.x)}
+                    y2={Y(p2.y)}
+                    stroke="var(--color-accent)"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                  />
+                )}
+                {isActive && (
+                  <text
+                    x={X(mx)}
+                    y={Y(my) - 6}
+                    fontSize="10"
+                    fontFamily={FONT}
+                    fontWeight="bold"
+                    fill="var(--color-accent)"
+                    textAnchor="middle"
+                  >
+                    {`Inner Face ${i + 1}`}
+                  </text>
+                )}
+              </g>
+            )
+          }),
+        )}
 
         {/* per-face nominal cover envelope */}
         {coverLines.length > 0 && (
@@ -359,7 +456,7 @@ export function SectionPreview({
               className="mt-[5px] h-0 w-4 shrink-0 border-t border-dashed border-ink-3"
             />
             <span>
-              Dashed envelope = nominal cover to the links, entered face by face: {formatCover(cover)}.{' '}
+              Dashed envelope = nominal cover to the links: {formatCover(cover, geometry)}.{' '}
               {audit && audit.nShort > 0 ? (
                 <span className="font-semibold text-bad">
                   {audit.nShort} bar(s) ringed in red are short of their face cover.

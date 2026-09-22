@@ -14,7 +14,7 @@ import { initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
-import { ClearCoverPanel } from './components/CoverPanel'
+import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, ResultsTable } from './components/Results'
 import { Banner, Card, EmptyState, Icon, STANDARD_BAR_DIAMETERS, btnCls, btnPrimaryCls } from './components/ui'
@@ -26,6 +26,7 @@ export default function App() {
   const [state, setState] = useState<AppState>(initialState)
   const [customizeBarDiameter, setCustomizeBarDiameter] = useState(false)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
+  const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -273,8 +274,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-full">
-      <header className="sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
         <div className={`${shell} flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5`}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span
@@ -375,7 +376,7 @@ export default function App() {
 
         {/* Status Notification Banner for Import Success / Error */}
         {(importError || importSuccess) && (
-          <div className={`${shell} pb-2`}>
+          <div className={`${shell} shrink-0 pb-2`}>
             {importError && (
               <Banner tone="error" onDismiss={() => setImportError(null)}>
                 {importError}
@@ -391,11 +392,17 @@ export default function App() {
       </header>
 
       <main
-        className={`${shell} grid grid-cols-1 items-start gap-3.5 py-4 lg:grid-cols-[minmax(0,392px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]`}
+        className={`${shell} flex-1 min-h-0 grid grid-cols-1 items-start gap-3.5 py-4 overflow-y-auto lg:grid-cols-[minmax(0,392px)_minmax(0,1fr)] lg:overflow-hidden 2xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]`}
       >
-        <div className="flex min-w-0 flex-col gap-3.5">
+        <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           <CodeMaterialsPanel state={state} update={update} />
-          <ClearCoverPanel state={state} update={update} audit={coverAudit} />
+          <ClearCoverPanel
+            state={state}
+            update={update}
+            audit={coverAudit}
+            activeFace={activeFace}
+            setActiveFace={setActiveFace}
+          />
           <SectionPanel
             state={state}
             update={update}
@@ -439,7 +446,7 @@ export default function App() {
           />
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3.5">
+        <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           {issues.length > 0 && (
             <Banner tone="error">
               <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
@@ -478,6 +485,9 @@ export default function App() {
                 cover={state.cover}
                 audit={coverAudit}
                 radialCoverOnly={state.shapeClass === 'circ'}
+                activeFace={activeFace}
+                onHoverFace={setActiveFace}
+                onSelectFace={setActiveFace}
               />
             </Card>
             <Card

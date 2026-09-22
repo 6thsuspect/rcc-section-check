@@ -253,6 +253,7 @@ export function InfoTooltip({ content }: { content: ReactNode }) {
 /* --------------------------------- fields -------------------------------- */
 
 export function NumField({
+  id,
   label,
   value,
   onChange,
@@ -264,6 +265,7 @@ export function NumField({
   hint,
   title,
 }: {
+  id?: string
   label: string
   value: number
   onChange: (v: number) => void
@@ -284,6 +286,7 @@ export function NumField({
       </span>
       <span className={`${fieldBoxCls} ${disabled ? 'bg-panel' : ''}`}>
         <input
+          id={id}
           type="number"
           disabled={disabled}
           className={fieldCls}

@@ -30,6 +30,16 @@ export interface Rebar {
   face?: RebarFace
   /** Additional faces for a corner bar (for example bottom + left). */
   faces?: RebarFace[]
+  /** Index of primary section face/edge (0..N-1) */
+  faceIndex?: number
+  /** Index of secondary section face/edge for corner bars */
+  secondaryFaceIndex?: number
+  /** Index of start face for line layout end-points */
+  startFaceIndex?: number
+  /** Index of end face for line layout end-points */
+  endFaceIndex?: number
+  /** Indices of faces for corner or multi-face bar */
+  faceIndices?: number[]
   /** Outer boundary or an internal void face. */
   surface?: RebarSurface
   /** Index of the void supplying an inner face, when applicable. */
