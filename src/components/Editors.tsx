@@ -22,6 +22,7 @@ import {
   SegButton,
   SegGroup,
   selectCls,
+  selectInlineCls,
   STANDARD_BAR_DIAMETERS,
   SubCard,
   tblCls,
@@ -232,7 +233,7 @@ export function SectionPanel({
           </span>
           {state.geometry.voids.length > 0 && (
             <select
-              className={`${selectCls} h-[26px] w-auto py-0 text-[11.5px]`}
+              className={selectInlineCls}
               value={loop}
               disabled={frozen}
               onChange={(e) => setLoop(Number(e.target.value))}
@@ -260,7 +261,7 @@ export function SectionPanel({
               {poly.map((p, i) => (
                 <tr key={i} className="border-t border-line transition-colors duration-150 hover:bg-panel/60">
                   <td className={`${tdCls} font-mono text-[11px] text-ink-3`}>{i + 1}</td>
-                  <td className={`${tdCls} w-[1fr]`}>
+                  <td className={tdCls}>
                     <input
                       className={cellCls}
                       type="number"

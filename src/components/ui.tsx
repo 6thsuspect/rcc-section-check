@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type ReactNode, type PointerEvent } from '
 
 /** Compact input used inside data tables. */
 export const cellCls =
-  'w-full min-w-0 rounded-field border border-edge bg-card px-1.5 py-[3px] text-[12.5px] tnum text-ink ' +
+  'cell-num w-full min-w-0 rounded-field border border-edge bg-card px-1.5 py-[3px] text-[12.5px] tnum text-ink ' +
   'transition-[border-color,background-color,box-shadow] duration-150 ease-ui hover:border-edge-strong ' +
   'focus:border-accent focus:ring-[3px] focus:ring-accent/12'
 
@@ -28,6 +28,11 @@ export const fieldBoxCls =
 /** Dropdown — `sel` supplies the chevron (see index.css). */
 export const selectCls =
   'sel w-full min-w-0 rounded-field border border-edge bg-card px-2 py-[5px] text-[13px] text-ink ' +
+  'transition-[border-color,box-shadow] duration-150 ease-ui hover:border-edge-strong focus:border-accent'
+
+/** Inline dropdown that sizes to its content, for toolbars and row labels. */
+export const selectInlineCls =
+  'sel h-[26px] max-w-full shrink-0 rounded-field border border-edge bg-card pl-2 pr-6 text-[11.5px] text-ink ' +
   'transition-[border-color,box-shadow] duration-150 ease-ui hover:border-edge-strong focus:border-accent'
 
 /** Secondary action: outlined, quiet. */
