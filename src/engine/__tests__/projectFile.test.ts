@@ -49,7 +49,35 @@ describe('parseProjectFile', () => {
     expect(parsed.geometry.boundary.length).toBe(3)
     expect(parsed.bars.length).toBe(1)
     expect(parsed.cases.length).toBe(1)
-    expect(parsed.cover).toBe(40) // fallback default
+    // v1.0 files have no cover spec at all → uniform default on every face
+    expect(parsed.cover).toEqual(initialState().cover)
+    expect(parsed.cover.outer.bottom).toBe(40)
+  })
+
+  it('migrates a v1.0 single-value cover onto every face', () => {
+    const legacy = JSON.stringify({
+      version: '1.0',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 500 }, { x: 0, y: 500 }], voids: [] },
+        bars: [{ x: 40, y: 40, dia: 20 }],
+        cases: [],
+        cover: 50,
+      },
+    })
+    const parsed = parseProjectFile(legacy)
+    expect(parsed.cover.outer).toEqual({ bottom: 50, right: 50, top: 50, left: 50 })
+    expect(parsed.cover.inner.bottom).toBeNull()
+  })
+
+  it('round-trips independently entered face covers', () => {
+    const st = initialState()
+    st.cover = {
+      outer: { bottom: 45, right: 40, top: 60, left: 75 },
+      inner: { bottom: null, right: 30, top: null, left: null },
+    }
+    const json = JSON.stringify({ version: '1.1', app: 'RCC Section Check', exportedAt: '', state: st })
+    const parsed = parseProjectFile(json)
+    expect(parsed.cover).toEqual(st.cover)
   })
 
   it('throws error for invalid JSON or missing geometry', () => {

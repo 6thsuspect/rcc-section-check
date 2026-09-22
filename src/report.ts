@@ -5,6 +5,13 @@ import type {
   SectionProperties,
 } from './engine/types'
 import type { CodeSpec, SteelGradeSpec } from './engine/codes'
+import {
+  COVER_FACES,
+  FACE_LABELS,
+  hasInnerOverrides,
+  innerCover,
+  outerCover,
+} from './engine/cover'
 import { contourAtP, pmCurve } from './engine/surface'
 import type { AppState } from './state'
 
@@ -18,6 +25,27 @@ const f = (v: number, d = 1) =>
   Number.isFinite(v) ? v.toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/**
+ * Cover row of the report's input table: the nominal cover entered for each
+ * concrete face, plus the void-face values where they differ.
+ */
+function reportCoverCell(state: AppState): string {
+  const lines = [
+    `outer faces: ${COVER_FACES.map((fc) => `${FACE_LABELS[fc].toLowerCase()} ${trimNum(outerCover(state.cover, fc))} mm`).join(' · ')}`,
+    `links ⌀${trimNum(state.tieDia)} mm, so bars are set back by cover + ⌀tie + ⌀bar/2 from the face they lie against`,
+  ]
+  if (hasInnerOverrides(state.cover)) {
+    lines.push(
+      `void faces: ${COVER_FACES.map((fc) => `${FACE_LABELS[fc].toLowerCase()} ${trimNum(innerCover(state.cover, fc))} mm`).join(' · ')}`,
+    )
+  } else if (state.geometry.voids.length > 0) {
+    lines.push('void faces: same as the matching outer face')
+  }
+  return `${lines[0]}${lines.slice(1).map((l) => `<br><span class="small">${l}</span>`).join('')}`
+}
+
+const trimNum = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
 
 export interface ReportContext {
   state: AppState
@@ -172,7 +200,7 @@ export function exportReport(ctx: ReportContext): void {
     <table class="calc">
       <tr><td>Concrete grade</td><td>M${state.fck} (f<sub>ck</sub> = ${state.fck} N/mm², 28-day cube)</td></tr>
       <tr><td>Steel grade</td><td>${esc(grade.label)} (f<sub>y</sub> = ${grade.fy} N/mm², IS 1786)</td></tr>
-      <tr><td>Clear cover / tie ⌀</td><td>${state.cover} mm / ${state.tieDia} mm</td></tr>
+      <tr><td>Nominal clear cover</td><td>${reportCoverCell(state)}</td></tr>
       <tr><td>Unsupported length</td><td>${state.memberLength > 0 ? `${f(state.memberLength, 0)} mm` : 'not provided'}</td></tr>
       <tr><td>Partial factors</td><td>γ<sub>c</sub> = ${spec.gammaC}, γ<sub>s</sub> = ${spec.gammaS}</td></tr>
     </table>

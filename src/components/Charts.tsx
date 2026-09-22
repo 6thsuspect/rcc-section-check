@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CaseResult, InteractionSurface, LoadCase } from '../engine/types'
 import { contourAtP, pmCurve } from '../engine/surface'
-import { niceTicks, ZoomableSvg } from './ui'
+import { EmptyState, niceTicks, ZoomableSvg } from './ui'
 import { fmtN } from '../state'
 
 const FONT = "Bahnschrift, 'Avenir Next', 'Segoe UI', sans-serif"
@@ -109,7 +109,7 @@ export function PMChart({
         )}
       </ZoomableSvg>
       {hover && (
-        <div className="absolute top-1 left-2 bg-card border border-edge rounded px-2 py-1 text-[11px] tnum text-ink-2 pointer-events-none">
+        <div className="pointer-events-none absolute left-2 top-2 rounded-md border border-edge bg-card/95 px-2 py-1 text-[11px] text-ink-2 tnum shadow-card backdrop-blur-sm">
           P = {fmtN(hover.P, 0)} kN → MRd = {fmtN(hover.M, 0)} kN·m
         </div>
       )}
@@ -136,8 +136,23 @@ export function ContourChart({
     () => (lc && P <= surface.Puz && P >= surface.Pt ? contourAtP(surface, P) : null),
     [surface, lc, P],
   )
-  if (!lc) return <div className="text-sm text-ink-3 p-4">Select a load case to draw its Mx–My contour.</div>
-  if (!contour) return <div className="text-sm text-bad p-4">Axial load outside the section's axial range — no moment contour exists at P = {lc.Pu} kN.</div>
+  if (!lc)
+    return (
+      <EmptyState
+        icon="cursor"
+        title="Select a load case to draw its Mx–My contour."
+        note="Use the case picker in the load-case table or the capacity check table."
+      />
+    )
+  if (!contour)
+    return (
+      <EmptyState
+        tone="alert"
+        icon="alert"
+        title={`Axial load outside the section's axial range — no moment contour exists at P = ${lc.Pu} kN.`}
+        note="Reduce |Pu| in this case, or increase the section and reinforcement."
+      />
+    )
 
   const Mext = Math.max(
     1,

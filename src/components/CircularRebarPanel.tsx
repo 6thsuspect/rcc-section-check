@@ -12,14 +12,23 @@ import {
   type CircularLayerDef,
   type CircularRebarConfig,
 } from '../engine/circularRebar'
-import { Card, DiameterField, NumField } from './ui'
-
-const cellCls =
-  'w-full border border-edge rounded px-1.5 py-0.5 text-[12.5px] tnum bg-card focus:outline-none focus:border-accent'
-const btnCls =
-  'font-display text-[11px] font-semibold tracking-wide uppercase border border-edge-strong rounded px-2 py-1 text-ink-2 hover:border-accent hover:text-accent'
-const btnPrimaryCls =
-  'font-display text-[11px] font-semibold tracking-wide uppercase border border-accent bg-accent-wash text-accent-strong rounded px-2.5 py-1 hover:bg-accent/20'
+import {
+  Banner,
+  btnCls,
+  btnPrimaryCls,
+  cellCls,
+  Card,
+  Check,
+  DiameterField,
+  fieldBoxCls,
+  fieldCls,
+  Icon,
+  NumField,
+  Readout,
+  rowDelCls,
+  SubCard,
+  noteSmCls,
+} from './ui'
 
 const KINDS: CircularArrangementKind[] = ['uniform', 'alternate', 'bundle', 'triple', 'layered']
 
@@ -212,12 +221,11 @@ export function CircularRebarPanel({
     <Card
       title={
         <span className="flex items-center gap-1.5">
+          <Icon name="target" size={13} className="text-ink-3" />
           <span>Circular reinforcement</span>
-          <span className="font-mono normal-case tracking-normal text-[10px] text-ink-3 font-normal">
-            {ARRANGEMENT_LABELS[cfg.kind]} · {result.bars.length} bars
-          </span>
         </span>
       }
+      subtitle={`${ARRANGEMENT_LABELS[cfg.kind]} · ${result.bars.length} bars`}
       action={
         <button
           type="button"
@@ -228,7 +236,8 @@ export function CircularRebarPanel({
           }}
           title="Write generated bars into the reinforcement table"
         >
-          Apply layout
+          <Icon name="check" size={12} />
+          <span>Apply layout</span>
         </button>
       }
     >
@@ -239,10 +248,11 @@ export function CircularRebarPanel({
             <button
               key={k}
               type="button"
-              className={`font-display text-[11px] font-semibold rounded border px-1.5 py-1 ${
+              aria-pressed={cfg.kind === k}
+              className={`rounded-field border px-2 py-[5px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
                 cfg.kind === k
-                  ? 'border-accent bg-accent-wash text-accent-strong'
-                  : 'border-edge text-ink-2 hover:border-edge-strong'
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+                  : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
               }`}
               onClick={() => setKind(k)}
             >
@@ -251,13 +261,8 @@ export function CircularRebarPanel({
           ))}
         </div>
 
-        <p className="text-[11px] text-ink-3 leading-relaxed -mt-1">
-          Pitch radius ≈ {outerPitch.toFixed(0)} mm (D/2 − cover − tie − ⌀/2). Generated bars fill the X, Y, Bar Dia
-          table and remain individually editable.
-        </p>
-
         {/* Shared + kind-specific inputs */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
           {(cfg.kind === 'uniform' ||
             cfg.kind === 'alternate' ||
             cfg.kind === 'bundle' ||
@@ -340,14 +345,14 @@ export function CircularRebarPanel({
                 step={5}
                 onChange={(v) => patch({ startAngleDeg: v })}
               />
-              <label className="flex flex-col gap-0.5">
-                <span className="text-[11px] text-ink-3 font-display tracking-wide">
+              <label className="flex min-w-0 flex-col gap-[3px]">
+                <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                   Angular spacing (blank = equal)
                 </span>
-                <span className="flex items-center gap-1">
+                <span className={fieldBoxCls}>
                   <input
                     type="number"
-                    className={cellCls + ' py-1 px-2 text-[13px]'}
+                    className={fieldCls}
                     value={cfg.angularSpacingDeg ?? ''}
                     placeholder="auto"
                     step={5}
@@ -358,7 +363,9 @@ export function CircularRebarPanel({
                       else patch({ angularSpacingDeg: parseFloat(t) || null })
                     }}
                   />
-                  <span className="text-[11px] text-ink-3 shrink-0">°</span>
+                  <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                    °
+                  </span>
                 </span>
               </label>
             </>
@@ -366,23 +373,42 @@ export function CircularRebarPanel({
         </div>
 
         {/* Layered editor */}
+        <div className="grid grid-cols-2 gap-1.5">
+          <Readout
+            label="Pitch radius"
+            value={`${outerPitch.toFixed(0)} mm`}
+            title="R − cover − ⌀tie − ⌀bar/2, from the per-face cover in the cover panel"
+          />
+          <Readout label="Bars generated" value={`${result.bars.length}`} />
+        </div>
+        <p className={`${noteSmCls} -mt-0.5`}>
+          Pitch radius = R − cover − ⌀tie − ⌀bar/2, using the governing face cover from the cover panel. Generated
+          bars fill the reinforcement table and stay individually editable.
+        </p>
+
         {cfg.kind === 'layered' && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-ink-3 font-display tracking-wide uppercase">
-                Layers ({cfg.layers.length})
-              </span>
+          <SubCard
+            title={`Layers (${cfg.layers.length})`}
+            action={
               <button type="button" className={btnCls} onClick={addLayer}>
-                + Add layer
+                <Icon name="plus" size={12} />
+                <span>Add layer</span>
               </button>
-            </div>
-            <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+            }
+          >
+            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
               {cfg.layers.map((layer, idx) => (
-                <div key={layer.id} className="border border-edge rounded p-2 bg-panel/40">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-ink-2">
+                <div
+                  key={layer.id}
+                  className="rounded-lg border border-line bg-card p-2 transition-shadow duration-150 ease-ui hover:shadow-card"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+                      <span className="grid h-[15px] w-[15px] place-items-center rounded bg-panel text-[9px] text-ink-3">
+                        {idx + 1}
+                      </span>
                       Layer {idx + 1}
-                      <span className="ml-1.5 font-mono normal-case tracking-normal text-ink-3 font-normal">
+                      <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-ink-3">
                         {layer.radius != null
                           ? `r = ${layer.radius.toFixed(0)} mm`
                           : `r ≈ auto (${Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25))).toFixed(0)} mm)`}
@@ -390,20 +416,22 @@ export function CircularRebarPanel({
                     </span>
                     <button
                       type="button"
-                      className="text-bad text-[12px] disabled:opacity-30"
+                      className={rowDelCls}
                       disabled={cfg.layers.length <= 1}
                       title="Remove layer"
                       onClick={() => removeLayer(layer.id)}
                     >
-                      × remove
+                      <Icon name="close" size={11} />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-[10.5px] text-ink-3 font-display tracking-wide">Radius (mm)</span>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
+                    <label className="flex min-w-0 flex-col gap-[3px]">
+                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                        Radius (mm)
+                      </span>
                       <input
                         type="number"
-                        className={cellCls}
+                        className={`${cellCls} px-2 py-[5px] text-[13px]`}
                         value={layer.radius ?? ''}
                         placeholder="auto"
                         step={5}
@@ -436,14 +464,14 @@ export function CircularRebarPanel({
                       step={5}
                       onChange={(v) => updateLayer(layer.id, { startAngleDeg: v })}
                     />
-                    <label className="flex flex-col gap-0.5">
-                      <span className="text-[10.5px] text-ink-3 font-display tracking-wide">
+                    <label className="flex min-w-0 flex-col gap-[3px]">
+                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                         Angular spacing
                       </span>
-                      <span className="flex items-center gap-1">
+                      <span className={fieldBoxCls}>
                         <input
                           type="number"
-                          className={cellCls}
+                          className={fieldCls}
                           value={layer.angularSpacingDeg ?? ''}
                           placeholder="auto"
                           step={5}
@@ -455,38 +483,37 @@ export function CircularRebarPanel({
                             })
                           }}
                         />
-                        <span className="text-[11px] text-ink-3 shrink-0">°</span>
+                        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                          °
+                        </span>
                       </span>
                     </label>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          </SubCard>
         )}
 
         {/* Warnings + apply controls */}
         {result.warnings.length > 0 && (
-          <div className="bg-warn2/10 border border-warn2/40 rounded px-2.5 py-1.5 text-[11.5px] text-warn2">
-            <b className="font-display text-[10px] uppercase tracking-wider">Layout warnings</b>
-            <ul className="mt-0.5 list-disc pl-4">
+          <Banner tone="warn">
+            <b className="font-display text-[10px] uppercase tracking-[0.07em]">Layout warnings</b>
+            <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
               {result.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
-          </div>
+          </Banner>
         )}
 
-        <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-          <label className="flex items-center gap-1.5 text-[12px] text-ink-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="accent-accent"
-              checked={autoApply}
-              onChange={(e) => setAutoApply(e.target.checked)}
-            />
-            Live-update bar table
-          </label>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
+          <Check
+            checked={autoApply}
+            onChange={setAutoApply}
+            label="Live-update bar table"
+            title="Keep the reinforcement table in sync with these settings"
+          />
           <div className="flex items-center gap-2">
             {!autoApply && (
               <button
@@ -497,10 +524,11 @@ export function CircularRebarPanel({
                   applyBars(result.bars)
                 }}
               >
-                Apply to table
+                <Icon name="check" size={12} />
+                <span>Apply to table</span>
               </button>
             )}
-            <span className="text-[11px] text-ink-3 tnum font-mono">
+            <span className="font-mono text-[11px] text-ink-3 tnum">
               {result.bars.length} bar{result.bars.length === 1 ? '' : 's'}
               {lastApplied > 0 && autoApply ? ' · synced' : ''}
             </span>

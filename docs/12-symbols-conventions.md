@@ -36,4 +36,5 @@ strains dimensionless.
 | `εcu`, `εc2` | Ultimate and plateau compressive strains of concrete | — |
 | `xu` | Neutral-axis depth from the most compressed fibre | mm |
 | `emin` | Minimum eccentricity | mm |
+| `cnom` / `cnom(face)` | Nominal clear cover to the outside of the links — one value per concrete face (bottom / right / top / left, outer and void) | mm |
 | `U` | Utilisation ratio (demand / capacity), §5.5 | — |

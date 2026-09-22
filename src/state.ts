@@ -1,6 +1,7 @@
 import type { DesignCodeId, LoadCase, Rebar, SectionGeometry, MeshSettings } from './engine/types'
 import { DEFAULT_MESH } from './engine/types'
 import { defaultPredefined, generateSection, type PredefinedSection } from './engine/sections'
+import { uniformCover, type CoverSpec } from './engine/cover'
 
 export interface AppState {
   code: DesignCodeId
@@ -11,7 +12,8 @@ export interface AppState {
   shapeClass: 'rect' | 'circ'
   fck: number
   steelGrade: string
-  cover: number
+  /** Nominal clear cover to the links, entered per concrete face (docs/03 §3.6). */
+  cover: CoverSpec
   tieDia: number
   barDia: number
   /** Unsupported length, mm (0 = not provided). */
@@ -25,13 +27,17 @@ export function newCaseId(): string {
   return `lc-${caseSeq++}-${Date.now() % 100000}`
 }
 
+export const DEFAULT_TIE_DIA = 8
+export const DEFAULT_BAR_DIA = 25
+
 export function initialState(): AppState {
   const def = defaultPredefined('rect')
   if (def.kind === 'rect') {
     def.nx = 4
     def.ny = 2
   }
-  const gen = generateSection(def, { cover: 40, tieDia: 8, barDia: 25 })
+  const cover = uniformCover(40)
+  const gen = generateSection(def, { cover, tieDia: DEFAULT_TIE_DIA, barDia: DEFAULT_BAR_DIA })
   return {
     code: 'IS456',
     geometry: gen.geometry,
@@ -40,9 +46,9 @@ export function initialState(): AppState {
     shapeClass: gen.shapeClass,
     fck: 30,
     steelGrade: 'Fe500',
-    cover: 40,
-    tieDia: 8,
-    barDia: 25,
+    cover,
+    tieDia: DEFAULT_TIE_DIA,
+    barDia: DEFAULT_BAR_DIA,
     memberLength: 3200,
     cases: [
       { id: newCaseId(), name: 'LC1', Pu: 2500, Mux: 180, Muy: 100 },

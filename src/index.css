@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   Design tokens. The colour values below are mirrored by the print
+   stylesheet in src/report.ts (`.fill-*` / `.stroke-*` classes used
+   inside the SVG figures), so changing one here means changing it
+   there too.
+------------------------------------------------------------------ */
 @theme {
   --font-display: "Bahnschrift", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-body: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -26,23 +32,74 @@
   --color-bad: #b93434;
   --color-warn2: #8a5a00;
   --color-concrete: #e9eef3;
+
+  /* surfaces added for layering (not used inside the SVG figures) */
+  --color-canvas: #eaeef3;
+  --color-line: #e8edf2;
+
+  --radius-card: 10px;
+  --radius-field: 6px;
+
+  --shadow-card: 0 1px 1px rgb(23 34 44 / 0.03), 0 1px 3px rgb(23 34 44 / 0.05);
+  --shadow-pop: 0 2px 6px -2px rgb(23 34 44 / 0.12), 0 10px 24px -8px rgb(23 34 44 / 0.2);
+  --shadow-rowmark: inset 2px 0 0 0 var(--color-accent);
+
+  --ease-ui: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
 }
 
 body {
-  background: var(--color-paper);
+  /* faint drafting grid over the canvas, so the white cards read as sheets */
+  background-color: var(--color-canvas);
+  background-image:
+    linear-gradient(to right, rgb(23 34 44 / 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(23 34 44 / 0.028) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-body);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color-scheme: light;
 }
 
-/* numeric alignment in tables */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.005em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+/* keyboard focus: one consistent, visible ring on interactive elements */
+:where(button, a, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+:where(input[type="checkbox"], input[type="radio"]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* numeric alignment in tables and readouts */
 .tnum {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
+/* native number spinners off — units are shown explicitly by the fields */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -51,4 +108,83 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* selects: own chevron so all dropdowns read the same */
+.sel {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23485866' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 11px;
+  padding-right: 21px;
+  cursor: pointer;
+}
+
+/* colour swatch input, trimmed to the app's geometry */
+input[type="color"] {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  background: none;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+/* numeric table cells: drop the number spinner so digits keep the column width
+ * instead of shifting when Chrome reveals the stepper on hover or focus */
+input.cell-num::-webkit-outer-spin-button,
+input.cell-num::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+input.cell-num {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* scrollbars kept quiet and in-palette */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-edge-strong);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-3);
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
 }
