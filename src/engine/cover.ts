@@ -4,40 +4,15 @@
  * Cover is nominal cover to the outermost steel — i.e. to the links/ties (IS 456
  * Cl 26.4.2.1 & Table 16; IRC 112 Cl 14.3.2.1 & Table 14.2, which measures cover
  * "to the nearest reinforcement including links"; IRS CBC Cl 15.9.2.1/2).
- *
- * Four outer faces carry their own value, named after the face of the section
- * bounding box they sit on:
- *
- *                    top      (+Y face)
- *            left  ┌────────────┐  right
- *                    └────────────┘
- *                    bottom   (−Y face)
- *
- *   bottom → face at min y (soffit)      left  → face at min x
- *   top    → face at max y               right → face at max x
- *
- * Internal (void) faces — the cell walls of a box pier, the soffit of a voided
- * deck, the inner ring of a hollow circle — can be given their own values; any
- * face left unset inherits the outer face of the same orientation.  A void-face
- * key names the void face itself: `inner.bottom` is the bottom face of the void,
- * which is lined by the bars hanging below it in the bottom slab, and likewise for
- * top / left / right.
- *
- * Bar placement for the predefined shapes sets every bar back from the concrete
- * face it lies against by
- *
- *   offset(face) = cover(face) + ⌀tie + ⌀bar/2
- *
- * so the achieved cover to the links equals the value entered for that face.
- * Circular sections are radially symmetric: the governing (largest) face value
- * of the ring is used, which keeps every face at or above its required cover.
  */
 
 import type { Point, Rebar, SectionGeometry } from './types'
-import { centroid, pointInPolygon } from './geometry'
+import type { PredefinedSection } from './sections'
+import { centroid, pointInPolygon, signedArea } from './geometry'
 
 export type CoverFace = 'bottom' | 'right' | 'top' | 'left'
 export type CoverSurface = 'outer' | 'inner'
+export type SectionCoverType = 'rectangular' | 'polygon' | 'circle' | 'hollow-polygon' | 'hollow-circle'
 
 export const COVER_FACES: CoverFace[] = ['bottom', 'right', 'top', 'left']
 
@@ -56,6 +31,14 @@ export const FACE_HINTS: Record<CoverFace, string> = {
   left: '−X face',
 }
 
+export interface FaceCover {
+  id: string
+  boundary: 'outer' | 'inner'
+  faceIndex: number
+  voidIndex?: number
+  cover: number
+}
+
 export interface CoverSpec {
   /** Nominal cover to the links at each of the four outer faces, mm. */
   outer: Record<CoverFace, number>
@@ -64,12 +47,17 @@ export interface CoverSpec {
    * of the same orientation. Ignored by sections without voids.
    */
   inner: Record<CoverFace, number | null>
+
+  type?: SectionCoverType
+  outerFaces?: FaceCover[]
+  innerFaces?: FaceCover[]
+  uniformOuterCover?: number
+  uniformInnerCover?: number
 }
 
 /**
  * Base slack on the achieved-cover audit, mm: guards the 0.01 mm rounding of
- * generated bar coordinates.  `auditCovers` widens it automatically for
- * polygonised curves (see `polygonTolerance`).
+ * generated bar coordinates.
  */
 export const COVER_TOL = 1
 
@@ -82,49 +70,269 @@ export function uniformCover(v = 40): CoverSpec {
 
 export const DEFAULT_COVER = uniformCover(40)
 
+export function isAxisAlignedRect(poly: Point[]): boolean {
+  if (poly.length !== 4) return false
+  for (let i = 0; i < 4; i++) {
+    const a = poly[i]
+    const b = poly[(i + 1) % 4]
+    const dx = Math.abs(b.x - a.x)
+    const dy = Math.abs(b.y - a.y)
+    if (dx > 1e-4 && dy > 1e-4) return false
+  }
+  return true
+}
+
+export function detectSectionType(
+  geometry?: SectionGeometry | null,
+  predefined?: PredefinedSection | null,
+  shapeClass?: string,
+): SectionCoverType {
+  if (predefined?.kind === 'circle' || (predefined === null && shapeClass === 'circ' && (!geometry || geometry.voids.length === 0))) {
+    return 'circle'
+  }
+  if (predefined?.kind === 'hollowCircle' || (predefined === null && shapeClass === 'circ' && geometry && geometry.voids.length > 0)) {
+    return 'hollow-circle'
+  }
+
+  const isHollow = geometry ? geometry.voids.length > 0 : false
+  const isRect = predefined?.kind === 'rect' || (geometry && geometry.boundary.length === 4 && isAxisAlignedRect(geometry.boundary))
+
+  if (isRect && !isHollow) {
+    return 'rectangular'
+  }
+  if (isHollow) {
+    return 'hollow-polygon'
+  }
+  return 'polygon'
+}
+
 export function isUniformCover(c: CoverSpec): boolean {
   const v = c.outer.bottom
   return COVER_FACES.every((f) => c.outer[f] === v) && !hasInnerOverrides(c)
 }
 
 export function hasInnerOverrides(c: CoverSpec): boolean {
+  if (c.innerFaces?.some((f) => f.cover != null)) return true
+  if (c.uniformInnerCover != null) return true
   return COVER_FACES.some((f) => c.inner[f] != null)
 }
 
 /** Cover required at an outer face, mm. */
 export function outerCover(c: CoverSpec, face: CoverFace): number {
-  return Math.max(0, c.outer[face] || 0)
+  return Math.max(0, c.outer[face] ?? c.uniformOuterCover ?? 0)
 }
 
 /** Cover required at an internal (void) face, mm — falls back to the outer face. */
 export function innerCover(c: CoverSpec, face: CoverFace): number {
   const v = c.inner[face]
-  return v == null ? outerCover(c, face) : Math.max(0, v)
+  if (v != null) return Math.max(0, v)
+  if (c.uniformInnerCover != null) return Math.max(0, c.uniformInnerCover)
+  return outerCover(c, face)
 }
 
 export function coverAt(c: CoverSpec, face: CoverFace, surface: CoverSurface): number {
   return surface === 'inner' ? innerCover(c, face) : outerCover(c, face)
 }
 
-/**
- * Radial cover for a ring of bars in a circular section: the governing
- * (largest) face value, so no face ends up below its required cover.
- */
+export function getCoverForFace(
+  c: CoverSpec,
+  surface: CoverSurface,
+  faceIndex: number,
+  voidIndex = 0,
+  geometry?: SectionGeometry,
+): number {
+  if (surface === 'outer') {
+    if (c.uniformOuterCover != null && (c.type === 'circle' || c.type === 'hollow-circle')) {
+      return Math.max(0, c.uniformOuterCover)
+    }
+    if (c.outerFaces && c.outerFaces[faceIndex] !== undefined) {
+      return Math.max(0, c.outerFaces[faceIndex].cover)
+    }
+    if (geometry && geometry.boundary.length === 4 && isAxisAlignedRect(geometry.boundary)) {
+      const faces: CoverFace[] = ['bottom', 'right', 'top', 'left']
+      const f = faces[faceIndex % 4]
+      return outerCover(c, f)
+    }
+    if (geometry && geometry.boundary.length > 0) {
+      const poly = geometry.boundary
+      const a = poly[faceIndex % poly.length]
+      const b = poly[(faceIndex + 1) % poly.length]
+      if (a && b) {
+        const ccw = signedArea(poly) >= 0
+        const inNorm = inboundNormal(a, b, ccw)
+        const f = faceFromNormal(inNorm.x, inNorm.y)
+        return outerCover(c, f)
+      }
+    }
+    return outerCover(c, 'bottom')
+  } else {
+    if (c.uniformInnerCover != null && c.type === 'hollow-circle') {
+      return Math.max(0, c.uniformInnerCover)
+    }
+    if (c.innerFaces) {
+      const found = c.innerFaces.find(
+        (f) => f.faceIndex === faceIndex && (f.voidIndex === undefined || f.voidIndex === voidIndex),
+      )
+      if (found && found.cover != null) return Math.max(0, found.cover)
+    }
+    if (geometry && geometry.voids[voidIndex] && geometry.voids[voidIndex].length === 4) {
+      const faces: CoverFace[] = ['bottom', 'right', 'top', 'left']
+      const f = faces[faceIndex % 4]
+      return innerCover(c, f)
+    }
+    if (geometry && geometry.voids[voidIndex]) {
+      const poly = geometry.voids[voidIndex]
+      const a = poly[faceIndex % poly.length]
+      const b = poly[(faceIndex + 1) % poly.length]
+      if (a && b) {
+        const ccw = signedArea(poly) >= 0
+        const inNorm = inboundNormal(a, b, ccw)
+        const f = faceFromNormal(inNorm.x, inNorm.y)
+        return innerCover(c, f)
+      }
+    }
+    return innerCover(c, 'bottom')
+  }
+}
+
+export function setOuterFaceCover(
+  c: CoverSpec,
+  faceIndex: number,
+  value: number,
+  geometry?: SectionGeometry,
+): CoverSpec {
+  const val = Math.max(0, value)
+  const n = geometry?.boundary.length ?? 4
+  const existingFaces = c.outerFaces ? [...c.outerFaces] : []
+
+  while (existingFaces.length < n) {
+    const idx = existingFaces.length
+    const fallback = getCoverForFace(c, 'outer', idx, 0, geometry)
+    existingFaces.push({ id: `outer-${idx}`, boundary: 'outer', faceIndex: idx, cover: fallback })
+  }
+
+  existingFaces[faceIndex] = {
+    id: `outer-${faceIndex}`,
+    boundary: 'outer',
+    faceIndex: faceIndex,
+    cover: val,
+  }
+
+  const nextOuter = { ...c.outer }
+  if (n === 4) {
+    const faces: CoverFace[] = ['bottom', 'right', 'top', 'left']
+    if (faces[faceIndex]) nextOuter[faces[faceIndex]] = val
+  } else {
+    if (faceIndex === 0) nextOuter.bottom = val
+    if (faceIndex === 1) nextOuter.right = val
+    if (faceIndex === 2) nextOuter.top = val
+    if (faceIndex === 3) nextOuter.left = val
+  }
+
+  return {
+    ...c,
+    outer: nextOuter,
+    outerFaces: existingFaces,
+    uniformOuterCover: existingFaces.every((f) => f.cover === val) ? val : undefined,
+  }
+}
+
+export function setInnerFaceCover(
+  c: CoverSpec,
+  faceIndex: number,
+  value: number | null,
+  voidIndex = 0,
+  geometry?: SectionGeometry,
+): CoverSpec {
+  const val = value == null ? null : Math.max(0, value)
+  const vPoly = geometry?.voids[voidIndex]
+  const m = vPoly ? vPoly.length : 4
+  const existingFaces = c.innerFaces ? [...c.innerFaces] : []
+
+  while (existingFaces.length < m) {
+    const idx = existingFaces.length
+    const fallback = getCoverForFace(c, 'inner', idx, voidIndex, geometry)
+    existingFaces.push({ id: `inner-${idx}`, boundary: 'inner', faceIndex: idx, voidIndex, cover: fallback })
+  }
+
+  const existingIdx = existingFaces.findIndex(
+    (f) => f.faceIndex === faceIndex && (f.voidIndex === undefined || f.voidIndex === voidIndex),
+  )
+
+  if (val == null) {
+    if (existingIdx >= 0) existingFaces.splice(existingIdx, 1)
+  } else {
+    const item: FaceCover = { id: `inner-${voidIndex}-${faceIndex}`, boundary: 'inner', faceIndex, voidIndex, cover: val }
+    if (existingIdx >= 0) existingFaces[existingIdx] = item
+    else existingFaces.push(item)
+  }
+
+  const nextInner = { ...c.inner }
+  if (m === 4 && val != null) {
+    const faces: CoverFace[] = ['bottom', 'right', 'top', 'left']
+    if (faces[faceIndex]) nextInner[faces[faceIndex]] = val
+  }
+
+  return {
+    ...c,
+    inner: nextInner,
+    innerFaces: existingFaces,
+  }
+}
+
+export function setUniformOuterCover(c: CoverSpec, value: number, geometry?: SectionGeometry): CoverSpec {
+  const val = Math.max(0, value)
+  const n = geometry?.boundary.length ?? 4
+  const outerFaces: FaceCover[] = []
+  for (let i = 0; i < n; i++) {
+    outerFaces.push({ id: `outer-${i}`, boundary: 'outer', faceIndex: i, cover: val })
+  }
+  return {
+    ...c,
+    outer: { bottom: val, right: val, top: val, left: val },
+    outerFaces,
+    uniformOuterCover: val,
+  }
+}
+
+export function setUniformInnerCover(c: CoverSpec, value: number, geometry?: SectionGeometry): CoverSpec {
+  const val = Math.max(0, value)
+  const innerFaces: FaceCover[] = []
+  if (geometry) {
+    geometry.voids.forEach((v, vIdx) => {
+      v.forEach((_, i) => {
+        innerFaces.push({ id: `inner-${vIdx}-${i}`, boundary: 'inner', faceIndex: i, voidIndex: vIdx, cover: val })
+      })
+    })
+  }
+  return {
+    ...c,
+    inner: { bottom: val, right: val, top: val, left: val },
+    innerFaces,
+    uniformInnerCover: val,
+  }
+}
+
 export function radialCover(c: CoverSpec, surface: CoverSurface = 'outer'): number {
+  if (surface === 'outer' && c.uniformOuterCover != null) return c.uniformOuterCover
+  if (surface === 'inner' && c.uniformInnerCover != null) return c.uniformInnerCover
+  if (surface === 'outer' && c.outerFaces?.length) {
+    return Math.max(...c.outerFaces.map((f) => f.cover))
+  }
+  if (surface === 'inner' && c.innerFaces?.length) {
+    return Math.max(...c.innerFaces.map((f) => f.cover))
+  }
   const vals = COVER_FACES.map((f) => coverAt(c, f, surface))
   return Math.max(...vals)
 }
 
-/** Clear distance from the concrete face to the bar centre. */
 export function barOffset(cover: number, tieDia: number, barDia: number): number {
   return Math.max(0, cover) + Math.max(0, tieDia) + Math.max(0, barDia) / 2
 }
 
-/** Bar-centre offsets per face, incl. the link diameter and half the bar dia. */
 export interface FaceOffsets {
   outer: Record<CoverFace, number>
   inner: Record<CoverFace, number>
-  /** Radial offset for circular rings (governing face), outer and inner. */
   radial: number
   radialInner: number
 }
@@ -145,65 +353,111 @@ export function faceOffsets(c: CoverSpec, tieDia: number, barDia: number): FaceO
 }
 
 export function setOuterCover(c: CoverSpec, face: CoverFace, v: number): CoverSpec {
-  return { ...c, outer: { ...c.outer, [face]: Math.max(0, v) } }
+  const nextOuter = { ...c.outer, [face]: Math.max(0, v) }
+  return { ...c, outer: nextOuter }
 }
 
-export function setAllOuterCover(c: CoverSpec, v: number): CoverSpec {
+export function setAllOuterCover(_c: CoverSpec, v: number): CoverSpec {
   const val = Math.max(0, v)
-  return { ...c, outer: { bottom: val, right: val, top: val, left: val } }
+  return uniformCover(val)
 }
 
 export function setInnerCover(c: CoverSpec, face: CoverFace, v: number | null): CoverSpec {
   return { ...c, inner: { ...c.inner, [face]: v == null ? null : Math.max(0, v) } }
 }
 
-/**
- * Accept whatever a project file (or a legacy file) throws at us: a bare number
- * = all faces equal; a partial spec = defaults filled from the uniform value.
- */
-export function normalizeCover(raw: unknown, fallback: CoverSpec = DEFAULT_COVER): CoverSpec {
-  if (typeof raw === 'number' && Number.isFinite(raw)) return uniformCover(raw)
-  if (!raw || typeof raw !== 'object') return { outer: { ...fallback.outer }, inner: { ...fallback.inner } }
-  const o = raw as Record<string, any>
-  const num = (v: unknown, d: number) => (Number.isFinite(v) ? Math.max(0, Number(v)) : d)
-  const nullable = (v: unknown) => (Number.isFinite(v) ? Math.max(0, Number(v)) : null)
+export function normalizeCover(
+  raw: unknown,
+  fallback: CoverSpec = DEFAULT_COVER,
+  geometry?: SectionGeometry,
+  predefined?: PredefinedSection | null,
+): CoverSpec {
+  let result: CoverSpec
 
-  // Legacy flat shape: { bottom, top, left, right } without the outer/inner split.
-  const legacyBase = COVER_FACES.some((f) => Number.isFinite(o[f]))
-    ? num(o.bottom, num(o.top, num(o.left, num(o.right, fallback.outer.bottom))))
-    : num(o.all, num(o.uniform, fallback.outer.bottom))
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    result = uniformCover(raw)
+  } else if (!raw || typeof raw !== 'object') {
+    result = { ...fallback, outer: { ...fallback.outer }, inner: { ...fallback.inner } }
+  } else {
+    const o = raw as Record<string, any>
+    const num = (v: unknown, d: number) => (Number.isFinite(v) ? Math.max(0, Number(v)) : d)
+    const nullable = (v: unknown) => (Number.isFinite(v) ? Math.max(0, Number(v)) : null)
 
-  const block = o.outer && typeof o.outer === 'object' ? (o.outer as Record<string, any>) : null
-  const src = block ?? o
-  const outer = {} as Record<CoverFace, number>
-  for (const f of COVER_FACES) outer[f] = num(src[f], block ? fallback.outer[f] : legacyBase)
+    const legacyBase = COVER_FACES.some((f) => Number.isFinite(o[f]))
+      ? num(o.bottom, num(o.top, num(o.left, num(o.right, fallback.outer.bottom))))
+      : num(o.all, num(o.uniform, fallback.outer.bottom))
 
-  const iblock = o.inner && typeof o.inner === 'object' ? (o.inner as Record<string, any>) : null
-  const inner = {} as Record<CoverFace, number | null>
-  for (const f of COVER_FACES) inner[f] = iblock ? nullable(iblock[f]) : fallback.inner[f]
+    const block = o.outer && typeof o.outer === 'object' ? (o.outer as Record<string, any>) : null
+    const src = block ?? o
+    const outer = {} as Record<CoverFace, number>
+    for (const f of COVER_FACES) outer[f] = num(src[f], block ? fallback.outer[f] : legacyBase)
 
-  return { outer, inner }
+    const iblock = o.inner && typeof o.inner === 'object' ? (o.inner as Record<string, any>) : null
+    const inner = {} as Record<CoverFace, number | null>
+    for (const f of COVER_FACES) inner[f] = iblock ? nullable(iblock[f]) : fallback.inner[f]
+
+    const type = o.type as SectionCoverType | undefined
+
+    let outerFaces: FaceCover[] | undefined = undefined
+    if (Array.isArray(o.outerFaces)) {
+      outerFaces = o.outerFaces.map((item: any, idx: number) => ({
+        id: typeof item?.id === 'string' ? item.id : `outer-${idx}`,
+        boundary: 'outer',
+        faceIndex: Number.isInteger(item?.faceIndex) ? Number(item.faceIndex) : idx,
+        cover: num(item?.cover, outer.bottom),
+      }))
+    }
+
+    let innerFaces: FaceCover[] | undefined = undefined
+    if (Array.isArray(o.innerFaces)) {
+      innerFaces = o.innerFaces.map((item: any, idx: number) => ({
+        id: typeof item?.id === 'string' ? item.id : `inner-${idx}`,
+        boundary: 'inner',
+        faceIndex: Number.isInteger(item?.faceIndex) ? Number(item.faceIndex) : idx,
+        voidIndex: Number.isInteger(item?.voidIndex) ? Number(item.voidIndex) : 0,
+        cover: num(item?.cover, inner.bottom ?? outer.bottom),
+      }))
+    }
+
+    const uniformOuterCover = Number.isFinite(o.uniformOuterCover) ? Number(o.uniformOuterCover) : undefined
+    const uniformInnerCover = Number.isFinite(o.uniformInnerCover) ? Number(o.uniformInnerCover) : undefined
+
+    result = { outer, inner }
+    if (type) result.type = type
+    if (outerFaces) result.outerFaces = outerFaces
+    if (innerFaces) result.innerFaces = innerFaces
+    if (uniformOuterCover !== undefined) result.uniformOuterCover = uniformOuterCover
+    if (uniformInnerCover !== undefined) result.uniformInnerCover = uniformInnerCover
+  }
+
+  if (geometry && geometry.boundary.length > 0) {
+    result.type = result.type || detectSectionType(geometry, predefined)
+    if (!result.outerFaces && geometry.boundary.length !== 4) {
+      const n = geometry.boundary.length
+      result.outerFaces = []
+      for (let i = 0; i < n; i++) {
+        result.outerFaces.push({
+          id: `outer-${i}`,
+          boundary: 'outer',
+          faceIndex: i,
+          cover: getCoverForFace(result, 'outer', i, 0, geometry),
+        })
+      }
+    }
+  }
+
+  return result
 }
 
 // ---------------------------------------------------------------------------
-// Achieved-cover audit (docs/09 V3)
+// Achieved-cover audit & Geometry Utilities
 // ---------------------------------------------------------------------------
 
-/**
- * Face key for an edge/offset direction `d`, given as the normal pointing from
- * the face into the region the polygon encloses (into the concrete for the
- * outer boundary, into the hole for a void).
- */
 export function faceFromNormal(dx: number, dy: number): CoverFace {
   if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? 'bottom' : 'top'
   return dx > 0 ? 'left' : 'right'
 }
 
-/**
- * Unit normal of segment p1→p2 pointing into the region the polygon encloses
- * — the concrete for an outer boundary, the hole for a void.  This is the
- * direction `faceFromNormal` (and therefore the whole cover convention) keys on.
- */
 export function inboundNormal(p1: Point, p2: Point, ccw: boolean): Point {
   const dx = p2.x - p1.x
   const dy = p2.y - p1.y
@@ -221,94 +475,139 @@ function closestOnSegment(p: Point, a: Point, b: Point): Point {
 }
 
 export interface NearestFaceInfo {
-  /** distance from the point to the face, mm */
   dist: number
-  face: CoverFace
+  faceIndex: number
   surface: CoverSurface
-  /** foot of the perpendicular on the face */
+  voidIndex?: number
+  face: CoverFace
+  faceName: string
   x: number
   y: number
-  /** unit vector from the face towards the point (direction of extra cover) */
   ux: number
   uy: number
+  cover: number
 }
 
-/**
- * Nearest concrete surface to a point, with the face it belongs to. Void faces
- * count as `inner`, everything else as `outer`. `ux/uy` is the unit vector from
- * the face towards the point — the direction a bar has to move to gain cover.
- */
-export function nearestFace(
+export function findNearestFace(
   p: Point,
   geometry: SectionGeometry,
+  cover?: CoverSpec,
+  tieBreakerBar?: Rebar,
 ): NearestFaceInfo | null {
   let best: NearestFaceInfo | null = null
-  const consider = (poly: typeof geometry.boundary, surface: CoverSurface) => {
+  let bestDist = Infinity
+
+  const considerRing = (poly: Point[], surface: CoverSurface, voidIndex = 0) => {
+    if (poly.length < 2) return
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i]
       const b = poly[(i + 1) % poly.length]
       const q = closestOnSegment(p, a, b)
       const d = Math.hypot(q.x - p.x, q.y - p.y)
-      if (best !== null && d >= best.dist) continue
-      // direction from the face into the enclosed region (see faceFromNormal)
+
       const dirx = surface === 'outer' ? p.x - q.x : q.x - p.x
       const diry = surface === 'outer' ? p.y - q.y : q.y - p.y
+
+      const legacyFace = faceFromNormal(dirx, diry)
+      const isRect = surface === 'outer' && poly.length === 4 && isAxisAlignedRect(poly)
+      const faceName = isRect
+        ? FACE_LABELS[legacyFace]
+        : surface === 'outer'
+          ? `Face ${i + 1}`
+          : `Inner Face ${i + 1}`
+
+      const reqCover = cover ? getCoverForFace(cover, surface, i, voidIndex, geometry) : 40
+
+      const ux = d > 1e-9 ? (p.x - q.x) / d : (surface === 'outer' ? (p.x - q.x) : (q.x - p.x))
+      const uy = d > 1e-9 ? (p.y - q.y) / d : (surface === 'outer' ? (p.y - q.y) : (q.y - p.y))
+
       const cand: NearestFaceInfo = {
         dist: d,
-        face: faceFromNormal(dirx, diry),
+        faceIndex: i,
         surface,
+        voidIndex,
+        face: legacyFace,
+        faceName,
         x: q.x,
         y: q.y,
-        ux: d > 1e-9 ? (p.x - q.x) / d : 0,
-        uy: d > 1e-9 ? (p.y - q.y) / d : 0,
+        ux: Math.hypot(ux, uy) > 1e-9 ? ux / Math.hypot(ux, uy) : 0,
+        uy: Math.hypot(ux, uy) > 1e-9 ? uy / Math.hypot(ux, uy) : 0,
+        cover: reqCover,
       }
-      best = cand
+
+      if (best === null) {
+        best = cand
+        bestDist = d
+      } else {
+        const diff = d - bestDist
+        if (diff < -1e-5) {
+          best = cand
+          bestDist = d
+        } else if (Math.abs(diff) <= 1e-5) {
+          if (tieBreakerBar && tieBreakerBar.faceIndex === i && tieBreakerBar.surface === surface) {
+            best = cand
+            bestDist = d
+          }
+        }
+      }
     }
   }
-  consider(geometry.boundary, 'outer')
-  for (const v of geometry.voids) if (v.length >= 3) consider(v, 'inner')
+
+  considerRing(geometry.boundary, 'outer', 0)
+  for (let v = 0; v < geometry.voids.length; v++) {
+    considerRing(geometry.voids[v], 'inner', v)
+  }
+
   return best
 }
 
+export function nearestFace(
+  p: Point,
+  geometry: SectionGeometry,
+  cover?: CoverSpec,
+): NearestFaceInfo | null {
+  return findNearestFace(p, geometry, cover)
+}
+
 export interface BarCoverStatus {
-  /** 1-based bar index in the reinforcement table. */
   bar: number
-  /** achieved clear cover to the outer link, mm (bar face − link outside). */
   achieved: number
-  /** nominal cover required at the face this bar is set back from, mm. */
   required: number
   face: CoverFace
+  faceIndex: number
   surface: CoverSurface
-  /** achieved − required, mm. Negative = shortfall. */
+  voidIndex?: number
+  faceName: string
   margin: number
   ok: boolean
-  /** bar centre is not inside the net concrete area. */
   outside: boolean
+}
+
+export interface FaceAuditItem {
+  faceIndex: number
+  surface: CoverSurface
+  voidIndex?: number
+  name: string
+  required: number
+  bars: number
+  minAchieved: number | null
+  short: number
 }
 
 export interface CoverAudit {
   bars: BarCoverStatus[]
-  /** the bar with the smallest margin (null when there are no bars) */
   worst: BarCoverStatus | null
-  /** smallest achieved cover over the bars, mm */
   minAchieved: number | null
-  /** number of bars whose cover is below the value required at their face */
   nShort: number
-  /** per-face roll-up over the outer faces */
   faces: Record<CoverFace, { required: number; bars: number; min: number | null; short: number }>
+  faceAudits: FaceAuditItem[]
 }
 
-/**
- * Slack needed by a polygon that approximates a curve: the gap between the
- * circumscribed radius and the apothem of the edges (a bar aimed at the middle
- * of an edge sits slightly closer to the concrete than one aimed at a vertex).
- * Capped at 5 mm so a coarse polygon cannot excuse a real cover shortfall.
- */
 export function polygonTolerance(geometry: SectionGeometry): number {
   let t = 0
   for (const poly of [geometry.boundary, ...geometry.voids]) {
     const n = poly.length
-    if (n < 8) continue // hand-entered polygons are the section itself — no chord error
+    if (n < 8) continue
     const c = centroid(poly)
     let r = 0
     let maxEdge = 0
@@ -318,17 +617,12 @@ export function polygonTolerance(geometry: SectionGeometry): number {
       r = Math.max(r, Math.hypot(p.x - c.x, p.y - c.y))
       maxEdge = Math.max(maxEdge, Math.hypot(q.x - p.x, q.y - p.y))
     }
-    if (!(r > 0) || maxEdge > 0.2 * r) continue // not a finely discretised curve
+    if (!(r > 0) || maxEdge > 0.2 * r) continue
     t = Math.max(t, r * (1 - Math.cos(Math.PI / n)))
   }
   return Math.min(t, 5)
 }
 
-/**
- * Compare the achieved cover of every bar with the cover required at the face it
- * sits against. Pure geometry — no code parameters — so it can drive the section
- * preview as well as the clause check.
- */
 export function auditCovers(
   bars: Rebar[],
   geometry: SectionGeometry,
@@ -342,32 +636,86 @@ export function auditCovers(
     faces[f] = { required: outerCover(cover, f), bars: 0, min: null, short: 0 }
   }
 
+  const faceAuditsMap = new Map<string, FaceAuditItem>()
+
+  geometry.boundary.forEach((_, i) => {
+    const key = `outer-0-${i}`
+    const req = getCoverForFace(cover, 'outer', i, 0, geometry)
+    const isRect = geometry.boundary.length === 4 && isAxisAlignedRect(geometry.boundary)
+    const name = isRect ? FACE_LABELS[COVER_FACES[i]] : `Face ${i + 1}`
+    faceAuditsMap.set(key, {
+      faceIndex: i,
+      surface: 'outer',
+      voidIndex: 0,
+      name,
+      required: req,
+      bars: 0,
+      minAchieved: null,
+      short: 0,
+    })
+  })
+
+  geometry.voids.forEach((vPoly, vIdx) => {
+    vPoly.forEach((_, i) => {
+      const key = `inner-${vIdx}-${i}`
+      const req = getCoverForFace(cover, 'inner', i, vIdx, geometry)
+      faceAuditsMap.set(key, {
+        faceIndex: i,
+        surface: 'inner',
+        voidIndex: vIdx,
+        name: `Inner Face ${i + 1}`,
+        required: req,
+        bars: 0,
+        minAchieved: null,
+        short: 0,
+      })
+    })
+  })
+
   bars.forEach((b, i) => {
-    const nf = nearestFace(b, geometry)
+    const nf = findNearestFace(b, geometry, cover, b)
     const outside =
       !pointInPolygon(b, geometry.boundary) || geometry.voids.some((v) => pointInPolygon(b, v))
     const toFace = nf ? nf.dist : 0
     const achieved = toFace - b.dia / 2 - Math.max(0, tieDia)
     const face = nf?.face ?? 'bottom'
+    const faceIndex = nf?.faceIndex ?? 0
     const surface: CoverSurface = nf?.surface ?? 'outer'
-    const required = coverAt(cover, face, surface)
+    const voidIndex = nf?.voidIndex ?? 0
+    const faceName = nf?.faceName ?? `Face ${faceIndex + 1}`
+    const required = nf?.cover ?? coverAt(cover, face, surface)
     const margin = achieved - required
     const ok = !outside && margin >= -tol
+
     out.push({
       bar: i + 1,
       achieved,
       required,
       face,
+      faceIndex,
       surface,
+      voidIndex,
+      faceName,
       margin,
       ok,
       outside,
     })
+
     if (surface === 'outer') {
       const f = faces[face]
-      f.bars += 1
-      f.min = f.min == null ? achieved : Math.min(f.min, achieved)
-      if (!ok) f.short += 1
+      if (f) {
+        f.bars += 1
+        f.min = f.min == null ? achieved : Math.min(f.min, achieved)
+        if (!ok) f.short += 1
+      }
+    }
+
+    const itemKey = `${surface}-${voidIndex}-${faceIndex}`
+    const item = faceAuditsMap.get(itemKey)
+    if (item) {
+      item.bars += 1
+      item.minAchieved = item.minAchieved == null ? achieved : Math.min(item.minAchieved, achieved)
+      if (!ok) item.short += 1
     }
   })
 
@@ -380,16 +728,10 @@ export function auditCovers(
     minAchieved: out.length ? Math.min(...out.map((s) => s.achieved)) : null,
     nShort: out.filter((s) => !s.ok).length,
     faces,
+    faceAudits: Array.from(faceAuditsMap.values()),
   }
 }
 
-/**
- * Move bars inward, away from the face they fail, until the nominal cover of
- * that face is met. Up to three passes are made because shifting one way can
- * bring a bar closer to another face; bars that cannot be satisfied while
- * staying inside the net concrete area are left where they are and counted in
- * `unfixable`.
- */
 export function snapBarsToCover(
   bars: Rebar[],
   geometry: SectionGeometry,
@@ -397,10 +739,10 @@ export function snapBarsToCover(
   tieDia = 0,
 ): { bars: Rebar[]; moved: number; unfixable: number } {
   const requiredAt = (bar: Rebar): { need: number; have: number; nf: NearestFaceInfo | null } => {
-    const nf = nearestFace(bar, geometry)
+    const nf = findNearestFace(bar, geometry, cover, bar)
     if (!nf) return { need: 0, have: 0, nf: null }
     return {
-      need: barOffset(coverAt(cover, nf.face, nf.surface), tieDia, bar.dia),
+      need: barOffset(nf.cover, tieDia, bar.dia),
       have: nf.dist,
       nf,
     }
@@ -417,9 +759,9 @@ export function snapBarsToCover(
       if (!st.nf || st.have >= st.need - 1e-6) break
       const push = st.need - st.have + 1e-3
       const cand: Rebar = {
+        ...bar,
         x: Math.round((bar.x + st.nf.ux * push) * 100) / 100,
         y: Math.round((bar.y + st.nf.uy * push) * 100) / 100,
-        dia: bar.dia,
       }
       const inside =
         pointInPolygon(cand, geometry.boundary) && !geometry.voids.some((v) => pointInPolygon(cand, v))
@@ -435,9 +777,20 @@ export function snapBarsToCover(
   return { bars: out, moved, unfixable }
 }
 
-/** "40 mm (all faces)" / "bottom 40 · right 40 · top 50 · left 40 mm". */
-export function formatCover(c: CoverSpec): string {
-  if (isUniformCover(c)) return `${fmt1(c.outer.bottom)} mm (all faces)`
+
+
+export function formatCover(c: CoverSpec, geometry?: SectionGeometry): string {
+  const type = c.type || detectSectionType(geometry)
+  if (type === 'circle' || isUniformCover(c)) {
+    return `${fmt1(c.uniformOuterCover ?? c.outer.bottom)} mm (all faces)`
+  }
+  if (type === 'hollow-circle') {
+    return `outer ${fmt1(c.uniformOuterCover ?? c.outer.bottom)} · inner ${fmt1(c.uniformInnerCover ?? c.inner.bottom ?? c.outer.bottom)} mm`
+  }
+  if (c.outerFaces && c.outerFaces.length > 0) {
+    const parts = c.outerFaces.map((f) => `Face ${f.faceIndex + 1} ${fmt1(f.cover)}`)
+    return `${parts.join(' · ')} mm`
+  }
   const parts = COVER_FACES.map((f) => `${FACE_LABELS[f].toLowerCase()} ${fmt1(outerCover(c, f))}`)
   return `${parts.join(' · ')} mm`
 }

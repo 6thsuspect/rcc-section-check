@@ -5,7 +5,7 @@ import type {
   RebarSurface,
   SectionGeometry,
 } from './types'
-import { COVER_FACES, faceOffsets, uniformCover, type CoverSpec, type FaceOffsets } from './cover'
+import { COVER_FACES, barOffset, faceOffsets, getCoverForFace, uniformCover, type CoverSpec, type FaceOffsets } from './cover'
 
 /**
  * Predefined parametric sections. Each generator returns an ordinary
@@ -61,12 +61,15 @@ function circlePoly(cx: number, cy: number, r: number, nSeg = 64): Point[] {
 }
 
 interface LinePlacement {
-  face: RebarFace
+  face?: RebarFace
   surface?: RebarSurface
   voidIndex?: number
   /** Faces meeting the start/end of a line, used for corner bars. */
   startFaces?: RebarFace[]
   endFaces?: RebarFace[]
+  faceIndex?: number
+  startFaceIndex?: number
+  endFaceIndex?: number
   layer?: number
   groupId?: string
 }
@@ -76,6 +79,11 @@ interface BarPlacement {
   face?: RebarFace
   surface?: RebarSurface
   voidIndex?: number
+  faceIndex?: number
+  secondaryFaceIndex?: number
+  startFaceIndex?: number
+  endFaceIndex?: number
+  faceIndices?: number[]
   layer?: number
   groupId?: string
   axis?: 'x' | 'y'
@@ -85,6 +93,12 @@ interface BarPlacement {
 
 function automaticBar(x: number, y: number, dia: number, placement: BarPlacement = {}): Rebar {
   const faces = placement.faces?.length ? [...new Set(placement.faces)] : placement.face ? [placement.face] : undefined
+  const faceIndices = placement.faceIndices?.length
+    ? [...new Set(placement.faceIndices)]
+    : placement.faceIndex !== undefined
+      ? [placement.faceIndex, ...(placement.secondaryFaceIndex !== undefined ? [placement.secondaryFaceIndex] : [])]
+      : undefined
+
   return {
     x,
     y,
@@ -92,6 +106,11 @@ function automaticBar(x: number, y: number, dia: number, placement: BarPlacement
     positioning: 'automatic',
     face: placement.face ?? faces?.[0],
     faces,
+    faceIndex: placement.faceIndex ?? faceIndices?.[0],
+    secondaryFaceIndex: placement.secondaryFaceIndex,
+    startFaceIndex: placement.startFaceIndex,
+    endFaceIndex: placement.endFaceIndex,
+    faceIndices,
     surface: placement.surface ?? 'outer',
     voidIndex: placement.voidIndex,
     layer: placement.layer,
@@ -120,7 +139,12 @@ function barsOnLine(
         (p1.y + p2.y) / 2,
         dia,
         {
-          faces: [placement.face],
+          faces: placement.face ? [placement.face] : undefined,
+          face: placement.face,
+          faceIndex: placement.faceIndex,
+          secondaryFaceIndex: placement.startFaceIndex,
+          startFaceIndex: placement.startFaceIndex,
+          endFaceIndex: placement.endFaceIndex,
           surface: placement.surface,
           voidIndex: placement.voidIndex,
           layer: placement.layer,
@@ -134,9 +158,16 @@ function barsOnLine(
   for (let i = 0; i < n; i++) {
     const t = includeEnds ? i / (n - 1) : (i + 1) / (n + 1)
     const endpointFaces = t <= 1e-9 ? placement.startFaces ?? [] : t >= 1 - 1e-9 ? placement.endFaces ?? [] : []
+    const secFaceIdx = t <= 1e-9 ? placement.startFaceIndex : t >= 1 - 1e-9 ? placement.endFaceIndex : undefined
+
     out.push(
       automaticBar(p1.x + t * (p2.x - p1.x), p1.y + t * (p2.y - p1.y), dia, {
-        faces: [placement.face, ...endpointFaces],
+        faces: placement.face ? [placement.face, ...endpointFaces] : undefined,
+        face: placement.face,
+        faceIndex: placement.faceIndex,
+        secondaryFaceIndex: secFaceIdx,
+        startFaceIndex: placement.startFaceIndex,
+        endFaceIndex: placement.endFaceIndex,
         surface: placement.surface,
         voidIndex: placement.voidIndex,
         layer: placement.layer,
@@ -174,7 +205,9 @@ export function barsOnRing(
 
 export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): GeneratedSection {
   const dia = opts.barDia
-  const { outer: o, inner: vi, radial, radialInner } = layoutOffsets(opts)
+  const coverSpec = toCoverSpec(opts.cover)
+  const tieDia = opts.tieDia
+  const { radial, radialInner } = layoutOffsets(opts)
 
   switch (def.kind) {
     case 'rect': {
@@ -188,26 +221,34 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
-      const xl = o.left
-      const xr = B - o.right
-      const yb = o.bottom
-      const yt = D - o.top
+      const xl = barOffset(getCoverForFace(coverSpec, 'outer', 3, 0, geometry), tieDia, dia)
+      const xr = B - barOffset(getCoverForFace(coverSpec, 'outer', 1, 0, geometry), tieDia, dia)
+      const yb = barOffset(getCoverForFace(coverSpec, 'outer', 0, 0, geometry), tieDia, dia)
+      const yt = D - barOffset(getCoverForFace(coverSpec, 'outer', 2, 0, geometry), tieDia, dia)
       const bars: Rebar[] = [
         ...barsOnLine({ x: xl, y: yb }, { x: xr, y: yb }, Math.max(2, nx), dia, true, {
           face: 'bottom',
+          faceIndex: 0,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
           startFaces: ['left'],
           endFaces: ['right'],
         }),
         ...barsOnLine({ x: xl, y: yt }, { x: xr, y: yt }, Math.max(2, nx), dia, true, {
           face: 'top',
+          faceIndex: 2,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
           startFaces: ['left'],
           endFaces: ['right'],
         }),
         ...barsOnLine({ x: xl, y: yb }, { x: xl, y: yt }, ny, dia, false, {
           face: 'left',
+          faceIndex: 3,
         }),
         ...barsOnLine({ x: xr, y: yb }, { x: xr, y: yt }, ny, dia, false, {
           face: 'right',
+          faceIndex: 1,
         }),
       ]
       return { geometry, bars, shapeClass: 'rect' }
@@ -243,33 +284,35 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
-      const yFl = D - tf // flange underside — the face the tip bars sit above
+      const off = (i: number) => barOffset(getCoverForFace(coverSpec, 'outer', i, 0, geometry), tieDia, dia)
+      const yFl = D - tf
+
       const bars: Rebar[] = [
-        // flange top face
-        ...barsOnLine({ x: o.left, y: D - o.top }, { x: bf - o.right, y: D - o.top }, Math.max(2, nFlange), dia, true, {
+        ...barsOnLine({ x: off(5), y: D - off(4) }, { x: bf - off(3), y: D - off(4) }, Math.max(2, nFlange), dia, true, {
           face: 'top',
+          faceIndex: 4,
+          startFaceIndex: 5,
+          endFaceIndex: 3,
           startFaces: ['left'],
           endFaces: ['right'],
         }),
-        // flange soffit tips: set back from the side faces and from the flange underside
-        automaticBar(o.left, yFl + o.bottom, dia, { faces: ['bottom', 'left'], axis: 'x', u: 0 }),
-        automaticBar(bf - o.right, yFl + o.bottom, dia, { faces: ['bottom', 'right'], axis: 'x', u: 1 }),
-        // web verticals, bottom corners included; top ends sit below the flange
+        automaticBar(off(5), yFl + off(6), dia, { faceIndex: 6, secondaryFaceIndex: 5, faces: ['bottom', 'left'], axis: 'x', u: 0 }),
+        automaticBar(bf - off(3), yFl + off(2), dia, { faceIndex: 2, secondaryFaceIndex: 3, faces: ['bottom', 'right'], axis: 'x', u: 1 }),
         ...barsOnLine(
-          { x: wl + o.left, y: o.bottom },
-          { x: wl + o.left, y: yFl - o.top },
+          { x: wl + off(7), y: off(0) },
+          { x: wl + off(7), y: yFl - off(6) },
           Math.max(2, nWeb),
           dia,
           true,
-          { face: 'left', startFaces: ['bottom'], endFaces: ['top'] },
+          { face: 'left', faceIndex: 7, startFaceIndex: 0, endFaceIndex: 6, startFaces: ['bottom'], endFaces: ['top'] },
         ),
         ...barsOnLine(
-          { x: wl + bw - o.right, y: o.bottom },
-          { x: wl + bw - o.right, y: yFl - o.top },
+          { x: wl + bw - off(1), y: off(0) },
+          { x: wl + bw - off(1), y: yFl - off(2) },
           Math.max(2, nWeb),
           dia,
           true,
-          { face: 'right', startFaces: ['bottom'], endFaces: ['top'] },
+          { face: 'right', faceIndex: 1, startFaceIndex: 0, endFaceIndex: 2, startFaces: ['bottom'], endFaces: ['top'] },
         ),
       ]
       return { geometry, bars, shapeClass: 'rect' }
@@ -278,8 +321,8 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
     case 'ishape': {
       const { bf1, tf1, bf2, tf2, tw, D, nFlange, nWeb } = def
       const bmax = Math.max(bf1, bf2)
-      const t1 = (bmax - bf1) / 2 // top flange left offset
-      const b1 = (bmax - bf2) / 2 // bottom flange left offset
+      const t1 = (bmax - bf1) / 2
+      const b1 = (bmax - bf2) / 2
       const wl = (bmax - tw) / 2
       const geometry: SectionGeometry = {
         boundary: [
@@ -298,40 +341,44 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
+      const off = (i: number) => barOffset(getCoverForFace(coverSpec, 'outer', i, 0, geometry), tieDia, dia)
+
       const bars: Rebar[] = [
         ...barsOnLine(
-          { x: t1 + o.left, y: D - o.top },
-          { x: t1 + bf1 - o.right, y: D - o.top },
+          { x: t1 + off(7), y: D - off(6) },
+          { x: t1 + bf1 - off(5), y: D - off(6) },
           Math.max(2, nFlange),
           dia,
           true,
-          { face: 'top', startFaces: ['left'], endFaces: ['right'] },
+          { face: 'top', faceIndex: 6, startFaceIndex: 7, endFaceIndex: 5, startFaces: ['left'], endFaces: ['right'] },
         ),
+        automaticBar(t1 + off(7), D - tf1 + off(8), dia, { faceIndex: 8, secondaryFaceIndex: 7 }),
+        automaticBar(t1 + bf1 - off(5), D - tf1 + off(4), dia, { faceIndex: 4, secondaryFaceIndex: 5 }),
         ...barsOnLine(
-          { x: b1 + o.left, y: o.bottom },
-          { x: b1 + bf2 - o.right, y: o.bottom },
+          { x: b1 + off(11), y: off(0) },
+          { x: b1 + bf2 - off(1), y: off(0) },
           Math.max(2, nFlange),
           dia,
           true,
-          { face: 'bottom', startFaces: ['left'], endFaces: ['right'] },
+          { face: 'bottom', faceIndex: 0, startFaceIndex: 11, endFaceIndex: 1, startFaces: ['left'], endFaces: ['right'] },
         ),
-        // web bars run between the flange inner faces: bottom end above the
-        // bottom flange, top end below the top flange
+        automaticBar(b1 + off(11), tf2 - off(10), dia, { faceIndex: 10, secondaryFaceIndex: 11 }),
+        automaticBar(b1 + bf2 - off(1), tf2 - off(2), dia, { faceIndex: 2, secondaryFaceIndex: 1 }),
         ...barsOnLine(
-          { x: wl + o.left, y: tf2 + o.bottom },
-          { x: wl + o.left, y: D - tf1 - o.top },
+          { x: wl + off(9), y: tf2 + off(10) },
+          { x: wl + off(9), y: D - tf1 - off(8) },
           nWeb,
           dia,
           false,
-          { face: 'left' },
+          { face: 'left', faceIndex: 9 },
         ),
         ...barsOnLine(
-          { x: wl + tw - o.right, y: tf2 + o.bottom },
-          { x: wl + tw - o.right, y: D - tf1 - o.top },
+          { x: wl + tw - off(3), y: tf2 + off(2) },
+          { x: wl + tw - off(3), y: D - tf1 - off(4) },
           nWeb,
           dia,
           false,
-          { face: 'right' },
+          { face: 'right', faceIndex: 3 },
         ),
       ]
       return { geometry, bars, shapeClass: 'rect' }
@@ -350,26 +397,38 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
         voids: [],
       }
+      const off = (i: number) => barOffset(getCoverForFace(coverSpec, 'outer', i, 0, geometry), tieDia, dia)
+
       const bars: Rebar[] = [
-        // vertical leg — outer face at x = 0, inner face at x = tw
-        ...barsOnLine({ x: o.left, y: o.bottom }, { x: o.left, y: D - o.top }, 3, dia, true, {
+        ...barsOnLine({ x: off(5), y: off(0) }, { x: off(5), y: D - off(4) }, 3, dia, true, {
           face: 'left',
+          faceIndex: 5,
+          startFaceIndex: 0,
+          endFaceIndex: 4,
           startFaces: ['bottom'],
           endFaces: ['top'],
         }),
-        ...barsOnLine({ x: tw - o.right, y: tf + o.bottom }, { x: tw - o.right, y: D - o.top }, 2, dia, true, {
+        ...barsOnLine({ x: tw - off(3), y: tf + off(2) }, { x: tw - off(3), y: D - off(4) }, 2, dia, true, {
           face: 'right',
+          faceIndex: 3,
+          startFaceIndex: 2,
+          endFaceIndex: 4,
           startFaces: ['bottom'],
           endFaces: ['top'],
         }),
-        // horizontal leg (heel bar shared corner region)
-        ...barsOnLine({ x: tw + o.left, y: o.bottom }, { x: B - o.right, y: o.bottom }, 2, dia, true, {
+        ...barsOnLine({ x: tw + off(5), y: off(0) }, { x: B - off(1), y: off(0) }, 2, dia, true, {
           face: 'bottom',
+          faceIndex: 0,
+          startFaceIndex: 5,
+          endFaceIndex: 1,
           startFaces: ['left'],
           endFaces: ['right'],
         }),
-        ...barsOnLine({ x: tw + o.left, y: tf - o.top }, { x: B - o.right, y: tf - o.top }, 2, dia, true, {
+        ...barsOnLine({ x: tw + off(3), y: tf - off(2) }, { x: B - off(1), y: tf - off(2) }, 2, dia, true, {
           face: 'top',
+          faceIndex: 2,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
           startFaces: ['left'],
           endFaces: ['right'],
         }),
@@ -396,35 +455,48 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         ],
       }
       const nxi = Math.max(2, nx)
-      // Void-face keys name the void face the lining bars are set back from, which
-      // is exactly how the cover audit classifies a bar (see cover.ts): the bars
-      // hanging below the void's bottom face use inner.bottom, those above the
-      // void's top face use inner.top, and the cell walls use inner.left / right.
-      const vb = tf - vi.bottom // bottom slab, lining the void soffit
-      const vt = D - tf + vi.top // top slab, lining the void ceiling
-      const vl = tw - vi.left // left cell wall
-      const vr = B - tw + vi.right // right cell wall
+      const offO = (i: number) => barOffset(getCoverForFace(coverSpec, 'outer', i, 0, geometry), tieDia, dia)
+      const offI = (i: number) => barOffset(getCoverForFace(coverSpec, 'inner', i, 0, geometry), tieDia, dia)
+
+      const vb = tf - offI(0)
+      const vt = D - tf + offI(2)
+      const vl = tw - offI(3)
+      const vr = B - tw + offI(1)
+
       const bars: Rebar[] = [
-        // outer ring
-        ...barsOnLine({ x: o.left, y: o.bottom }, { x: B - o.right, y: o.bottom }, nxi, dia, true, {
+        ...barsOnLine({ x: offO(3), y: offO(0) }, { x: B - offO(1), y: offO(0) }, nxi, dia, true, {
           face: 'bottom',
+          faceIndex: 0,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
+          surface: 'outer',
           startFaces: ['left'],
           endFaces: ['right'],
         }),
-        ...barsOnLine({ x: o.left, y: D - o.top }, { x: B - o.right, y: D - o.top }, nxi, dia, true, {
+        ...barsOnLine({ x: offO(3), y: D - offO(2) }, { x: B - offO(1), y: D - offO(2) }, nxi, dia, true, {
           face: 'top',
+          faceIndex: 2,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
+          surface: 'outer',
           startFaces: ['left'],
           endFaces: ['right'],
         }),
-        ...barsOnLine({ x: o.left, y: o.bottom }, { x: o.left, y: D - o.top }, ny, dia, false, {
+        ...barsOnLine({ x: offO(3), y: offO(0) }, { x: offO(3), y: D - offO(2) }, ny, dia, false, {
           face: 'left',
+          faceIndex: 3,
+          surface: 'outer',
         }),
-        ...barsOnLine({ x: B - o.right, y: o.bottom }, { x: B - o.right, y: D - o.top }, ny, dia, false, {
+        ...barsOnLine({ x: B - offO(1), y: offO(0) }, { x: B - offO(1), y: D - offO(2) }, ny, dia, false, {
           face: 'right',
+          faceIndex: 1,
+          surface: 'outer',
         }),
-        // inner ring (void-side faces)
         ...barsOnLine({ x: vl, y: vb }, { x: vr, y: vb }, nxi, dia, true, {
           face: 'bottom',
+          faceIndex: 0,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
           surface: 'inner',
           voidIndex: 0,
           startFaces: ['left'],
@@ -432,6 +504,9 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         }),
         ...barsOnLine({ x: vl, y: vt }, { x: vr, y: vt }, nxi, dia, true, {
           face: 'top',
+          faceIndex: 2,
+          startFaceIndex: 3,
+          endFaceIndex: 1,
           surface: 'inner',
           voidIndex: 0,
           startFaces: ['left'],
@@ -439,11 +514,13 @@ export function generateSection(def: PredefinedSection, opts: BarLayoutOpts): Ge
         }),
         ...barsOnLine({ x: vl, y: vb }, { x: vl, y: vt }, ny, dia, false, {
           face: 'left',
+          faceIndex: 3,
           surface: 'inner',
           voidIndex: 0,
         }),
         ...barsOnLine({ x: vr, y: vb }, { x: vr, y: vt }, ny, dia, false, {
           face: 'right',
+          faceIndex: 1,
           surface: 'inner',
           voidIndex: 0,
         }),
