@@ -53,11 +53,12 @@ src/App.tsx               State + analysis pipeline wiring
   constant Pu) governs the verdict; the code's simplified power-law interaction
   (IS 456 Cl 39.6 / IRC 112 Cl 8.3.2 / IRS CBC Cl 15.6.4 eq 16) is computed and
   reported alongside for traceability.
-- Cover is a **per-face** datum measured to the outside of the links: a generated bar sits
-  `cover(face) + ⌀tie + ⌀bar/2` from the face it lies against, a bar lining an internal void
-  uses that void's own cover (blank = inherit the matching outer face), and circular rings
-  take the governing (largest) face value. Hand-edited layouts are audited bar by bar and can
-  be snapped back to compliance — see `docs/03` §3.6.
+- Cover is a **per-face** driving datum measured to the outside of the links: an automatic
+  bar sits `cover(face) + ⌀tie + ⌀bar/2` from its associated face, a bar lining an internal
+  void uses that void's own cover (blank = inherit the matching outer face), and circular
+  rings take the governing (largest) face cover. Cover, bar diameter and section edits update
+  automatic geometry live; coordinate-table edits switch only the edited rows to `manual`,
+  which are audited but not overwritten — see `docs/03` §3.6 and `docs/04` §4.2.
 - Loads are entered **already factored**; material partial safety factors are applied
   internally by the code stress blocks. Second-order / slenderness moments must be
   included upstream (the tool flags the slenderness screens).

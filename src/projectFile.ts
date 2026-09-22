@@ -1,6 +1,8 @@
 import type { AppState } from './state'
 import { initialState } from './state'
 import { normalizeCover } from './engine/cover'
+import { generateSection } from './engine/sections'
+import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface } from './engine/types'
 
 export interface ProjectFile {
   version: string
@@ -83,11 +85,30 @@ export function parseProjectFile(jsonText: string): AppState {
           )
         : [],
     },
-    bars: rawState.bars.map((b: any) => ({
-      x: Number.isFinite(b?.x) ? Number(b.x) : 0,
-      y: Number.isFinite(b?.y) ? Number(b.y) : 0,
-      dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
-    })),
+    bars: rawState.bars.map((b: any) => {
+      const validFaces: RebarFace[] = ['bottom', 'right', 'top', 'left']
+      const faces = Array.isArray(b?.faces) ? b.faces.filter((f: any): f is RebarFace => validFaces.includes(f)) : undefined
+      const positioning: RebarPositioningMode | undefined =
+        b?.positioning === 'automatic' || b?.positioning === 'manual' ? b.positioning : undefined
+      const surface: RebarSurface | undefined = b?.surface === 'inner' || b?.surface === 'outer' ? b.surface : undefined
+      const bar: Rebar = {
+        x: Number.isFinite(b?.x) ? Number(b.x) : 0,
+        y: Number.isFinite(b?.y) ? Number(b.y) : 0,
+        dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
+      }
+      if (positioning) bar.positioning = positioning
+      const face = validFaces.includes(b?.face) ? (b.face as RebarFace) : faces?.[0]
+      if (face) bar.face = face
+      if (faces?.length) bar.faces = faces
+      if (surface) bar.surface = surface
+      if (Number.isInteger(b?.voidIndex) && b.voidIndex >= 0) bar.voidIndex = Number(b.voidIndex)
+      if (Number.isInteger(b?.layer) && b.layer >= 0) bar.layer = Number(b.layer)
+      if (typeof b?.groupId === 'string') bar.groupId = b.groupId
+      if (b?.axis === 'x' || b?.axis === 'y') bar.axis = b.axis
+      if (Number.isFinite(b?.u)) bar.u = Math.max(0, Math.min(1, Number(b.u)))
+      if (b?.radial === true) bar.radial = true
+      return bar
+    }),
     predefined: rawState.predefined ?? null,
     shapeClass: ['rect', 'circ'].includes(rawState.shapeClass) ? rawState.shapeClass : defState.shapeClass,
     fck: Number.isFinite(rawState.fck) && rawState.fck > 0 ? Number(rawState.fck) : defState.fck,
@@ -111,6 +132,30 @@ export function parseProjectFile(jsonText: string): AppState {
             nDepth: Number.isFinite(rawState.mesh.nDepth) ? Number(rawState.mesh.nDepth) : defState.mesh.nDepth,
           }
         : defState.mesh,
+  }
+
+  // v1.0/v1.1 files did not carry placement metadata. If an old predefined
+  // layout still exactly matches the generator, migrate only that layout to
+  // automatic; hand-edited coordinates remain manual and are never guessed.
+  const legacyRows = rawState.bars.every((b: any) => b?.positioning == null)
+  if (legacyRows && sanitized.predefined && typeof sanitized.predefined === 'object') {
+    try {
+      const generated = generateSection(sanitized.predefined, {
+        cover: sanitized.cover,
+        tieDia: sanitized.tieDia,
+        barDia: sanitized.barDia,
+      })
+      const sameLayout =
+        generated.bars.length === sanitized.bars.length &&
+        generated.bars.every((bar, i) => {
+          const saved = sanitized.bars[i]
+          return Math.abs(bar.x - saved.x) < 0.01 && Math.abs(bar.y - saved.y) < 0.01 && Math.abs(bar.dia - saved.dia) < 0.01
+        })
+      if (sameLayout) sanitized.bars = generated.bars
+    } catch {
+      // A malformed legacy parametric definition is still loaded as its saved
+      // coordinate table; the normal geometry/cover validation will report it.
+    }
   }
 
   return sanitized

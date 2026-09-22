@@ -8,18 +8,48 @@ export interface Point {
 /** Ordered vertex list; closed implicitly (last → first). CCW = positive area. */
 export type Polygon = Point[]
 
-export interface SectionGeometry {
-  /** Outer boundary, user coordinate system, mm. */
-  boundary: Polygon
-  /** Internal voids (holes), each wholly inside the boundary. */
-  voids: Polygon[]
-}
+/** The four axis-aligned face names used by the cover and layout model. */
+export type RebarFace = 'bottom' | 'right' | 'top' | 'left'
+export type RebarSurface = 'outer' | 'inner'
+export type RebarPositioningMode = 'automatic' | 'manual'
 
+/**
+ * One discrete longitudinal bar.  The first three fields are the original
+ * coordinate-table API.  The optional placement fields make generated layouts
+ * relationship based without invalidating old project files or pasted tables:
+ * imported/hand-entered rows with no `positioning` field remain manual.
+ */
 export interface Rebar {
   x: number
   y: number
   /** Bar diameter, mm. */
   dia: number
+  /** Automatic rows follow their face/cover relationship; manual rows do not. */
+  positioning?: RebarPositioningMode
+  /** Primary concrete face controlling this bar. */
+  face?: RebarFace
+  /** Additional faces for a corner bar (for example bottom + left). */
+  faces?: RebarFace[]
+  /** Outer boundary or an internal void face. */
+  surface?: RebarSurface
+  /** Index of the void supplying an inner face, when applicable. */
+  voidIndex?: number
+  /** Layer/group information is retained for generated and imported arrangements. */
+  layer?: number
+  groupId?: string
+  /** Axis along which a line layout is distributed; `u` is its 0…1 position. */
+  axis?: 'x' | 'y'
+  u?: number
+  /** Circular layouts move radially when their governing cover changes. */
+  radial?: boolean
+}
+
+/** Ordered vertex list; closed implicitly (last → first). CCW = positive area. */
+export interface SectionGeometry {
+  /** Outer boundary, user coordinate system, mm. */
+  boundary: Polygon
+  /** Internal voids (holes), each wholly inside the boundary. */
+  voids: Polygon[]
 }
 
 export type DesignCodeId = 'IS456' | 'IRC112' | 'IRSCBC'

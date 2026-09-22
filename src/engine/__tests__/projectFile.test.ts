@@ -69,6 +69,17 @@ describe('parseProjectFile', () => {
     expect(parsed.cover.inner.bottom).toBeNull()
   })
 
+  it('migrates an unchanged legacy predefined layout to automatic placement', () => {
+    const st = initialState()
+    const legacy = {
+      ...st,
+      bars: st.bars.map(({ x, y, dia }) => ({ x, y, dia })),
+    }
+    const parsed = parseProjectFile(JSON.stringify({ version: '1.1', state: legacy }))
+    expect(parsed.bars.every((bar) => bar.positioning === 'automatic')).toBe(true)
+    expect(parsed.bars[0].face).toBeDefined()
+  })
+
   it('round-trips independently entered face covers', () => {
     const st = initialState()
     st.cover = {

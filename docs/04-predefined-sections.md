@@ -42,11 +42,13 @@ Rings that are equidistant from several faces (circular sections, and the outer
 ring of every shape at its corner bars) use the **governing**, i.e. largest, face
 cover, so one symmetric layout satisfies every face at once.
 
-Hollow shapes regenerate automatically when either cover block changes, since their two
-rings are derived from the radii and the cover; every other shape's layout is regenerated on
-request (the cover panel's **Apply cover to layout**, or by re-pressing *Generate layout*),
-and hand-edited layouts are checked against the entered values by the cover audit — which
-offers **Snap bars to cover** to pull short bars back to their face.
+Automatic generated layouts now remain linked to their face association. Changing an
+outer or void-face cover immediately recalculates every automatic bar from the section
+geometry, the controlling face, ⌀tie and ⌀bar; changing a bar diameter or a parametric
+section dimension follows the same relationship. Hand-edited coordinate rows are marked
+`manual` and are deliberately left untouched by later cover changes. The cover panel still
+provides **Apply cover to layout** for an explicit regeneration and **Snap bars to cover**
+for a deliberate one-off correction.
 
 Generated layouts always satisfy the minimum bar count of the selected code (e.g. 4 bars
 for a rectangular column, 6 for circular under IS 456 Cl. 26.5.3.1). After generation the

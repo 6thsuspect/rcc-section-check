@@ -9,6 +9,7 @@ import {
 } from '../engine/sections'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
+import { isAutomaticBar, repositionAutomaticBars } from '../engine/reinforcement'
 import {
   Banner,
   Card,
@@ -139,10 +140,20 @@ export function SectionPanel({
     // Circular sections own their bar layout via CircularRebarPanel — keep existing
     // bars when only geometry params change so arrangement settings are not wiped.
     const isCirc = def.kind === 'circle' || def.kind === 'hollowCircle'
-    const keepBars = opts?.keepBars ?? (isCirc && state.predefined?.kind === def.kind && state.bars.length > 0)
+    const hasManualBars = state.bars.some((bar) => !isAutomaticBar(bar))
+    const hasAutomaticDiameterOverride = state.bars.some(
+      (bar) => isAutomaticBar(bar) && Math.abs(bar.dia - state.barDia) > 1e-9,
+    )
+    const keepBars =
+      opts?.keepBars ??
+      (hasManualBars ||
+        hasAutomaticDiameterOverride ||
+        (isCirc && state.predefined?.kind === def.kind && state.bars.length > 0))
     update({
       geometry: gen.geometry,
-      bars: keepBars ? state.bars : gen.bars,
+      bars: keepBars
+        ? repositionAutomaticBars(state.bars, state.geometry, gen.geometry, state.cover, state.cover, state.tieDia, state.tieDia)
+        : gen.bars,
       predefined: def,
       shapeClass: gen.shapeClass,
     })
@@ -648,7 +659,7 @@ export function RebarPanel({
           />
         </span>
       }
-      subtitle={`${bars.length} bar${bars.length === 1 ? '' : 's'} in the table`}
+      subtitle={`${bars.length} bar${bars.length === 1 ? '' : 's'} in the table${bars.some(isAutomaticBar) ? ` · ${bars.filter(isAutomaticBar).length} automatic` : ''}`}
       action={
         <button className={btnCls} onClick={() => update([...bars, { x: 0, y: 0, dia: 20 }])}>
           <Icon name="plus" size={12} />
@@ -696,7 +707,7 @@ export function RebarPanel({
                           setStatus({ kind: 'idle' })
                           update(
                             bars.map((q, j) =>
-                              j === i ? { ...q, x: num(e.target.value) } : q
+                              j === i ? { ...q, x: num(e.target.value), positioning: 'manual' as const } : q
                             )
                           )
                         }}
@@ -713,7 +724,7 @@ export function RebarPanel({
                           setStatus({ kind: 'idle' })
                           update(
                             bars.map((q, j) =>
-                              j === i ? { ...q, y: num(e.target.value) } : q
+                              j === i ? { ...q, y: num(e.target.value), positioning: 'manual' as const } : q
                             )
                           )
                         }}
