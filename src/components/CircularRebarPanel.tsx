@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Rebar } from '../engine/types'
+import { isAutomaticBar } from '../engine/reinforcement'
 import type { PredefinedSection } from '../engine/sections'
 import {
   ARRANGEMENT_LABELS,
@@ -59,6 +60,7 @@ function barsKey(bars: Rebar[]): string {
  */
 export function CircularRebarPanel({
   predefined,
+  bars = [],
   cover,
   tieDia,
   barDia,
@@ -67,6 +69,8 @@ export function CircularRebarPanel({
   onApply,
 }: {
   predefined: PredefinedSection | null
+  /** Existing rows are inspected so an intentionally manual layout is not replaced on mount. */
+  bars?: Rebar[]
   cover: number
   tieDia: number
   barDia: number
@@ -79,9 +83,15 @@ export function CircularRebarPanel({
   const [cfg, setCfg] = useState<CircularRebarConfig>(() =>
     defaultCircularRebarConfig('uniform', R ?? 300, cover, tieDia, barDia),
   )
-  const [autoApply, setAutoApply] = useState(true)
+  const [autoApply, setAutoApply] = useState(() => bars.length === 0 || bars.some(isAutomaticBar))
   const [lastApplied, setLastApplied] = useState(0)
   const lastKeyRef = useRef('')
+
+  // A manual table edit is an explicit opt-out from live regeneration. The
+  // user can still press Apply layout or turn the live checkbox back on.
+  useEffect(() => {
+    if (bars.length > 0 && bars.every((bar) => !isAutomaticBar(bar))) setAutoApply(false)
+  }, [bars])
 
   // Keep section geometry / cover / tie in sync when the parent changes them.
   useEffect(() => {
@@ -104,6 +114,22 @@ export function CircularRebarPanel({
       })
     })
   }, [R, Ri, cover, tieDia])
+
+  // A diameter edited in the shared section panel is also a driver for the
+  // circular layout. Keep the arrangement configuration in step so its live
+  // generator recomputes the pitch radius rather than only changing the table
+  // diameter after the fact.
+  useEffect(() => {
+    setCfg((prev) => {
+      if (prev.barDia === barDia) return prev
+      return {
+        ...prev,
+        barDia,
+        altBarDia: prev.altBarDia === prev.barDia ? barDia : prev.altBarDia,
+        layers: prev.layers.map((layer, idx) => (idx === 0 && layer.barDia === prev.barDia ? { ...layer, barDia } : layer)),
+      }
+    })
+  }, [barDia])
 
   // Seed nBars from the predefined shape when the user first opens a circle.
   useEffect(() => {
@@ -137,14 +163,25 @@ export function CircularRebarPanel({
     return { ...generated, key: barsKey(generated.bars) }
   }, [cfg, R, Ri, cover, tieDia])
 
-  const applyBars = (bars: Rebar[]) => {
+  const applyBars = (generatedBars: Rebar[], preserveManual = true) => {
     const primaryDia = cfg.kind === 'layered' ? (cfg.layers[0]?.barDia ?? cfg.barDia) : cfg.barDia
-    const key = barsKey(bars)
-    if (key === lastKeyRef.current) return
+    const hasManual = bars.some((bar) => !isAutomaticBar(bar))
+    let nextBars = generatedBars
+    if (preserveManual && hasManual) {
+      // Keep intentional coordinate rows in place while the still-automatic
+      // rows receive the newly generated face/cover positions. When the count
+      // changes, retain manual rows after the generated automatic arrangement.
+      nextBars =
+        bars.length === generatedBars.length
+          ? generatedBars.map((bar, i) => (isAutomaticBar(bars[i]) ? bar : bars[i]))
+          : [...generatedBars, ...bars.filter((bar) => !isAutomaticBar(bar))]
+    }
+    const key = barsKey(generatedBars)
+    if (key === lastKeyRef.current && nextBars.length === bars.length) return
     lastKeyRef.current = key
-    onApply(bars, { barDia: primaryDia, nBarsHint: bars.length })
+    onApply(nextBars, { barDia: primaryDia, nBarsHint: nextBars.length })
     setBarDia(primaryDia)
-    setLastApplied(bars.length)
+    setLastApplied(nextBars.length)
   }
 
   // Live-update the bar table while auto-apply is on (keyed so identical layouts skip).
@@ -232,7 +269,7 @@ export function CircularRebarPanel({
           className={btnPrimaryCls}
           onClick={() => {
             lastKeyRef.current = ''
-            applyBars(result.bars)
+            applyBars(result.bars, false)
           }}
           title="Write generated bars into the reinforcement table"
         >
@@ -521,7 +558,7 @@ export function CircularRebarPanel({
                 className={btnPrimaryCls}
                 onClick={() => {
                   lastKeyRef.current = ''
-                  applyBars(result.bars)
+                  applyBars(result.bars, false)
                 }}
               >
                 <Icon name="check" size={12} />

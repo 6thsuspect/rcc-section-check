@@ -1,4 +1,5 @@
 import type { Point, Rebar, SectionGeometry } from './types'
+import { COVER_FACES } from './cover'
 import { pointInPolygon } from './geometry'
 
 /**
@@ -261,7 +262,7 @@ function generateLayered(cfg: CircularRebarConfig): Rebar[] {
     for (let i = 0; i < n; i++) {
       const a = start + i * step
       const p = pointAt(0, 0, r, a)
-      out.push({ x: p.x, y: p.y, dia })
+      out.push({ x: p.x, y: p.y, dia, layer: idx, positioning: 'automatic' })
     }
   })
   return out
@@ -291,10 +292,19 @@ export function generateCircularRebar(cfg: CircularRebarConfig): CircularRebarRe
   }
 
   // Round coordinates to 0.01 mm for stable table display / duplicate checks.
-  bars = bars.map((b) => ({
+  // Keep the relationship metadata alongside the legacy coordinate fields. The
+  // circular panel owns these rows, so a cover or diameter change can regenerate
+  // the same arrangement without treating the coordinates as hard-coded values.
+  bars = bars.map((b, i) => ({
     x: Math.round(b.x * 100) / 100,
     y: Math.round(b.y * 100) / 100,
     dia: b.dia,
+    positioning: 'automatic' as const,
+    face: 'top' as const,
+    faces: [...COVER_FACES],
+    surface: 'outer' as const,
+    layer: b.layer ?? (cfg.kind === 'layered' ? i : undefined),
+    radial: true,
   }))
 
   const warnings = validateCircularBars(bars, cfg)

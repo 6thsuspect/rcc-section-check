@@ -8,6 +8,7 @@ on screen and carried verbatim into the report's remarks section.
 | V1 | Polygon validity | ≥ 3 vertices; non-zero area (\|A\| > 100 mm²); no self-intersection (pairwise segment test); duplicate consecutive vertices merged (< 0.1 mm); holes strictly inside the outer ring and mutually disjoint; orientation auto-corrected (outer CCW, holes CW) | — | Error |
 | V2 | Bars inside net section | Ray-casting point-in-polygon: bar centre inside the outer ring and outside every void; distance to nearest boundary ≥ ⌀/2 (bar fully embedded) | — | Error |
 | V3 | Cover achieved | Distance from bar centre to **the concrete face it lies against** (nearest edge of the outer boundary or of a void) ≥ cnom(face) + ⌀tie + ⌀bar/2, with cnom entered per face (§3.6) and defaulted from the code's exposure table (IS 456 Table 16 / Cl 26.4.2.1; IRC 112 Table 14.2; IRS CBC Cl 15.9.2.2) | per code, per face | Warning (Error if < ⌀/2 + 10 mm) |
+| V3a | Cover/section fit | Opposing face covers, link offsets and the largest active bar diameter must fit within the available outer width and height | available ≥ required | Clear fit warning and failed compliance row |
 | V4 | Bar clear spacing | Clear gap = centre distance − (⌀₁+⌀₂)/2 ≥ code minimum: IS 456 Cl 26.3.2 ≥ max(⌀larger, dg + 5 mm); IRC 112 Cl 15.2.1 ≥ max(⌀, dg + 10 mm, 20 mm); IRS CBC Cl 15.9.8 ≥ max(⌀, dg + 5 mm) | per code | Error |
 | V5 | Duplicate / overlapping bars | Identical coordinates → duplicate; centre distance < (⌀₁+⌀₂)/2 → overlap. Bundles must be entered as one equivalent bar | — | Error |
 | V6 | Minimum steel | IS 456: ≥ 0.8% gross (option: of area required); IRC 112: ≥ max(0.10·NEd/fyd, 0.002·Ac); IRS CBC: ≥ lesser of 1.0% or 0.15·P/fy | §6–§8 | Error |
@@ -32,5 +33,8 @@ Implementation notes:
 - The same module offers `snapBarsToCover` (the panel's *Snap bars to cover* action), which
   moves short bars inward along their face normal and leaves bars that cannot be satisfied
   inside the section in place, reporting them.
+- `validateOuterCoverFit` provides the conservative V3a width/height screen used by both
+  the warning banner and the code compliance table. It is separate from V3 so a fit warning
+  explains the physical constraint even when no individual bar has yet crossed a face.
 - The point-in-polygon, self-intersection and shoelace routines are unit-tested against
   hand-computed sections (`src/engine/__tests__/engine.test.ts`).

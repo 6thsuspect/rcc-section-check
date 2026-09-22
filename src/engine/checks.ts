@@ -16,6 +16,7 @@ import {
   type CoverAudit,
   type CoverSpec,
 } from './cover'
+import { validateOuterCoverFit } from './reinforcement'
 
 export interface CheckInputs {
   props: SectionProperties
@@ -169,6 +170,19 @@ export function complianceChecks(spec: CodeSpec, inp: CheckInputs): ComplianceCh
           note: 'Table 16 cover minima are additional to the bar-diameter rule; increase the cover on the flagged faces',
         })
       }
+    }
+
+    const fitIssues = validateOuterCoverFit(inp.geometry, bars, cover, tie)
+    for (const fit of fitIssues) {
+      out.push({
+        clause: cl.clearance,
+        title: `Cover and reinforcement fit — ${fit.axis}`,
+        demand: `${fmt(fit.available, 1)} mm available`,
+        limit: `≥ ${fmt(fit.required, 1)} mm required`,
+        status: 'fail',
+        kind: 'enforce',
+        note: fit.message,
+      })
     }
 
     const tooThick = COVER_FACES.filter((f) => outerCover(cover, f) > 75)

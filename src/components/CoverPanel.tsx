@@ -117,7 +117,8 @@ export function ClearCoverPanel({
                 Nominal cover is measured from the concrete face to the outside of the <b>links</b>. Each face of the
                 section carries its own value, so an exposed soffit or a marine face can be detailed thicker than the
                 rest. Hollow sections can also set the four <b>void</b> faces separately; any value left blank inherits
-                the matching outer face.
+                the matching outer face. Changing a face cover automatically updates the position of its automatic
+                reinforcement relative to that face; manual coordinate rows are left untouched.
               </span>
             }
           />
@@ -138,6 +139,13 @@ export function ClearCoverPanel({
       }
     >
       <div className="flex flex-col gap-2.5">
+        <p className="flex items-start gap-1.5 rounded-field border border-accent/20 bg-accent-wash/45 px-2 py-1.5 text-[10.5px] leading-snug text-ink-2">
+          <Icon name="target" size={12} className="mt-px shrink-0 text-accent" />
+          <span>
+            <b className="font-display text-[9.5px] uppercase tracking-[0.07em] text-accent-strong">Clear cover → reinforcement position.</b>{' '}
+            Automatic bars follow this face by <span className="tnum">cover + ⌀tie + ⌀bar/2</span>. Manual coordinate rows remain as entered.
+          </span>
+        </p>
         <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
           {COVER_FACES.map((face) => (
             <NumField

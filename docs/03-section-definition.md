@@ -110,6 +110,11 @@ field while they are equal). **Link faces** mirrors one value across all four.
   *governing* (largest) face cover, which keeps every face at or above its
   required value; the inner ring of a hollow circle uses the governing void-face
   value in the same way.
+- **Driving relationship:** generated rows retain their associated face, surface and
+  automatic/manual positioning mode. The automatic centreline is recomputed as
+  `cnom(face) + ⌀tie + ⌀bar/2` whenever cover, diameter or section geometry changes;
+  line layers also retain their normalized position along the face. A coordinate-table edit
+  changes that row to `manual`, so intentional absolute placements are not overwritten.
 - **Verification:** the audit ([§9](09-validation.md) V3) classifies each bar by
   the nearest face of the *actual* polygon — including void faces — so a bar
   edited by hand is checked against the requirement of the face it really sits

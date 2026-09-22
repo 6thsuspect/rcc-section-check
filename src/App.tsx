@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from 'react'
 import type { CaseResult } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
+import { generateSection } from './engine/sections'
 import { buildAnalysisModel } from './engine/integrator'
 import { checkLoadCase, flexuralCapacity, generateSurface, naForDirection } from './engine/surface'
 import { complianceChecks } from './engine/checks'
 import { auditCovers, radialCover } from './engine/cover'
+import { isAutomaticBar, repositionAutomaticBars, validateOuterCoverFit } from './engine/reinforcement'
 import { exportReport } from './report'
 import { exportProjectFile, parseProjectFile } from './projectFile'
 import { initialState, type AppState } from './state'
@@ -28,7 +30,65 @@ export default function App() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const update = (patch: Partial<AppState>) => setState((s) => ({ ...s, ...patch }))
+  /**
+   * Apply input changes and keep automatic reinforcement derived from the
+   * relationship section → face cover → tie/bar diameter.  Coordinate-table
+   * edits are marked manual by RebarPanel, so this never overwrites an
+   * intentional absolute placement.
+   */
+  const update = (patch: Partial<AppState>) =>
+    setState((s) => {
+      const next: AppState = { ...s, ...patch }
+      const automaticDiameterChanged =
+        patch.bars !== undefined &&
+        patch.bars.some((bar, i) => isAutomaticBar(bar) && bar.dia !== s.bars[i]?.dia)
+      const placementChanged =
+        patch.cover !== undefined ||
+        patch.tieDia !== undefined ||
+        patch.barDia !== undefined ||
+        patch.geometry !== undefined ||
+        automaticDiameterChanged
+
+      // A supplied bar list may already be a freshly generated layout (shape
+      // changes and circular live updates). For a non-circular predefined
+      // shape, regenerate from its parametric definition so irregular faces
+      // (T/I/L webs and flange offsets) remain exact; preserve any manual rows
+      // by index. Circular arrangements have their own live generator below.
+      const driverChanged = patch.cover !== undefined || patch.tieDia !== undefined || patch.barDia !== undefined
+      const def = s.predefined
+      const nonCircularPredefined = def && def.kind !== 'circle' && def.kind !== 'hollowCircle'
+      const barsForDiameterCheck = patch.bars !== undefined ? next.bars : s.bars
+      const hasAutomaticDiameterOverride = barsForDiameterCheck.some(
+        (bar) => isAutomaticBar(bar) && Math.abs(bar.dia - next.barDia) > 1e-9,
+      )
+      if (
+        placementChanged &&
+        driverChanged &&
+        nonCircularPredefined &&
+        s.bars.some(isAutomaticBar) &&
+        !hasAutomaticDiameterOverride
+      ) {
+        const generated = generateSection(def, { cover: next.cover, tieDia: next.tieDia, barDia: next.barDia })
+        const base = patch.bars !== undefined ? next.bars : s.bars
+        next.bars =
+          base.length === generated.bars.length
+            ? base.map((bar, i) => (isAutomaticBar(bar) ? generated.bars[i] : bar))
+            : repositionAutomaticBars(base, s.geometry, next.geometry, s.cover, next.cover, s.tieDia, next.tieDia)
+      } else if (placementChanged && (patch.bars === undefined || patch.geometry === undefined)) {
+        // Custom geometry, circular arrangements, and per-row diameter edits
+        // use the generic face/radial relationship. Manual rows are filtered.
+        next.bars = repositionAutomaticBars(
+          patch.bars !== undefined ? next.bars : s.bars,
+          s.geometry,
+          next.geometry,
+          s.cover,
+          next.cover,
+          s.tieDia,
+          next.tieDia,
+        )
+      }
+      return next
+    })
 
   const handleImportClick = () => {
     fileInputRef.current?.click()
@@ -104,6 +164,11 @@ export default function App() {
   const coverAudit = useMemo(
     () => auditCovers(state.bars, state.geometry, state.cover, state.tieDia),
     [state.bars, state.geometry, state.cover, state.tieDia],
+  )
+
+  const coverFitIssues = useMemo(
+    () => validateOuterCoverFit(state.geometry, state.bars, state.cover, state.tieDia),
+    [state.geometry, state.bars, state.cover, state.tieDia],
   )
 
   const props = useMemo(
@@ -339,6 +404,7 @@ export default function App() {
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
               predefined={state.predefined}
+              bars={state.bars}
               cover={radialCover(state.cover)}
               tieDia={state.tieDia}
               barDia={state.barDia}
@@ -380,6 +446,16 @@ export default function App() {
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {issues.map((m, i) => (
                   <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </Banner>
+          )}
+          {coverFitIssues.length > 0 && (
+            <Banner tone="warn">
+              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {coverFitIssues.map((issue) => (
+                  <li key={issue.axis}>{issue.message} Reduce the face covers, use a smaller bar, or increase the section size.</li>
                 ))}
               </ul>
             </Banner>
