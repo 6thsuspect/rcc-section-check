@@ -55,6 +55,14 @@ export interface CodeSpec {
   maxBarSpacing: number
   /** Short-column slenderness threshold on l/D. */
   shortLimit: number
+  /**
+   * Limiting neutral-axis depth ratio xu,max / d for the tension-controlled
+   * (under-reinforced) limit. IS 456 Cl 38.1(f) / SP 16:
+   *   xu,max/d = εcu / (εcu + 0.002 + 0.87·fy/Es)
+   * with εcu = 0.0035. IRC 112 / IRS CBC use the same strain construction
+   * with their own εcu and fyd.
+   */
+  xuMaxRatio: (fy: number) => number
 }
 
 const GRADES_ALL: SteelGradeSpec[] = [
@@ -95,6 +103,11 @@ const IS456: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 300,
   shortLimit: 12,
+  // Cl 38.1(f): xu,max/d = 0.0035 / (0.0055 + 0.87·fy/Es) → Fe250 0.53, Fe415 0.48, Fe500 0.46
+  xuMaxRatio: (fy) => {
+    const Es = 200000
+    return 0.0035 / (0.0055 + (0.87 * fy) / Es)
+  },
 }
 
 /** IRC:112-2020 — Cl 6.4.2.8 stress block (Table 6.5 / Annexure A2.2), Cl 8.3.2 biaxial, Cl 16.2 detailing. */
@@ -136,6 +149,13 @@ const IRC112: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 200,
   shortLimit: 12,
+  // Cl 6.4.2 / 8.2.1: tension steel reaches fyd when εs ≥ fyd/Es at xu = xu,max (εcu on compression face)
+  xuMaxRatio: (fy) => {
+    const Es = 200000
+    const fyd = fy / 1.15
+    // grade-dependent εcu for fck ≤ 60 is 0.0035; ratio uses the ≤ M60 default
+    return 0.0035 / (0.0035 + fyd / Es)
+  },
 }
 
 /** IRS Concrete Bridge Code 1997 — Cl 15.6 columns, Fig 4A/4B materials, eq. 16/17 biaxial. */
@@ -175,6 +195,11 @@ const IRSCBC: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 300,
   shortLimit: 12,
+  // Fig 4A / Cl 15.6.3: same strain construction as IS 456 with εcu = 0.0035
+  xuMaxRatio: (fy) => {
+    const Es = 200000
+    return 0.0035 / (0.0055 + (0.87 * fy) / Es)
+  },
 }
 
 export const CODES: Record<DesignCodeId, CodeSpec> = { IS456, IRC112, IRSCBC }

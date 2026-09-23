@@ -47,22 +47,37 @@ function renderShape(kind: PredefinedSection['kind']) {
 }
 
 describe('clear cover panel', () => {
-  it('lists the four outer faces with their own values', () => {
+  it('highlights Uniform Cover as the primary control and hides advanced options + cover figure by default', () => {
     const { html } = renderShape('rect')
-    expect(html).toContain('Clear cover — per face')
-    for (const v of [30, 45, 60, 75]) expect(html).toContain(`value="${v}"`)
-    // no voids in a solid rectangle → no void-face block
+    expect(html).toContain('Clear cover')
+    expect(html).toContain('Uniform Cover')
+    expect(html).toContain('Default')
+    expect(html).toContain('data-testid="uniform-cover-primary"')
+    // Advanced face editors AND the cover section figure are collapsed until expanded
+    expect(html).toContain('Show Advanced Cover')
+    expect(html).not.toContain('data-testid="advanced-cover-panel"')
+    expect(html).not.toContain('data-testid="advanced-cover-figure"')
     expect(html).not.toContain('Void / inner faces')
+    expect(html).not.toContain('Per-face cover sketch')
+    // Uniform field shows the governing (max) face value when faces differ
+    expect(html).toContain('value="75"')
   })
 
-  it('shows the void-face editors only for hollow sections', () => {
-    for (const kind of ['box', 'hollowCircle'] as const) {
-      const { html } = renderShape(kind)
-      expect(html).toContain('Void / inner faces')
-      expect(html).toContain('clear overrides')
-    }
+  it('offers Advanced Cover for hollow box sections (void faces live there)', () => {
+    const { html } = renderShape('box')
+    expect(html).toContain('Show Advanced Cover')
+    expect(html).toContain('Uniform Cover')
+    // collapsed by default — void editors not in the DOM yet
+    expect(html).not.toContain('Void / inner faces')
+    expect(html).not.toContain('clear overrides')
+  })
+
+  it('does not offer Advanced Cover chrome for solid shapes with no face overrides path beyond uniform', () => {
+    // tee/angle still have advanced face editors (non-rect polygon-like or rect-class)
     for (const kind of ['rect', 'tee', 'angle'] as const) {
-      expect(renderShape(kind).html).not.toContain('Void / inner faces')
+      const { html } = renderShape(kind)
+      expect(html).toContain('Uniform Cover')
+      expect(html).not.toContain('Void / inner faces')
     }
   })
 
@@ -84,5 +99,6 @@ describe('clear cover panel', () => {
     const { html } = renderShape('circle')
     expect(html).toContain('Circular ring')
     expect(html).toContain('75 mm')
+    expect(html).toContain('Uniform Cover')
   })
 })

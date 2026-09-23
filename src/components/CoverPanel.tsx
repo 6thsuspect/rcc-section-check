@@ -23,6 +23,7 @@ import {
   type CoverFace,
   type CoverSpec,
 } from '../engine/cover'
+import type { Point, SectionGeometry } from '../engine/types'
 import type { AppState } from '../state'
 import {
   Banner,
@@ -52,7 +53,8 @@ export interface ActiveFace {
 }
 
 /**
- * Nominal clear cover, entered **independently for each concrete face**.
+ * Nominal clear cover. **Uniform Cover** is the primary control; face-wise
+ * (advanced) options are collapsed behind a Show/Hide toggle.
  */
 export function ClearCoverPanel({
   state,
@@ -70,6 +72,8 @@ export function ClearCoverPanel({
   const cover = state.cover
   const [note, setNote] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null)
   const [unlinked, setUnlinked] = useState(false)
+  /** Advanced (face-wise) cover editors — hidden by default. */
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const hasVoid = state.geometry.voids.length > 0
   const sectionType = detectSectionType(state.geometry, state.predefined, state.shapeClass)
@@ -77,9 +81,30 @@ export function ClearCoverPanel({
   const allEqual = isUniformCover(cover)
   const linked = allEqual && !unlinked
 
+  /** Representative uniform value shown in the primary field. */
+  const uniformOuterValue =
+    cover.uniformOuterCover ??
+    Math.max(...COVER_FACES.map((f) => outerCover(cover, f)), outerCover(cover, 'bottom'))
+
   const patchCover = (next: CoverSpec) => {
     setNote(null)
     update({ cover: next })
+  }
+
+  const setUniform = (v: number) => {
+    setUnlinked(false)
+    if (circular || sectionType === 'circle' || sectionType === 'hollow-circle') {
+      patchCover(setUniformOuterCover(cover, v, state.geometry))
+    } else if (sectionType === 'polygon' || sectionType === 'hollow-polygon') {
+      // Apply the same value to every outer face index
+      let next = setAllOuterCover(cover, v)
+      next = setUniformOuterCover(next, v, state.geometry)
+      const n = state.geometry.boundary.length
+      for (let i = 0; i < n; i++) next = setOuterFaceCover(next, i, v, state.geometry)
+      patchCover(next)
+    } else {
+      patchCover(setAllOuterCover(cover, v))
+    }
   }
 
   const setFace = (face: CoverFace, v: number) => {
@@ -91,14 +116,25 @@ export function ClearCoverPanel({
     if (on) patchCover(setAllOuterCover(cover, Math.max(...COVER_FACES.map((f) => outerCover(cover, f)))))
   }
 
-  // Auto-focus field when activeFace is selected from SVG
+  const toggleAdvanced = () => {
+    setShowAdvanced((open) => {
+      const next = !open
+      // Opening advanced on a non-uniform cover implies face-wise editing
+      if (next && !allEqual) setUnlinked(true)
+      return next
+    })
+  }
+
+  // Auto-focus field when activeFace is selected from SVG — open advanced so the field exists
   useEffect(() => {
     if (activeFace) {
+      setShowAdvanced(true)
       const id = `cover-input-${activeFace.surface}-${activeFace.voidIndex ?? 0}-${activeFace.faceIndex}`
-      const el = document.getElementById(id)
-      if (el) {
-        el.focus()
-      }
+      // defer until advanced panel has rendered
+      requestAnimationFrame(() => {
+        const el = document.getElementById(id)
+        if (el) el.focus()
+      })
     }
   }, [activeFace])
 
@@ -128,38 +164,31 @@ export function ClearCoverPanel({
   const minOk = audit.nShort === 0
   const boundaryCount = state.geometry.boundary.length
 
+  /** Face-wise editors (non-circular / void faces). The cover sketch always lives under Advanced Cover. */
+  const hasFaceWiseEditors =
+    sectionType === 'rectangular' ||
+    sectionType === 'polygon' ||
+    sectionType === 'hollow-polygon' ||
+    (hasVoid && sectionType !== 'hollow-circle' && sectionType !== 'circle')
+
   return (
     <Card
       title={
         <span className="flex items-center gap-1.5">
           <Icon name="target" size={13} className="text-ink-3" />
-          <span>Clear cover — per face</span>
+          <span>Clear cover</span>
           <InfoTooltip
             content={
               <span>
                 Nominal cover is measured from each concrete face to the outside of the <b>links</b>.
-                For rectangular sections, you can detail 4 directional faces. For polygon/irregular sections,
-                a separate cover input is automatically generated for every face.
+                <b> Uniform Cover</b> is the default and applies the same value to every face. Open{' '}
+                <b>Advanced Cover</b> only when individual faces need different values.
               </span>
             }
           />
         </span>
       }
-      action={
-        sectionType === 'rectangular' ? (
-          <Check
-            checked={linked}
-            onChange={toggleLink}
-            label={
-              <span className="inline-flex items-center gap-1">
-                <Icon name={linked ? 'link' : 'close'} size={11} className={linked ? 'text-accent' : 'text-ink-3'} />
-                Link faces
-              </span>
-            }
-            title={linked ? 'All faces share one value — click to detail them independently' : 'Use one value for every face'}
-          />
-        ) : undefined
-      }
+      subtitle="uniform by default"
     >
       <div className="flex flex-col gap-2.5">
         <p className="flex items-start gap-1.5 rounded-field border border-accent/20 bg-accent-wash/45 px-2 py-1.5 text-[10.5px] leading-snug text-ink-2">
@@ -170,47 +199,52 @@ export function ClearCoverPanel({
           </span>
         </p>
 
-        {/* --- 1. RECTANGULAR SECTION --- */}
-        {sectionType === 'rectangular' && (
-          <>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
-              {COVER_FACES.map((face, idx) => {
-                const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
-                return (
-                  <div
-                    key={face}
-                    className={`rounded-field p-1 transition-colors ${
-                      isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                    }`}
-                    onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
-                    onMouseLeave={() => setActiveFace?.(null)}
-                  >
-                    <NumField
-                      id={`cover-input-outer-0-${idx}`}
-                      label={`${FACE_LABELS[face]}${linked ? ' *' : ''}`}
-                      unit="mm"
-                      value={outerCover(cover, face)}
-                      min={0}
-                      step={5}
-                      hint={FACE_HINTS[face]}
-                      onChange={(v) => setFace(face, v)}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-            {linked && (
-              <p className={`${noteSmCls} -mt-0.5`}>
-                <b>*</b> Faces linked — editing any face sets all four to{' '}
-                <b>{outerCover(cover, 'bottom')} mm</b>. Unlink to detail them independently.
-              </p>
+        {/* -------- PRIMARY: Uniform Cover (always visible, highlighted) -------- */}
+        <div
+          className="rounded-lg border-2 border-accent/40 bg-accent-wash/50 p-2.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.6)]"
+          data-testid="uniform-cover-primary"
+        >
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+            <span className="inline-flex items-center gap-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-accent-strong">
+              <Icon name="link" size={12} className="text-accent" />
+              Uniform Cover
+              <span className="rounded-full border border-accent/35 bg-card px-1.5 py-px font-display text-[9px] font-bold uppercase tracking-[0.06em] text-accent">
+                Default
+              </span>
+            </span>
+            {allEqual ? (
+              <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.06em] text-ok">All faces equal</span>
+            ) : (
+              <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.06em] text-warn2">
+                Faces differ — see Advanced
+              </span>
             )}
-          </>
-        )}
+          </div>
 
-        {/* --- 2. SOLID CIRCLE SECTION --- */}
-        {sectionType === 'circle' && (
-          <div className="flex flex-col gap-2">
+          {sectionType === 'hollow-circle' ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <NumField
+                id="cover-input-uniform-outer"
+                label="Outer Clear Cover"
+                unit="mm"
+                value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
+                min={0}
+                step={5}
+                hint="Primary · uniform around the outer circumference"
+                onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
+              />
+              <NumField
+                id="cover-input-uniform-inner"
+                label="Inner Clear Cover"
+                unit="mm"
+                value={cover.uniformInnerCover ?? innerCover(cover, 'bottom')}
+                min={0}
+                step={5}
+                hint="Primary · uniform around the void circumference"
+                onChange={(v) => patchCover(setUniformInnerCover(cover, v, state.geometry))}
+              />
+            </div>
+          ) : sectionType === 'circle' ? (
             <NumField
               id="cover-input-outer-0-0"
               label="Uniform Cover"
@@ -218,72 +252,28 @@ export function ClearCoverPanel({
               value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
               min={0}
               step={5}
-              hint="Uniform clear cover around the circumference"
+              hint="Primary · uniform clear cover around the circumference"
               onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
             />
-          </div>
-        )}
-
-        {/* --- 3. HOLLOW CIRCLE SECTION --- */}
-        {sectionType === 'hollow-circle' && (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          ) : (
             <NumField
-              id="cover-input-outer-0-0"
-              label="Outer Clear Cover"
+              id="cover-input-uniform-outer"
+              label="Uniform Cover"
               unit="mm"
-              value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
+              value={uniformOuterValue}
               min={0}
               step={5}
-              hint="Uniform outer circumference cover"
-              onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
+              hint="Primary · sets the same clear cover on every outer face"
+              onChange={setUniform}
             />
-            <NumField
-              id="cover-input-inner-0-0"
-              label="Inner Clear Cover"
-              unit="mm"
-              value={cover.uniformInnerCover ?? innerCover(cover, 'bottom')}
-              min={0}
-              step={5}
-              hint="Uniform inner void circumference cover"
-              onChange={(v) => patchCover(setUniformInnerCover(cover, v, state.geometry))}
-            />
-          </div>
-        )}
+          )}
 
-        {/* --- 4. POLYGON / IRREGULAR SECTION --- */}
-        {(sectionType === 'polygon' || sectionType === 'hollow-polygon') && (
-          <div className="flex flex-col gap-2">
-            <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
-              Outer Boundary Faces ({boundaryCount} detected)
-            </span>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
-              {Array.from({ length: boundaryCount }).map((_, idx) => {
-                const val = getCoverForFace(cover, 'outer', idx, 0, state.geometry)
-                const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
-                return (
-                  <div
-                    key={`outer-${idx}`}
-                    className={`rounded-field p-1 transition-colors ${
-                      isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                    }`}
-                    onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
-                    onMouseLeave={() => setActiveFace?.(null)}
-                  >
-                    <NumField
-                      id={`cover-input-outer-0-${idx}`}
-                      label={`Face ${idx + 1}`}
-                      unit="mm"
-                      value={val}
-                      min={0}
-                      step={5}
-                      onChange={(v) => patchCover(setOuterFaceCover(cover, idx, v, state.geometry))}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
+          <p className={`${noteSmCls} mt-1.5`}>
+            {allEqual
+              ? `One value (${uniformOuterValue} mm) applied to all faces. Open Advanced Cover only if a face needs a different cover.`
+              : `Face covers currently differ. Editing Uniform Cover resets every face to the same value. Open Advanced Cover to edit faces individually.`}
+          </p>
+        </div>
 
         {circular && (
           <p className="flex items-start gap-1.5 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[11px] leading-snug text-warn2">
@@ -296,113 +286,278 @@ export function ClearCoverPanel({
           </p>
         )}
 
-        {/* --- HOLLOW SECTIONS INNER FACES --- */}
-        {hasVoid && (
-          <SubCard
+        {/* -------- ADVANCED COVER toggle + panel (face editors + cover sketch) -------- */}
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={toggleAdvanced}
+            aria-expanded={showAdvanced}
+            data-testid="advanced-cover-toggle"
+            className={`flex w-full items-center justify-between gap-2 rounded-field border px-2.5 py-1.5 text-left transition-[background-color,border-color] duration-150 ease-ui ${
+              showAdvanced
+                ? 'border-edge-strong bg-panel'
+                : 'border-edge bg-card hover:border-edge-strong hover:bg-panel/70'
+            }`}
             title={
-              <span className="flex items-center gap-1.5">
-                Void / inner faces ({state.geometry.voids.length} void{state.geometry.voids.length > 1 ? 's' : ''})
-                <InfoTooltip
-                  content={
-                    <span>
-                      Cover for bars lining the faces of an internal void — the cell walls of a box pier, the soffit
-                      under a voided deck. Leave a face blank to inherit the outer face of the same orientation.
-                    </span>
-                  }
-                />
-              </span>
-            }
-            action={
-              hasInnerOverrides(cover) ? (
-                <button
-                  type="button"
-                  className={btnMiniCls}
-                  onClick={() =>
-                    patchCover({
-                      ...cover,
-                      inner: { bottom: null, right: null, top: null, left: null },
-                      innerFaces: undefined,
-                      uniformInnerCover: undefined,
-                    })
-                  }
-                  title="Clear the void-face values — they then follow the outer faces"
-                >
-                  clear overrides
-                </button>
-              ) : undefined
+              showAdvanced
+                ? 'Hide face-wise cover options and the cover sketch'
+                : 'Show face-wise cover options and the cover sketch'
             }
           >
-            {sectionType === 'hollow-polygon' ? (
-              <div className="flex flex-col gap-3">
-                {state.geometry.voids.map((vPoly, vIdx) => (
-                  <div key={`void-${vIdx}`} className="flex flex-col gap-1.5">
-                    {state.geometry.voids.length > 1 && (
-                      <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
-                        Void {vIdx + 1} ({vPoly.length} faces)
-                      </span>
-                    )}
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
-                      {vPoly.map((_, idx) => {
-                        const val = getCoverForFace(cover, 'inner', idx, vIdx, state.geometry)
-                        const isActive =
-                          activeFace?.surface === 'inner' &&
-                          activeFace?.faceIndex === idx &&
-                          (activeFace?.voidIndex ?? 0) === vIdx
-                        return (
-                          <div
-                            key={`inner-${vIdx}-${idx}`}
-                            className={`rounded-field p-1 transition-colors ${
-                              isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                            }`}
-                            onMouseEnter={() =>
-                              setActiveFace?.({ surface: 'inner', faceIndex: idx, voidIndex: vIdx })
-                            }
-                            onMouseLeave={() => setActiveFace?.(null)}
-                          >
-                            <NumField
-                              id={`cover-input-inner-${vIdx}-${idx}`}
-                              label={`Face ${idx + 1}`}
-                              unit="mm"
-                              value={val}
-                              min={0}
-                              step={5}
-                              onChange={(v) => patchCover(setInnerFaceCover(cover, idx, v, vIdx, state.geometry))}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
-                {COVER_FACES.map((face) => (
-                  <InnerCoverField
-                    key={face}
-                    face={face}
-                    value={cover.inner[face]}
-                    inherit={outerCover(cover, face)}
-                    onChange={(v) => patchCover(setInnerCover(cover, face, v))}
-                  />
-                ))}
-              </div>
-            )}
-          </SubCard>
-        )}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Icon name="layers" size={13} className="shrink-0 text-ink-3" />
+              <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+                {showAdvanced ? 'Hide Advanced Cover' : 'Show Advanced Cover'}
+              </span>
+              {!showAdvanced && !allEqual && (
+                <span className="rounded-full border border-warn2/35 bg-warn2/10 px-1.5 py-px font-display text-[9px] font-bold uppercase tracking-[0.05em] text-warn2">
+                  custom faces
+                </span>
+              )}
+            </span>
+            <span className="font-display text-[10px] font-bold text-ink-3" aria-hidden="true">
+              {showAdvanced ? '▴' : '▾'}
+            </span>
+          </button>
 
-        <figure className="rounded-lg border border-line bg-panel/40 px-2 pb-1.5 pt-2">
-          <CoverDiagram cover={cover} hasVoid={hasVoid} audit={audit} />
-          <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
-            <span className="inline-flex items-center gap-1">
-              <span className="h-px w-4 bg-ok" aria-hidden="true" /> cover met
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="h-px w-4 bg-bad" aria-hidden="true" /> short
-            </span>
-            {(hasInnerOverrides(cover) ? 8 : 4) + ' faces audited'}
-          </figcaption>
-        </figure>
+          {showAdvanced && (
+            <div
+              className="flex flex-col gap-2.5 rounded-lg border border-edge bg-panel/40 p-2.5"
+              data-testid="advanced-cover-panel"
+            >
+              {hasFaceWiseEditors && (
+                <p className={`${noteSmCls}`}>
+                  Face-wise cover — each concrete face can take its own nominal clear cover. Prefer Uniform Cover
+                  unless a face truly needs a different value.
+                </p>
+              )}
+
+              {/* --- RECTANGULAR: four directional faces --- */}
+              {sectionType === 'rectangular' && (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                      Outer faces
+                    </span>
+                    <Check
+                      checked={linked}
+                      onChange={toggleLink}
+                      label={
+                        <span className="inline-flex items-center gap-1">
+                          <Icon
+                            name={linked ? 'link' : 'close'}
+                            size={11}
+                            className={linked ? 'text-accent' : 'text-ink-3'}
+                          />
+                          Link faces
+                        </span>
+                      }
+                      title={
+                        linked
+                          ? 'All faces share one value — click to detail them independently'
+                          : 'Use one value for every face'
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
+                    {COVER_FACES.map((face, idx) => {
+                      const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
+                      return (
+                        <div
+                          key={face}
+                          className={`rounded-field p-1 transition-colors ${
+                            isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                          }`}
+                          onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
+                          onMouseLeave={() => setActiveFace?.(null)}
+                        >
+                          <NumField
+                            id={`cover-input-outer-0-${idx}`}
+                            label={`${FACE_LABELS[face]}${linked ? ' *' : ''}`}
+                            unit="mm"
+                            value={outerCover(cover, face)}
+                            min={0}
+                            step={5}
+                            hint={FACE_HINTS[face]}
+                            onChange={(v) => setFace(face, v)}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {linked && (
+                    <p className={`${noteSmCls} -mt-0.5`}>
+                      <b>*</b> Faces linked — editing any face sets all four to{' '}
+                      <b>{outerCover(cover, 'bottom')} mm</b>. Unlink to detail them independently.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* --- POLYGON: per-boundary-face --- */}
+              {(sectionType === 'polygon' || sectionType === 'hollow-polygon') && (
+                <div className="flex flex-col gap-2">
+                  <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                    Outer Boundary Faces ({boundaryCount} detected)
+                  </span>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
+                    {Array.from({ length: boundaryCount }).map((_, idx) => {
+                      const val = getCoverForFace(cover, 'outer', idx, 0, state.geometry)
+                      const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
+                      return (
+                        <div
+                          key={`outer-${idx}`}
+                          className={`rounded-field p-1 transition-colors ${
+                            isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                          }`}
+                          onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
+                          onMouseLeave={() => setActiveFace?.(null)}
+                        >
+                          <NumField
+                            id={`cover-input-outer-0-${idx}`}
+                            label={`Face ${idx + 1}`}
+                            unit="mm"
+                            value={val}
+                            min={0}
+                            step={5}
+                            onChange={(v) => patchCover(setOuterFaceCover(cover, idx, v, state.geometry))}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* --- VOID / INNER FACES (advanced) --- */}
+              {hasVoid && hasFaceWiseEditors && (
+                <SubCard
+                  title={
+                    <span className="flex items-center gap-1.5">
+                      Void / inner faces ({state.geometry.voids.length} void
+                      {state.geometry.voids.length > 1 ? 's' : ''})
+                      <InfoTooltip
+                        content={
+                          <span>
+                            Cover for bars lining the faces of an internal void — the cell walls of a box pier, the
+                            soffit under a voided deck. Leave a face blank to inherit the outer face of the same
+                            orientation.
+                          </span>
+                        }
+                      />
+                    </span>
+                  }
+                  action={
+                    hasInnerOverrides(cover) ? (
+                      <button
+                        type="button"
+                        className={btnMiniCls}
+                        onClick={() =>
+                          patchCover({
+                            ...cover,
+                            inner: { bottom: null, right: null, top: null, left: null },
+                            innerFaces: undefined,
+                            uniformInnerCover: undefined,
+                          })
+                        }
+                        title="Clear the void-face values — they then follow the outer faces"
+                      >
+                        clear overrides
+                      </button>
+                    ) : undefined
+                  }
+                >
+                  {sectionType === 'hollow-polygon' ? (
+                    <div className="flex flex-col gap-3">
+                      {state.geometry.voids.map((vPoly, vIdx) => (
+                        <div key={`void-${vIdx}`} className="flex flex-col gap-1.5">
+                          {state.geometry.voids.length > 1 && (
+                            <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                              Void {vIdx + 1} ({vPoly.length} faces)
+                            </span>
+                          )}
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
+                            {vPoly.map((_, idx) => {
+                              const val = getCoverForFace(cover, 'inner', idx, vIdx, state.geometry)
+                              const isActive =
+                                activeFace?.surface === 'inner' &&
+                                activeFace?.faceIndex === idx &&
+                                (activeFace?.voidIndex ?? 0) === vIdx
+                              return (
+                                <div
+                                  key={`inner-${vIdx}-${idx}`}
+                                  className={`rounded-field p-1 transition-colors ${
+                                    isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                                  }`}
+                                  onMouseEnter={() =>
+                                    setActiveFace?.({ surface: 'inner', faceIndex: idx, voidIndex: vIdx })
+                                  }
+                                  onMouseLeave={() => setActiveFace?.(null)}
+                                >
+                                  <NumField
+                                    id={`cover-input-inner-${vIdx}-${idx}`}
+                                    label={`Face ${idx + 1}`}
+                                    unit="mm"
+                                    value={val}
+                                    min={0}
+                                    step={5}
+                                    onChange={(v) =>
+                                      patchCover(setInnerFaceCover(cover, idx, v, vIdx, state.geometry))
+                                    }
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
+                      {COVER_FACES.map((face) => (
+                        <InnerCoverField
+                          key={face}
+                          face={face}
+                          value={cover.inner[face]}
+                          inherit={outerCover(cover, face)}
+                          onChange={(v) => patchCover(setInnerCover(cover, face, v))}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </SubCard>
+              )}
+
+              {/* Cover section sketch — only visible when Advanced Cover is shown */}
+              <figure
+                className="rounded-lg border border-line bg-card/70 px-2 pb-1.5 pt-2"
+                data-testid="advanced-cover-figure"
+              >
+                <CoverDiagram
+                  cover={cover}
+                  geometry={state.geometry}
+                  sectionType={sectionType}
+                  audit={audit}
+                />
+                <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-px w-4 bg-ok" aria-hidden="true" /> cover met
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-px w-4 bg-bad" aria-hidden="true" /> short
+                  </span>
+                  <span>
+                    {sectionType.replace('-', ' ')}
+                    {state.geometry.boundary.length >= 3
+                      ? ` · ${state.geometry.boundary.length} outer face${state.geometry.boundary.length === 1 ? '' : 's'}`
+                      : ''}
+                    {hasVoid ? ` · ${state.geometry.voids.length} void${state.geometry.voids.length === 1 ? '' : 's'}` : ''}
+                  </span>
+                </figcaption>
+              </figure>
+            </div>
+          )}
+        </div>
 
         {/* Achieved cover audit list */}
         <Banner tone={minOk ? 'ok' : 'error'}>
@@ -537,116 +692,371 @@ function InnerCoverField({
   )
 }
 
+
 export function CoverDiagram({
   cover,
-  hasVoid,
+  geometry,
+  sectionType,
   audit,
 }: {
   cover: CoverSpec
-  hasVoid: boolean
+  geometry: SectionGeometry
+  sectionType: 'rectangular' | 'polygon' | 'circle' | 'hollow-polygon' | 'hollow-circle'
   audit: CoverAudit
 }) {
-  const W = 250
-  const H = 158
-  const box = { x: 24, y: 18, w: W - 48, h: H - 46 }
-  const maxC = Math.max(
-    60,
-    ...COVER_FACES.map((f) => Math.max(outerCover(cover, f), innerCover(cover, f))),
-  )
-  const k = 24 / maxC
-  const inset = (v: number) => Math.max(5, Math.min(Math.min(box.w, box.h) / 2 - 10, v * k))
+  const W = 320
+  const H = 220
+  const MARGIN = 46
 
-  const shortFaces = new Set(audit.bars.filter((s) => !s.ok).map((s) => `${s.surface}:${s.face}`))
-  const col = (key: string) => (shortFaces.has(key) ? 'var(--color-bad)' : 'var(--color-ok)')
+  const bnd = geometry.boundary
+  const voids = geometry.voids
+  const isCircle = sectionType === 'circle' || sectionType === 'hollow-circle'
+  const isHollowCircle = sectionType === 'hollow-circle'
+  const isRect = bnd.length === 4 && !isCircle
 
-  const bo = outerCover(cover, 'bottom')
-  const to = outerCover(cover, 'top')
-  const le = outerCover(cover, 'left')
-  const ri = outerCover(cover, 'right')
-  const ib = innerCover(cover, 'bottom')
-  const it = innerCover(cover, 'top')
-  const il = innerCover(cover, 'left')
-  const ir = innerCover(cover, 'right')
-
-  const lines: { x1: number; y1: number; x2: number; y2: number; key: string }[] = [
-    { x1: box.x, y1: box.y + box.h - inset(bo), x2: box.x + box.w, y2: box.y + box.h - inset(bo), key: 'outer:bottom' },
-    { x1: box.x, y1: box.y + inset(to), x2: box.x + box.w, y2: box.y + inset(to), key: 'outer:top' },
-    { x1: box.x + inset(le), y1: box.y, x2: box.x + inset(le), y2: box.y + box.h, key: 'outer:left' },
-    { x1: box.x + box.w - inset(ri), y1: box.y, x2: box.x + box.w - inset(ri), y2: box.y + box.h, key: 'outer:right' },
-  ]
-  const tags: { x: number; y: number; text: string; key: string }[] = [
-    { x: box.x + box.w / 2, y: box.y + box.h - inset(bo) / 2 + 3, text: `${bo}`, key: 'outer:bottom' },
-    { x: box.x + box.w / 2, y: box.y + inset(to) / 2 + 3, text: `${to}`, key: 'outer:top' },
-    { x: box.x + inset(le) / 2 - 2, y: box.y + box.h / 2, text: `${le}`, key: 'outer:left' },
-    { x: box.x + box.w - inset(ri) / 2 + 2, y: box.y + box.h / 2, text: `${ri}`, key: 'outer:right' },
-  ]
-
-  const vx = box.x + box.w * 0.3
-  const vy = box.y + box.h * 0.3
-  const vw = box.w - 2 * box.w * 0.3
-  const vh = box.h - 2 * box.h * 0.3
-  if (hasVoid) {
-    lines.push(
-      { x1: vx, y1: vy + vh + inset(ib), x2: vx + vw, y2: vy + vh + inset(ib), key: 'inner:bottom' },
-      { x1: vx, y1: vy - inset(it), x2: vx + vw, y2: vy - inset(it), key: 'inner:top' },
-      { x1: vx - inset(il), y1: vy, x2: vx - inset(il), y2: vy + vh, key: 'inner:left' },
-      { x1: vx + vw + inset(ir), y1: vy, x2: vx + vw + inset(ir), y2: vy + vh, key: 'inner:right' },
-    )
-    tags.push(
-      { x: vx + vw / 2, y: vy + vh + inset(ib) / 2 + 3, text: `${ib}`, key: 'inner:bottom' },
-      { x: vx + vw / 2, y: vy - inset(it) / 2 + 3, text: `${it}`, key: 'inner:top' },
+  if (!bnd.length) {
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto block w-full max-w-[360px]" role="img">
+        <text x={W / 2} y={H / 2} fontSize="10" textAnchor="middle" fill="var(--color-ink-3)">
+          no geometry
+        </text>
+      </svg>
     )
   }
+
+  // World bounds from concrete + voids only (reinforcement not drawn).
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const extend = (p: Point) => {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  bnd.forEach(extend)
+  voids.forEach((vp) => vp.forEach(extend))
+
+  const gW = maxX - minX || 1
+  const gH = maxY - minY || 1
+  const scale = Math.min((W - 2 * MARGIN) / gW, (H - 2 * MARGIN) / gH)
+  const offX = (W - gW * scale) / 2
+  const offY = (H - gH * scale) / 2
+  const X = (x: number) => offX + (x - minX) * scale
+  const Y = (y: number) => offY + (maxY - y) * scale
+
+  // Circle radii / centre.
+  let cx = 0, cy = 0, R = 0, Ri = 0
+  if (isCircle) {
+    cx = (minX + maxX) / 2
+    cy = (minY + maxY) / 2
+    R = (maxX - minX) / 2
+    if (isHollowCircle && voids.length) {
+      let vminX = Infinity, vminY = Infinity, vmaxX = -Infinity, vmaxY = -Infinity
+      voids[0].forEach((p) => {
+        if (p.x < vminX) vminX = p.x
+        if (p.y < vminY) vminY = p.y
+        if (p.x > vmaxX) vmaxX = p.x
+        if (p.y > vmaxY) vmaxY = p.y
+      })
+      Ri = (vmaxX - vminX) / 2
+    }
+  }
+
+  const polySA = (poly: Point[]): number => {
+    let s = 0
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]
+      const b = poly[(i + 1) % poly.length]
+      s += a.x * b.y - b.x * a.y
+    }
+    return s / 2
+  }
+  const segNormal = (poly: Point[], i: number, intoConcrete: boolean) => {
+    const a = poly[i]
+    const b = poly[(i + 1) % poly.length]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len = Math.hypot(dx, dy) || 1
+    const ccw = polySA(poly) >= 0
+    const inx = ccw ? -dy / len : dy / len
+    const iny = ccw ? dx / len : -dy / len
+    const nx = intoConcrete ? inx : -inx
+    const ny = intoConcrete ? iny : -iny
+    return { a, b, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, nx, ny, len }
+  }
+
+  const shortFaces = new Set<string>()
+  for (const s of audit.bars) if (!s.ok) shortFaces.add(`${s.surface}:${s.voidIndex ?? 0}:${s.faceIndex}`)
+  const fcol = (key: string) => (shortFaces.has(key) ? 'var(--color-bad)' : 'var(--color-ink-2)')
+
+  const polyPath = (poly: Point[]) =>
+    poly
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${X(p.x).toFixed(2)},${Y(p.y).toFixed(2)}`)
+      .join(' ') + ' Z'
+
+  // Offset a polygon by `d` mm along the inward normals to produce the dashed
+  // clear-cover guide. For voids the guide lies outside the void (concrete side).
+  const offsetPolyPts = (poly: Point[], d: number, intoConcrete: boolean): Point[] => {
+    return poly.map((_, i) => {
+      const s = segNormal(poly, i, intoConcrete)
+      const prev = segNormal(poly, (i - 1 + poly.length) % poly.length, intoConcrete)
+      const ax = (s.nx + prev.nx) / 2
+      const ay = (s.ny + prev.ny) / 2
+      const al = Math.hypot(ax, ay) || 1
+      return { x: s.a.x + (ax / al) * d, y: s.a.y + (ay / al) * d }
+    })
+  }
+  const offsetPath = (poly: Point[], d: number, intoConcrete: boolean) => {
+    const pts = offsetPolyPts(poly, d, intoConcrete)
+    return pts
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${X(p.x).toFixed(2)},${Y(p.y).toFixed(2)}`)
+      .join(' ') + (Math.abs(d) > 1e-6 ? '' : '')
+  }
+
+  type FaceDim = {
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    valX: number
+    valY: number
+    valAnchor: 'start' | 'end' | 'middle'
+    faceLblX: number
+    faceLblY: number
+    label: string
+    faceName: string
+    color: string
+  }
+  const faceDims: FaceDim[] = []
+
+  const faceName = (surface: 'outer' | 'inner', i: number) => {
+    if (isRect && surface === 'outer') return FACE_LABELS[COVER_FACES[i]]
+    if (isRect && surface === 'inner') return `Inner ${FACE_LABELS[COVER_FACES[i]]}`
+    if (surface === 'outer') return `Face ${i + 1}`
+    return `Inner Face ${i + 1}`
+  }
+
+  const addFace = (
+    poly: Point[],
+    surface: 'outer' | 'inner',
+    i: number,
+    voidIndex: number,
+  ) => {
+    const intoConcrete = surface === 'outer'
+    const s = segNormal(poly, i, intoConcrete)
+    const cov = getCoverForFace(cover, surface, i, voidIndex, geometry)
+
+    const endW = { x: s.mx + s.nx * cov, y: s.my + s.ny * cov }
+    const x1 = X(s.mx)
+    const y1 = Y(s.my)
+    const x2 = X(endW.x)
+    const y2 = Y(endW.y)
+
+    const ndx = x2 - x1
+    const ndy = y2 - y1
+    const nlen = Math.hypot(ndx, ndy) || 1
+    const ux = ndx / nlen
+    const uy = ndy / nlen
+
+    const outDist = 18 / scale
+    const fW = { x: s.mx - s.nx * outDist, y: s.my - s.ny * outDist }
+    const faceLblX = X(fW.x)
+    const faceLblY = Y(fW.y) + 3
+
+    const pastPx = 10
+    const valX = x2 + ux * pastPx
+    const valY = y2 + uy * pastPx + 3
+    let valAnchor: 'start' | 'end' | 'middle' = 'middle'
+    if (Math.abs(ux) > Math.abs(uy)) valAnchor = ux > 0 ? 'start' : 'end'
+
+    faceDims.push({
+      x1, y1, x2, y2,
+      valX, valY, valAnchor,
+      faceLblX, faceLblY,
+      label: `${cov}`,
+      faceName: faceName(surface, i),
+      color: fcol(`${surface}:${voidIndex}:${i}`),
+    })
+  }
+
+  const addRing = (poly: Point[], surface: 'outer' | 'inner', voidIndex = 0) => {
+    for (let i = 0; i < poly.length; i++) addFace(poly, surface, i, voidIndex)
+  }
+
+  const outerCoverVal = cover.uniformOuterCover ?? outerCover(cover, 'bottom')
+  const innerCoverVal = isHollowCircle
+    ? (cover.uniformInnerCover ?? innerCover(cover, 'bottom'))
+    : 0
+
+  if (isCircle) {
+    // Representative radial ticked leader at the bottom of the circle.
+    const addCircDim = (
+      r0: number,
+      cov: number,
+      inward: boolean,
+      name: string,
+      col: string,
+    ) => {
+      const faceY = inward ? cy + r0 : cy - r0
+      const dir = inward ? -1 : +1
+      const endY = faceY + dir * cov
+      const x1 = X(cx)
+      const y1 = Y(faceY)
+      const x2 = X(cx)
+      const y2 = Y(endY)
+      const fY = faceY - dir * (16 / scale)
+      faceDims.push({
+        x1, y1, x2, y2,
+        valX: x2 + 8, valY: y2 + 3, valAnchor: 'start',
+        faceLblX: X(cx), faceLblY: Y(fY) + 3,
+        label: `${cov}`,
+        faceName: name,
+        color: col,
+      })
+    }
+    addCircDim(
+      R, outerCoverVal, true, 'Bottom',
+      audit.nShort === 0 ? 'var(--color-ink-2)' : 'var(--color-bad)',
+    )
+    if (isHollowCircle) {
+      addCircDim(
+        Ri, innerCoverVal, false, 'Inner bottom',
+        audit.bars.some((s) => s.surface === 'inner' && !s.ok) ? 'var(--color-bad)' : 'var(--color-ink-2)',
+      )
+    }
+  } else {
+    addRing(bnd, 'outer', 0)
+    voids.forEach((vp, vi) => addRing(vp, 'inner', vi))
+  }
+
+  const RS = R * scale
+  const RiS = Ri * scale
+  const cxS = X(cx)
+  const cyS = Y(cy)
 
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
-      className="mx-auto block w-full max-w-[280px]"
+      className="mx-auto block w-full max-w-[360px]"
       role="img"
-      aria-label="Per-face cover sketch"
+      aria-label="Advanced cover figure: concrete section outline with dashed clear-cover guides"
     >
-      <rect x={box.x} y={box.y} width={box.w} height={box.h} className="fill-concrete stroke-ink" strokeWidth="1.6" rx="1.5" />
-      {[
-        { x: box.x + box.w / 2, y: H - 16, t: 'bottom' },
-        { x: box.x + box.w / 2, y: 11, t: 'top' },
-        { x: box.x - 14, y: box.y + box.h / 2, t: 'left' },
-        { x: box.x + box.w + 14, y: box.y + box.h / 2, t: 'right' },
-      ].map((f) => (
-        <text
-          key={f.t}
-          x={f.x}
-          y={f.y}
-          fontSize="7"
-          textAnchor="middle"
-          letterSpacing="0.5"
-          fill="var(--color-ink-3)"
-          style={{ textTransform: 'uppercase' }}
-        >
-          {f.t}
-        </text>
-      ))}
-      {hasVoid && (
-        <rect x={vx} y={vy} width={vw} height={vh} className="fill-paper stroke-ink" strokeWidth="1.2" />
+      {/* Concrete outline */}
+      {isCircle ? (
+        <circle cx={cxS} cy={cyS} r={RS} className="fill-concrete stroke-ink" strokeWidth="1.6" />
+      ) : (
+        <path d={polyPath(bnd)} className="fill-concrete stroke-ink" strokeWidth="1.6" strokeLinejoin="round" />
       )}
-      {lines.map((l, i) => (
-        <line
-          key={i}
-          x1={l.x1}
-          y1={l.y1}
-          x2={l.x2}
-          y2={l.y2}
-          stroke={col(l.key)}
-          strokeWidth="1"
-          strokeDasharray="4 3"
+      {/* Voids */}
+      {isHollowCircle && (
+        <circle cx={cxS} cy={cyS} r={RiS} className="fill-paper stroke-ink" strokeWidth="1.2" />
+      )}
+      {!isCircle && voids.map((vp, i) => (
+        <path
+          key={`v-${i}`}
+          d={polyPath(vp)}
+          className="fill-paper stroke-ink"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
         />
       ))}
-      {tags.map((t, i) => (
-        <text key={`t-${i}`} x={t.x} y={t.y} fontSize="9" fontWeight="600" textAnchor="middle" fill={col(t.key)}>
-          {t.text}
-        </text>
-      ))}
-      <text x={box.x} y={H - 4} fontSize="8" fill="var(--color-ink-3)">
-        nominal cover to the links · spacing schematic, numbers in mm
+
+      {/* Dashed clear-cover offset guides */}
+      {isCircle ? (
+        <>
+          <circle
+            cx={cxS}
+            cy={cyS}
+            r={Math.max(1, RS - outerCoverVal * scale)}
+            stroke="var(--color-ink-2)"
+            strokeWidth="1"
+            strokeDasharray="4 3"
+            fill="none"
+          />
+          {isHollowCircle && Ri > 0 && (
+            <circle
+              cx={cxS}
+              cy={cyS}
+              r={Math.max(1, RiS + innerCoverVal * scale)}
+              stroke="var(--color-ink-2)"
+              strokeWidth="1"
+              strokeDasharray="4 3"
+              fill="none"
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <path
+            d={offsetPath(bnd, outerCoverVal, true)}
+            stroke="var(--color-ink-2)"
+            strokeWidth="1"
+            strokeDasharray="4 3"
+            fill="none"
+            strokeLinejoin="round"
+          />
+          {voids.map((vp, vi) => {
+            const innerCov = getCoverForFace(cover, 'inner', 0, vi, geometry)
+            return (
+              <path
+                key={`vo-${vi}`}
+                d={offsetPath(vp, innerCov, false)}
+                stroke="var(--color-ink-2)"
+                strokeWidth="1"
+                strokeDasharray="4 3"
+                fill="none"
+                strokeLinejoin="round"
+              />
+            )
+          })}
+        </>
+      )}
+
+      {/* Per-face leaders, value labels, and face names */}
+      {faceDims.map((d, idx) => {
+        const tk = 3
+        const dx = d.x2 - d.x1
+        const dy = d.y2 - d.y1
+        const dl = Math.hypot(dx, dy) || 1
+        const ux = dx / dl
+        const uy = dy / dl
+        const px = -uy * tk
+        const py = ux * tk
+        return (
+          <g key={`fd-${idx}`}>
+            <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={d.color} strokeWidth="0.9" />
+            <line x1={d.x1 - px} y1={d.y1 - py} x2={d.x1 + px} y2={d.y1 + py} stroke={d.color} strokeWidth="1.1" />
+            <line x1={d.x2 - px} y1={d.y2 - py} x2={d.x2 + px} y2={d.y2 + py} stroke={d.color} strokeWidth="1.1" />
+            <circle cx={d.x1} cy={d.y1} r="1.2" fill={d.color} />
+            <text
+              x={d.valX}
+              y={d.valY}
+              fontSize="9"
+              fontWeight="700"
+              textAnchor={d.valAnchor}
+              fill={d.color}
+            >
+              {d.label}
+              <tspan fontSize="7" fill="var(--color-ink-3)" dx="1"> mm</tspan>
+            </text>
+            <text
+              x={d.faceLblX}
+              y={d.faceLblY}
+              fontSize="7.5"
+              fontWeight="700"
+              textAnchor="middle"
+              fill="var(--color-ink-2)"
+              style={{ textTransform: 'uppercase', letterSpacing: '0.4px' }}
+            >
+              {d.faceName}
+            </text>
+          </g>
+        )
+      })}
+
+      <text x={8} y={H - 6} fontSize="7.5" fill="var(--color-ink-3)">
+        {isCircle
+          ? `⌀${(R * 2).toFixed(0)} mm${isHollowCircle ? ` · void ⌀${(Ri * 2).toFixed(0)} mm` : ''} · dashed = nominal clear cover (mm)`
+          : `${bnd.length} outer face${bnd.length === 1 ? '' : 's'}${voids.length ? ` · ${voids.length} void${voids.length === 1 ? '' : 's'}` : ''} · dashed = nominal clear cover (mm)`}
       </text>
     </svg>
   )

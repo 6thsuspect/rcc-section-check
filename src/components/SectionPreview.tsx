@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import type { Rebar, SectionGeometry, SectionProperties } from '../engine/types'
 import {
   faceFromNormal,
@@ -45,6 +45,18 @@ export interface NAInfo {
   /** Signed offset of the NA from the centroid along the compression normal, mm. */
   vna: number
   caption: string
+  /** Depth of NA from extreme compression fibre, mm. */
+  xu?: number | null
+  /** Limiting NA depth xu,max, mm. */
+  xuMax?: number | null
+  /** Extreme compression fibre point (user coords). */
+  extremeComp?: { x: number; y: number }
+  /** NA point along the same normal as extremeComp (user coords). */
+  naPoint?: { x: number; y: number }
+  /** Unit compression normal (toward compressed side). */
+  normal?: { x: number; y: number }
+  /** Under / over-reinforced classification. */
+  classification?: string
 }
 
 export function SectionPreview({
@@ -55,6 +67,7 @@ export function SectionPreview({
   cover,
   audit,
   radialCoverOnly = false,
+  overlappingBarIndices,
   activeFace,
   onHoverFace,
   onSelectFace,
@@ -69,10 +82,16 @@ export function SectionPreview({
   audit?: CoverAudit | null
   /** Circular rings use one governing radial value all around the section. */
   radialCoverOnly?: boolean
+  /** 0-based indices of bars whose solids overlap — drawn filled red. */
+  overlappingBarIndices?: number[] | null
   activeFace?: ActiveFace | null
   onHoverFace?: (face: ActiveFace | null) => void
   onSelectFace?: (face: ActiveFace | null) => void
 }) {
+  const overlapSet = useMemo(
+    () => new Set(overlappingBarIndices ?? []),
+    [overlappingBarIndices],
+  )
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
   const [labelColor, setLabelColor] = useState(LABEL_COLORS[1].hex)
@@ -102,7 +121,34 @@ export function SectionPreview({
   const cy = props ? Y(props.cy) : null
 
   // neutral-axis geometry in user coordinates
-  let naEls: { x1: number; y1: number; x2: number; y2: number; poly: string; lx: number; ly: number } | null = null
+  type XuDim = {
+    /** Outside dimension line (extreme compression fibre → NA), screen coords. */
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    /** Extension lines from the section points out to the dimension line. */
+    ext1: { x1: number; y1: number; x2: number; y2: number }
+    ext2: { x1: number; y1: number; x2: number; y2: number }
+    mx: number
+    my: number
+    label: string
+    labelAnchor: 'start' | 'middle' | 'end'
+    tick1a: { x: number; y: number }
+    tick1b: { x: number; y: number }
+    tick2a: { x: number; y: number }
+    tick2b: { x: number; y: number }
+  }
+  let naEls: {
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    poly: string
+    lx: number
+    ly: number
+    dim?: XuDim
+  } | null = null
   if (na && props && showNA) {
     const d = { x: Math.cos(na.theta), y: Math.sin(na.theta) }
     const n = { x: -Math.sin(na.theta), y: Math.cos(na.theta) }
@@ -112,14 +158,140 @@ export function SectionPreview({
     const B = { x: P0.x + L * d.x, y: P0.y + L * d.y }
     const C = { x: B.x + L * n.x, y: B.y + L * n.y }
     const Dp = { x: A.x + L * n.x, y: A.y + L * n.y }
-    naEls = {
-      x1: X(A.x),
-      y1: Y(A.y),
-      x2: X(B.x),
-      y2: Y(B.y),
-      poly: [A, B, C, Dp].map((p) => `${X(p.x)},${Y(p.y)}`).join(' '),
-      lx: X(P0.x + 0.15 * L * d.x + 6 / scale * n.x),
-      ly: Y(P0.y + 0.15 * L * d.y) - 5,
+
+    /**
+     * Place the xu dimension **outside** the concrete outline:
+     * offset extreme-fibre and NA points along ±d (parallel to the NA) past
+     * the section bbox, pick the nearer clear side, and draw extension lines
+     * back to the true section points. Works for any shape / NA orientation.
+     */
+    let dim: XuDim | undefined
+    if (
+      na.xu != null &&
+      Number.isFinite(na.xu) &&
+      na.xu > 0 &&
+      na.extremeComp &&
+      na.naPoint
+    ) {
+      const E = na.extremeComp
+      const Np = na.naPoint
+
+      // Section extent along the NA direction d
+      let dMin = Infinity
+      let dMax = -Infinity
+      for (const p of geometry.boundary) {
+        const pr = p.x * d.x + p.y * d.y
+        if (pr < dMin) dMin = pr
+        if (pr > dMax) dMax = pr
+      }
+      // Clearance past the bbox edge, in mm (scale-aware: ~26–32 px on screen)
+      const marginMm = Math.max(26 / scale, 0.04 * Math.max(xmax - xmin, ymax - ymin, 1))
+      const pProj = E.x * d.x + E.y * d.y
+      const outPlus = dMax - pProj + marginMm
+      const outMinus = pProj - dMin + marginMm
+
+      // Prefer the side that needs less travel; break ties toward the side with
+      // more remaining SVG padding (so the label stays inside the figure).
+      const midScreenX = (X(E.x) + X(Np.x)) / 2
+      const midScreenY = (Y(E.y) + Y(Np.y)) / 2
+      // Screen-space direction of +d (Y is flipped in SVG)
+      const dSx = d.x * scale
+      const dSy = -d.y * scale
+      const roomPlus =
+        (dSx >= 0 ? W - midScreenX : midScreenX) * Math.abs(dSx) +
+        (dSy >= 0 ? H - midScreenY : midScreenY) * Math.abs(dSy)
+      const roomMinus =
+        (-dSx >= 0 ? W - midScreenX : midScreenX) * Math.abs(dSx) +
+        (-dSy >= 0 ? H - midScreenY : midScreenY) * Math.abs(dSy)
+
+      let side = 1
+      let out = Math.max(outPlus, marginMm)
+      if (outMinus < outPlus - 1e-9 || (Math.abs(outMinus - outPlus) < 1e-9 && roomMinus > roomPlus)) {
+        side = -1
+        out = Math.max(outMinus, marginMm)
+      } else if (roomMinus > roomPlus * 1.4 && outMinus < outPlus * 1.25) {
+        // Plenty more figure room on the minus side — use it even if slightly farther
+        side = -1
+        out = Math.max(outMinus, marginMm)
+      }
+
+      const Eo = { x: E.x + side * out * d.x, y: E.y + side * out * d.y }
+      const No = { x: Np.x + side * out * d.x, y: Np.y + side * out * d.y }
+
+      // Tick marks parallel to the NA (along d)
+      const tLen = 5 / scale
+      // Label sits further outside the dimension line
+      const labelPush = 14 / scale
+      let lx = (Eo.x + No.x) / 2 + side * labelPush * d.x
+      let ly = (Eo.y + No.y) / 2 + side * labelPush * d.y
+
+      // Keep the label inside the SVG frame
+      let mx = X(lx)
+      let my = Y(ly)
+      const labelPad = 8
+      mx = Math.min(W - labelPad, Math.max(labelPad, mx))
+      my = Math.min(H - labelPad, Math.max(labelPad + fontSize, my))
+
+      // Anchor: push text away from the section along screen-space outward direction
+      const outSx = side * dSx
+      const outSy = side * dSy
+      let labelAnchor: 'start' | 'middle' | 'end' = 'middle'
+      if (Math.abs(outSx) >= Math.abs(outSy)) {
+        labelAnchor = outSx >= 0 ? 'start' : 'end'
+        my -= 2
+      } else {
+        labelAnchor = 'middle'
+        my += outSy >= 0 ? fontSize * 0.35 : -fontSize * 0.15
+      }
+
+      dim = {
+        x1: X(Eo.x),
+        y1: Y(Eo.y),
+        x2: X(No.x),
+        y2: Y(No.y),
+        ext1: { x1: X(E.x), y1: Y(E.y), x2: X(Eo.x), y2: Y(Eo.y) },
+        ext2: { x1: X(Np.x), y1: Y(Np.y), x2: X(No.x), y2: Y(No.y) },
+        mx,
+        my,
+        label: `xu = ${na.xu.toFixed(1)} mm`,
+        labelAnchor,
+        tick1a: { x: X(Eo.x - tLen * d.x), y: Y(Eo.y - tLen * d.y) },
+        tick1b: { x: X(Eo.x + tLen * d.x), y: Y(Eo.y + tLen * d.y) },
+        tick2a: { x: X(No.x - tLen * d.x), y: Y(No.y - tLen * d.y) },
+        tick2b: { x: X(No.x + tLen * d.x), y: Y(No.y + tLen * d.y) },
+      }
+    }
+
+    // "NA" tag: park it outside the section along ±d at the NA line
+    let naTagSide = 1
+    {
+      let dMin = Infinity
+      let dMax = -Infinity
+      for (const p of geometry.boundary) {
+        const pr = p.x * d.x + p.y * d.y
+        if (pr < dMin) dMin = pr
+        if (pr > dMax) dMax = pr
+      }
+      const p0p = P0.x * d.x + P0.y * d.y
+      const marginMm = Math.max(18 / scale, 0.03 * Math.max(xmax - xmin, ymax - ymin, 1))
+      const outP = dMax - p0p + marginMm
+      const outM = p0p - dMin + marginMm
+      naTagSide = outM < outP ? -1 : 1
+      const tagOut = Math.max(naTagSide > 0 ? outP : outM, marginMm)
+      const tag = {
+        x: P0.x + naTagSide * tagOut * d.x,
+        y: P0.y + naTagSide * tagOut * d.y,
+      }
+      naEls = {
+        x1: X(A.x),
+        y1: Y(A.y),
+        x2: X(B.x),
+        y2: Y(B.y),
+        poly: [A, B, C, Dp].map((p) => `${X(p.x)},${Y(p.y)}`).join(' '),
+        lx: Math.min(W - 6, Math.max(6, X(tag.x))),
+        ly: Math.min(H - 4, Math.max(fontSize + 2, Y(tag.y))),
+        dim,
+      }
     }
   }
 
@@ -398,6 +570,90 @@ export function SectionPreview({
             <text x={naEls.lx} y={naEls.ly} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelColor}>
               NA
             </text>
+            {naEls.dim && (
+              <g>
+                {/* Extension lines from section points out to the exterior dimension */}
+                <line
+                  x1={naEls.dim.ext1.x1}
+                  y1={naEls.dim.ext1.y1}
+                  x2={naEls.dim.ext1.x2}
+                  y2={naEls.dim.ext1.y2}
+                  stroke="var(--color-demand)"
+                  strokeWidth="0.9"
+                  strokeDasharray="3 2"
+                  opacity="0.85"
+                />
+                <line
+                  x1={naEls.dim.ext2.x1}
+                  y1={naEls.dim.ext2.y1}
+                  x2={naEls.dim.ext2.x2}
+                  y2={naEls.dim.ext2.y2}
+                  stroke="var(--color-demand)"
+                  strokeWidth="0.9"
+                  strokeDasharray="3 2"
+                  opacity="0.85"
+                />
+                {/* xu depth dimension — outside the concrete outline */}
+                <line
+                  x1={naEls.dim.x1}
+                  y1={naEls.dim.y1}
+                  x2={naEls.dim.x2}
+                  y2={naEls.dim.y2}
+                  stroke="var(--color-demand)"
+                  strokeWidth="1.5"
+                />
+                <line
+                  x1={naEls.dim.tick1a.x}
+                  y1={naEls.dim.tick1a.y}
+                  x2={naEls.dim.tick1b.x}
+                  y2={naEls.dim.tick1b.y}
+                  stroke="var(--color-demand)"
+                  strokeWidth="1.5"
+                />
+                <line
+                  x1={naEls.dim.tick2a.x}
+                  y1={naEls.dim.tick2a.y}
+                  x2={naEls.dim.tick2b.x}
+                  y2={naEls.dim.tick2b.y}
+                  stroke="var(--color-demand)"
+                  strokeWidth="1.5"
+                />
+                <circle cx={naEls.dim.x1} cy={naEls.dim.y1} r={2.2} fill="var(--color-demand)" />
+                <circle cx={naEls.dim.x2} cy={naEls.dim.y2} r={2.2} fill="var(--color-demand)" />
+                {/* Markers on the actual extreme fibre and NA (inside section) */}
+                <circle
+                  cx={naEls.dim.ext1.x1}
+                  cy={naEls.dim.ext1.y1}
+                  r={2}
+                  fill="none"
+                  stroke="var(--color-demand)"
+                  strokeWidth="1.2"
+                />
+                <circle
+                  cx={naEls.dim.ext2.x1}
+                  cy={naEls.dim.ext2.y1}
+                  r={2}
+                  fill="none"
+                  stroke="var(--color-demand)"
+                  strokeWidth="1.2"
+                />
+                <text
+                  x={naEls.dim.mx}
+                  y={naEls.dim.my}
+                  fontSize={Math.max(10, fontSize)}
+                  fontFamily={FONT}
+                  fontWeight="700"
+                  fill="var(--color-demand)"
+                  textAnchor={naEls.dim.labelAnchor}
+                  paintOrder="stroke"
+                  stroke="var(--color-paper)"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                >
+                  {naEls.dim.label}
+                </text>
+              </g>
+            )}
           </g>
         )}
 
@@ -418,18 +674,25 @@ export function SectionPreview({
         {bars.map((b, i) => {
           const r = Math.max(2.2, (b.dia / 2) * scale)
           const st = audit?.bars[i] ?? null
-          const bad = st !== null && !st.ok
+          const coverShort = st !== null && !st.ok
+          const overlaps = overlapSet.has(i)
+          const bad = coverShort || overlaps
           return (
             <g key={i}>
               <circle
                 cx={X(b.x)}
                 cy={Y(b.y)}
                 r={r}
-                className="fill-capacity"
+                fill={overlaps ? 'var(--color-bad)' : undefined}
+                className={overlaps ? undefined : 'fill-capacity'}
                 stroke={bad ? 'var(--color-bad)' : 'none'}
-                strokeWidth={bad ? 1.6 : 0}
+                strokeWidth={bad ? (overlaps ? 2 : 1.6) : 0}
               >
-                <title>{barTooltip(i, b, st)}</title>
+                <title>
+                  {overlaps
+                    ? `${barTooltip(i, b, st)} — OVERLAP`
+                    : barTooltip(i, b, st)}
+                </title>
               </circle>
               {showLabels && (
                 <text
@@ -437,7 +700,8 @@ export function SectionPreview({
                   y={Y(b.y) - r - 1}
                   fontSize={fontSize}
                   fontFamily={FONT}
-                  fill={labelColor}
+                  fill={overlaps ? 'var(--color-bad)' : labelColor}
+                  fontWeight={overlaps ? 700 : undefined}
                 >
                   {i + 1}
                 </text>
@@ -467,6 +731,18 @@ export function SectionPreview({
             </span>
           </p>
         )}
+        {overlapSet.size > 0 && (
+          <p className={`${noteSmCls} flex items-start gap-1.5`}>
+            <span
+              aria-hidden="true"
+              className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full bg-bad"
+            />
+            <span className="font-semibold text-bad">
+              {overlapSet.size} bar(s) overlap / intersect — filled red on the figure. Adjust bundle
+              spacing or diameters until solids no longer cross.
+            </span>
+          </p>
+        )}
         {na && showNA && (
           <p className={`${noteSmCls} flex items-start gap-1.5`}>
             <span aria-hidden="true" className="mt-[5px] h-0 w-4 shrink-0 border-t-2 border-dotted border-demand" />
@@ -487,6 +763,43 @@ export function SectionPreview({
           <Readout label="Ixx" value={`${fmtN(props.Ixx / 1e6, 0)}×10⁶ mm⁴`} title="Second moment of area about the centroidal X axis" />
           <Readout label="Iyy" value={`${fmtN(props.Iyy / 1e6, 0)}×10⁶ mm⁴`} title="Second moment of area about the centroidal Y axis" />
           <Readout label="Centroid G" value={`(${fmtN(props.cx, 0)}, ${fmtN(props.cy, 0)})`} />
+          {na && showNA && na.xu != null && Number.isFinite(na.xu) && (
+            <>
+              <Readout
+                label="xu (from ext. comp.)"
+                value={`${fmtN(na.xu, 1)} mm`}
+                title="Depth of the neutral axis measured from the extreme compression fibre along the compression normal"
+                className="font-semibold text-demand"
+              />
+              {na.xuMax != null && (
+                <Readout
+                  label="xu,max = k·d"
+                  value={`${fmtN(na.xuMax, 1)} mm`}
+                  title="Limiting neutral-axis depth for the tension-controlled (under-reinforced) limit"
+                />
+              )}
+              {na.classification && (
+                <Readout
+                  label="Section class"
+                  value={
+                    na.classification === 'under-reinforced'
+                      ? 'Under-reinforced'
+                      : na.classification === 'over-reinforced'
+                        ? 'Over-reinforced'
+                        : na.classification
+                  }
+                  title="xu ≤ xu,max → under-reinforced (tension failure); xu > xu,max → over-reinforced (compression failure)"
+                  className={
+                    na.classification === 'under-reinforced'
+                      ? 'font-semibold text-ok'
+                      : na.classification === 'over-reinforced'
+                        ? 'font-semibold text-bad'
+                        : ''
+                  }
+                />
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

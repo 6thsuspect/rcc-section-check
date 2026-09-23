@@ -276,25 +276,58 @@ export function complianceChecks(spec: CodeSpec, inp: CheckInputs): ComplianceCh
       kind: 'check',
       note: 'Nearest-neighbour approximation of peripheral spacing',
     })
-    // clear distance between bars
-    let minClear = Infinity
+    // Clear distance between bars. Bars that share a groupId (same bundle /
+    // triple group) are exempt from the normal min-spacing rule — they are
+    // intentionally close — but still fail the check if they physically overlap.
+    let minClearBetweenGroups = Infinity
+    let minClearAny = Infinity
+    let overlapPairs = 0
     for (let i = 0; i < bars.length; i++) {
       for (let j = i + 1; j < bars.length; j++) {
         const c =
           Math.hypot(bars[j].x - bars[i].x, bars[j].y - bars[i].y) -
           (bars[i].dia + bars[j].dia) / 2
-        minClear = Math.min(minClear, c)
+        minClearAny = Math.min(minClearAny, c)
+        const sameGroup =
+          bars[i].groupId != null &&
+          bars[j].groupId != null &&
+          bars[i].groupId === bars[j].groupId
+        if (c < -1e-6) overlapPairs++
+        if (!sameGroup) minClearBetweenGroups = Math.min(minClearBetweenGroups, c)
       }
     }
+    const hasGroups = bars.some((b) => b.groupId != null)
+    const minClear = hasGroups ? minClearBetweenGroups : minClearAny
     const clearLimit = Math.max(minDiaUsed, 25)
+
+    if (overlapPairs > 0) {
+      out.push({
+        clause: cl.clearance,
+        title: 'Bar / bundle overlap',
+        demand: `${overlapPairs} overlapping pair(s); min clear ${fmt(minClearAny, 1)} mm`,
+        limit: 'no intersection of bar solids',
+        status: 'fail',
+        kind: 'check',
+        note: 'Overlapping reinforcement is highlighted in red on the section figure. Bars inside the same bundle are allowed to be close, but their solid sections must not intersect.',
+      })
+    }
+
     out.push({
       clause: cl.clearance,
-      title: 'Clear distance between bars',
-      demand: `${fmt(minClear, 0)} mm`,
+      title: hasGroups ? 'Clear distance between bars / bundles' : 'Clear distance between bars',
+      demand: Number.isFinite(minClear) ? `${fmt(minClear, 0)} mm` : '—',
       limit: `≥ ${fmt(clearLimit, 0)} mm`,
-      status: minClear >= clearLimit ? 'pass' : minClear >= 0 ? 'warn' : 'fail',
+      status: !Number.isFinite(minClear)
+        ? 'info'
+        : minClear >= clearLimit
+          ? 'pass'
+          : minClear >= 0
+            ? 'warn'
+            : 'fail',
       kind: 'check',
-      note: '≥ bar dia and ≥ (aggregate + 5 mm); 20 mm aggregate assumed',
+      note: hasGroups
+        ? '≥ bar dia and ≥ (aggregate + 5 mm); 20 mm aggregate assumed. Applied between different bundles/groups only — within-bundle bars are exempt from this spacing rule.'
+        : '≥ bar dia and ≥ (aggregate + 5 mm); 20 mm aggregate assumed',
     })
   }
 

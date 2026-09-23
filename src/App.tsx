@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CaseResult } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
@@ -16,7 +16,7 @@ import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
 import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
-import { CompliancePanel, ResultsTable } from './components/Results'
+import { CompliancePanel, NeutralAxisPanel, ResultsTable } from './components/Results'
 import { Banner, Card, EmptyState, Icon, STANDARD_BAR_DIAMETERS, btnCls, btnPrimaryCls } from './components/ui'
 
 /** Page container, shared by the header bar and the working area. */
@@ -29,7 +29,14 @@ export default function App() {
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  /** 0-based bar indices that physically overlap (circular bundle layouts). */
+  const [overlappingBarIndices, setOverlappingBarIndices] = useState<number[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Drop circular-only overlap highlights when the shape is no longer circular.
+  useEffect(() => {
+    if (!isCircularSection(state.predefined)) setOverlappingBarIndices([])
+  }, [state.predefined])
 
   /**
    * Apply input changes and keep automatic reinforcement derived from the
@@ -178,11 +185,11 @@ export default function App() {
   )
 
   // --- interaction surface (the expensive step) ---
-  const surface = useMemo(() => {
+  const analysisModel = useMemo(() => {
     if (!valid || !props) return null
     const conc = spec.concrete(state.fck)
     const steel = spec.steel(grade.fy)
-    const model = buildAnalysisModel(
+    return buildAnalysisModel(
       { boundary: ensureCCW(state.geometry.boundary), voids: state.geometry.voids.map(ensureCCW) },
       state.bars,
       { x: props.cx, y: props.cy },
@@ -191,15 +198,20 @@ export default function App() {
       steel,
       spec.epsSteelLimit(grade),
     )
-    return generateSurface(model, state.mesh)
-  }, [valid, props, spec, grade, state.geometry, state.bars, state.fck, state.mesh])
+  }, [valid, props, spec, grade, state.geometry, state.bars, state.fck])
+
+  const surface = useMemo(() => {
+    if (!analysisModel) return null
+    return generateSurface(analysisModel, state.mesh)
+  }, [analysisModel, state.mesh])
 
   const results: CaseResult[] = useMemo(() => {
-    if (!surface || !props) return []
+    if (!surface || !props || !analysisModel) return []
+    const naCtx = { model: analysisModel, centroid: { x: props.cx, y: props.cy } }
     return state.cases.map((lc) =>
-      checkLoadCase(surface, lc, spec, state.fck, grade.fy, props.area, props.Asc, state.shapeClass),
+      checkLoadCase(surface, lc, spec, state.fck, grade.fy, props.area, props.Asc, state.shapeClass, naCtx),
     )
-  }, [surface, props, state.cases, spec, state.fck, grade.fy, state.shapeClass])
+  }, [surface, props, analysisModel, state.cases, spec, state.fck, grade.fy, state.shapeClass])
 
   const checks = useMemo(() => {
     if (!props) return []
@@ -240,6 +252,28 @@ export default function App() {
   // governing neutral axis of the capacity state for the selected case
   const naInfo: NAInfo | null = useMemo(() => {
     if (!surface || !selected || !selResult || selResult.axialGoverned || selResult.MEd < 1) return null
+    const detail = selResult.na
+    if (detail && detail.xu !== null && Number.isFinite(detail.xu)) {
+      const ang = ((detail.theta * 180) / Math.PI).toFixed(0)
+      const xuStr = detail.xu.toFixed(1)
+      const cls =
+        detail.classification === 'under-reinforced'
+          ? 'under-reinforced (xu ≤ xu,max)'
+          : detail.classification === 'over-reinforced'
+            ? 'over-reinforced (xu > xu,max)'
+            : detail.classification
+      return {
+        theta: detail.theta,
+        vna: detail.vna,
+        xu: detail.xu,
+        xuMax: detail.xuMax,
+        extremeComp: detail.extremeComp,
+        naPoint: detail.naPoint,
+        normal: detail.normal,
+        classification: detail.classification,
+        caption: `NA at capacity state for ${selected.name}: xu = ${xuStr} mm from extreme compression fibre (θ = ${ang}°) · ${cls}`,
+      }
+    }
     const cp = naForDirection(surface, selected.Pu * 1e3, selected.Mux, selected.Muy)
     if (!cp || Math.abs(cp.b) < 1e-9) return null
     return {
@@ -417,6 +451,9 @@ export default function App() {
               barDia={state.barDia}
               setBarDia={(barDia) => update({ barDia })}
               onBarDiaCustomizeChange={setCustomizeBarDiameter}
+              onAnalysis={(analysis) =>
+                setOverlappingBarIndices(analysis?.overlappingBarIndices ?? [])
+              }
               onApply={(bars, meta) => {
                 const patch: Partial<AppState> = { bars }
                 if (meta?.barDia) patch.barDia = meta.barDia
@@ -485,6 +522,9 @@ export default function App() {
                 cover={state.cover}
                 audit={coverAudit}
                 radialCoverOnly={state.shapeClass === 'circ'}
+                overlappingBarIndices={
+                  isCircularSection(state.predefined) ? overlappingBarIndices : undefined
+                }
                 activeFace={activeFace}
                 onHoverFace={setActiveFace}
                 onSelectFace={setActiveFace}
@@ -506,6 +546,7 @@ export default function App() {
           </Card>
 
           <ResultsTable results={results} selected={selected?.id ?? null} select={setSelCase} />
+          <NeutralAxisPanel result={selResult} codeName={spec.name} fy={grade.fy} />
           <CompliancePanel checks={checks} />
 
           <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">

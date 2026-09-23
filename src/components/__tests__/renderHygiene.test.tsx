@@ -95,7 +95,9 @@ describe('render hygiene', () => {
         </div>,
       )
       expect(msgs).toEqual([])
-      expect(html).toContain('Clear cover — per face')
+      expect(html).toContain('Clear cover')
+      expect(html).toContain('Uniform Cover')
+      expect(html).toContain('data-testid="uniform-cover-primary"')
     })
   }
 })

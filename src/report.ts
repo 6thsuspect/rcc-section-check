@@ -115,6 +115,41 @@ export function exportReport(ctx: ReportContext): void {
           <tr><td>Capacity along demand direction</td><td>M<sub>Rd</sub>(P<sub>u</sub>, θ<sub>M</sub>) = ${f(r.MRd / 1e6, 1)} kN·m</td></tr>
           <tr><td><b>Rigorous utilisation (governs)</b></td><td><b>U = M<sub>Ed</sub> / M<sub>Rd</sub> = ${f(MEd, 1)} / ${f(r.MRd / 1e6, 1)} = ${f(r.U, 3)}</b> → ${r.ok ? 'PASS' : 'FAIL'}</td></tr>
           ${
+            r.na
+              ? (() => {
+                  const na = r.na!
+                  const xuStr =
+                    na.xu == null ? '—' : Number.isFinite(na.xu) ? `${f(na.xu, 1)} mm` : '∞ (outside section)'
+                  const cls =
+                    na.classification === 'under-reinforced'
+                      ? 'under-reinforced (x<sub>u</sub> ≤ x<sub>u,max</sub>)'
+                      : na.classification === 'over-reinforced'
+                        ? 'over-reinforced (x<sub>u</sub> > x<sub>u,max</sub>)'
+                        : na.classification === 'fully-compressed'
+                          ? 'fully compressed'
+                          : 'no compression zone'
+                  const muRow =
+                    na.classification === 'under-reinforced' && na.Mu != null
+                      ? `<tr><td>Design M<sub>u</sub> (at actual x<sub>u</sub>)</td><td>M<sub>u</sub> = ${f(na.Mu / 1e6, 1)} kN·m (capacity strain plane at actual NA depth)${
+                          na.Mu0 != null ? `; pure-bending M<sub>u0</sub> = ${f(na.Mu0 / 1e6, 1)} kN·m` : ''
+                        }</td></tr>`
+                      : na.Mu != null
+                        ? `<tr><td>M<sub>Rd</sub> of capacity plane</td><td>${f(na.Mu / 1e6, 1)} kN·m</td></tr>`
+                        : ''
+                  return `
+          <tr><td>Neutral-axis depth x<sub>u</sub></td><td>${xuStr} from extreme compression fibre (along compression normal; θ<sub>NA</sub> = ${f((((na.theta * 180) / Math.PI) + 360) % 360, 1)}°)</td></tr>
+          <tr><td>Limiting depth x<sub>u,max</sub></td><td>x<sub>u,max</sub> = ${f(na.xuMaxRatio, 4)} × d = ${f(na.xuMax ?? 0, 1)} mm &nbsp;(d = ${f(na.d, 1)} mm)</td></tr>
+          <tr><td>x<sub>u</sub> on global axes</td><td>Δx = ${na.xuGlobalX != null ? f(na.xuGlobalX, 1) + ' mm' : '—'}; Δy = ${na.xuGlobalY != null ? f(na.xuGlobalY, 1) + ' mm' : '—'} (extreme compression fibre → NA)</td></tr>
+          <tr><td>Section class</td><td><b>${cls}</b>${
+                    na.xu != null && Number.isFinite(na.xu) && na.xuMax
+                      ? ` &nbsp;(x<sub>u</sub>/x<sub>u,max</sub> = ${f(na.xu / na.xuMax, 3)})`
+                      : ''
+                  }</td></tr>
+          ${muRow}`
+                })()
+              : ''
+          }
+          ${
             r.simplified !== null && r.alphaN !== null
               ? `<tr><td>Simplified check (${esc(spec.name)})</td><td>
                  P<sub>uz</sub> = ${f(PuzS / 1e3, 0)} kN; P<sub>u</sub>/P<sub>uz</sub> = ${f(ratio, 3)}; α<sub>n</sub> = ${f(r.alphaN, 3)}<br>

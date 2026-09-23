@@ -145,6 +145,16 @@ describe('interaction surface — IS 456 golden case', () => {
   })
 
   it('full case check reproduces the worked example verdict', () => {
+    const grade = spec.steelGrades.find((g) => g.label === 'Fe500')!
+    const model = buildAnalysisModel(
+      RECT,
+      BARS,
+      { x: props.cx, y: props.cy },
+      props.area,
+      spec.concrete(FCK),
+      spec.steel(FY),
+      spec.epsSteelLimit(grade),
+    )
     const r = checkLoadCase(
       surface,
       { id: 't', name: 'LC1', Pu: 2500, Mux: 180, Muy: 100 },
@@ -154,6 +164,7 @@ describe('interaction surface — IS 456 golden case', () => {
       props.area,
       props.Asc,
       'rect',
+      { model, centroid: { x: props.cx, y: props.cy } },
     )
     expect(r.ok).toBe(true)
     expect(r.axialGoverned).toBe(false)
@@ -165,6 +176,57 @@ describe('interaction surface — IS 456 golden case', () => {
     // rigorous utilisation is finite, below 1, and larger than the biaxial ray fractions alone
     expect(r.U).toBeGreaterThan(0.25)
     expect(r.U).toBeLessThan(0.5)
+    // neutral-axis depth is reported and finite
+    expect(r.na).not.toBeNull()
+    expect(r.na!.xu).not.toBeNull()
+    expect(Number.isFinite(r.na!.xu!)).toBe(true)
+    expect(r.na!.xu!).toBeGreaterThan(50)
+    expect(r.na!.xu!).toBeLessThan(600)
+    // xu,max = 0.46·d for Fe500 (IS 456)
+    expect(r.na!.xuMaxRatio).toBeCloseTo(0.0035 / (0.0055 + (0.87 * FY) / 200000), 4)
+    expect(r.na!.xuMax!).toBeGreaterThan(100)
+    expect(r.na!.Mu).not.toBeNull()
+    expect(r.na!.Mu!).toBeCloseTo(r.MRd, -2)
+  })
+
+  it('IS 456 xu,max ratio matches Cl 38.1 tabulated values', () => {
+    expect(spec.xuMaxRatio(250)).toBeCloseTo(0.531, 2) // ≈ 0.53
+    expect(spec.xuMaxRatio(415)).toBeCloseTo(0.479, 2) // ≈ 0.48
+    expect(spec.xuMaxRatio(500)).toBeCloseTo(0.456, 2) // ≈ 0.46
+  })
+
+  it('uniaxial Mux capacity reports xu near the fiber reference (~392 mm) and classifies vs xu,max', () => {
+    const grade = spec.steelGrades.find((g) => g.label === 'Fe500')!
+    const model = buildAnalysisModel(
+      RECT,
+      BARS,
+      { x: props.cx, y: props.cy },
+      props.area,
+      spec.concrete(FCK),
+      spec.steel(FY),
+      spec.epsSteelLimit(grade),
+    )
+    // pure Mux demand at Pu = 2500 kN (fiber ref xu ≈ 392 mm)
+    const r = checkLoadCase(
+      surface,
+      { id: 'ux', name: 'Mux', Pu: 2500, Mux: 500, Muy: 0 },
+      spec,
+      FCK,
+      FY,
+      props.area,
+      props.Asc,
+      'rect',
+      { model, centroid: { x: 0, y: 0 } },
+    )
+    expect(r.na).not.toBeNull()
+    expect(r.na!.xu!).toBeGreaterThan(392 * 0.9)
+    expect(r.na!.xu!).toBeLessThan(392 * 1.15)
+    // at Pu = 2500 the NA is deep → over-reinforced / compression-controlled relative to beam xu,max
+    // (column at high axial load routinely has xu > xu,max)
+    expect(r.na!.xuMax!).toBeGreaterThan(0)
+    expect(['under-reinforced', 'over-reinforced', 'fully-compressed']).toContain(r.na!.classification)
+    // global-axis projection: pure Mux → xu mostly along Y
+    expect(Math.abs(r.na!.xuGlobalY!)).toBeGreaterThan(Math.abs(r.na!.xuGlobalX!) * 2)
   })
 
   it('axial overload is reported as axial-governed failure', () => {

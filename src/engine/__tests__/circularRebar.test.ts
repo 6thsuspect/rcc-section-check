@@ -62,19 +62,84 @@ describe('alternate bars', () => {
 })
 
 describe('bundle bars', () => {
-  it('expands each bundle into individual bar coordinates', () => {
+  it('expands each bundle into individual bar coordinates with groupId', () => {
     const cfg = { ...base('bundle'), nBundles: 6, barsPerBundle: 2 }
-    const { bars } = generateCircularRebar(cfg)
+    const { bars, analysis } = generateCircularRebar(cfg)
     expect(bars).toHaveLength(12)
     // every bar has a unique centre
     const keys = new Set(bars.map((b) => `${b.x.toFixed(2)}|${b.y.toFixed(2)}`))
     expect(keys.size).toBe(12)
+    // bars in the same bundle share a groupId
+    expect(bars[0].groupId).toBe('bundle-0')
+    expect(bars[1].groupId).toBe('bundle-0')
+    expect(bars[2].groupId).toBe('bundle-1')
+    expect(analysis.bundle?.nBundles).toBe(6)
+    expect(analysis.bundle?.barsPerBundle).toBe(2)
   })
 
   it('supports 3-bar bundles', () => {
     const cfg = { ...base('bundle'), nBundles: 4, barsPerBundle: 3 }
     const { bars } = generateCircularRebar(cfg)
     expect(bars).toHaveLength(12)
+  })
+
+  it('allows different diameters per bar inside a bundle', () => {
+    const cfg = sanitizeCircularConfig({
+      ...base('bundle'),
+      nBundles: 4,
+      barsPerBundle: 3,
+      bundleBarDias: [32, 20, 16],
+      bundleInnerGap: 60,
+      bundleSpacing: 40,
+    })
+    const { bars, analysis } = generateCircularRebar(cfg)
+    expect(bars).toHaveLength(12)
+    // first bundle carries the three diameters
+    expect(bars[0].dia).toBe(32)
+    expect(bars[1].dia).toBe(20)
+    expect(bars[2].dia).toBe(16)
+    expect(analysis.bundle?.barDias).toEqual([32, 20, 16])
+    expect(analysis.bundle?.bundleSpacing).toBe(40)
+  })
+
+  it('exempts within-bundle bars from the min-spacing check but still flags overlaps', () => {
+    // Force a tight inner gap so bars inside a bundle nearly touch, but keep
+    // bundles well spaced so inter-group clear is fine.
+    const cfg = sanitizeCircularConfig({
+      ...base('bundle'),
+      nBundles: 6,
+      barsPerBundle: 2,
+      barDia: 25,
+      bundleBarDias: [25, 25],
+      bundleInnerGap: 26, // centre-to-centre barely above dia → clear ≈ 1 mm inside bundle
+      bundleSpacing: 80,
+      angularSpacingDeg: 60,
+    })
+    const { analysis } = generateCircularRebar(cfg)
+    // Within-bundle clear is tiny; if the old global min-clear were used it would warn.
+    // Inter-group clear must govern spacingOk.
+    expect(analysis.minClearBetweenGroups).not.toBeNull()
+    expect(analysis.minClearBetweenGroups!).toBeGreaterThan(10)
+    expect(analysis.spacingOk).toBe(true)
+    expect(analysis.overlapOk).toBe(true)
+  })
+
+  it('detects physical overlap and lists overlapping indices', () => {
+    const cfg = sanitizeCircularConfig({
+      ...base('bundle'),
+      nBundles: 2,
+      barsPerBundle: 2,
+      barDia: 40,
+      bundleBarDias: [40, 40],
+      // Force both bundles onto nearly the same angle → inter-bundle overlap.
+      angularSpacingDeg: 1,
+      bundleInnerGap: 50,
+      bundleSpacing: null,
+    })
+    const { analysis } = generateCircularRebar(cfg)
+    expect(analysis.overlapOk).toBe(false)
+    expect(analysis.overlappingBarIndices.length).toBeGreaterThan(0)
+    expect(analysis.warnings.some((w) => /overlap/i.test(w))).toBe(true)
   })
 })
 

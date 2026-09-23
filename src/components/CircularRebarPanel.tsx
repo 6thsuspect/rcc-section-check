@@ -9,7 +9,9 @@ import {
   generateCircularRebar,
   pitchRadius,
   sanitizeCircularConfig,
+  resolveBundleBarDias,
   type CircularArrangementKind,
+  type CircularBarAnalysis,
   type CircularLayerDef,
   type CircularRebarConfig,
 } from '../engine/circularRebar'
@@ -20,6 +22,7 @@ import {
   cellCls,
   Card,
   Check,
+  Chip,
   DiameterField,
   fieldBoxCls,
   fieldCls,
@@ -28,6 +31,7 @@ import {
   Readout,
   rowDelCls,
   SubCard,
+  noteCls,
   noteSmCls,
 } from './ui'
 
@@ -67,6 +71,7 @@ export function CircularRebarPanel({
   setBarDia,
   onBarDiaCustomizeChange,
   onApply,
+  onAnalysis,
 }: {
   predefined: PredefinedSection | null
   /** Existing rows are inspected so an intentionally manual layout is not replaced on mount. */
@@ -77,6 +82,8 @@ export function CircularRebarPanel({
   setBarDia: (v: number) => void
   onBarDiaCustomizeChange?: (enabled: boolean) => void
   onApply: (bars: Rebar[], meta?: { barDia: number; nBarsHint?: number }) => void
+  /** Notify parent of overlap / spacing analysis so the section figure can highlight. */
+  onAnalysis?: (analysis: CircularBarAnalysis | null) => void
 }) {
   const R = sectionOuterRadius(predefined)
   const Ri = sectionInnerRadius(predefined)
@@ -150,7 +157,13 @@ export function CircularRebarPanel({
   }
 
   const result = useMemo(() => {
-    if (R == null) return { bars: [] as Rebar[], warnings: [] as string[], key: '' }
+    if (R == null)
+      return {
+        bars: [] as Rebar[],
+        warnings: [] as string[],
+        analysis: null as CircularBarAnalysis | null,
+        key: '',
+      }
     const generated = generateCircularRebar(
       sanitizeCircularConfig({
         ...cfg,
@@ -162,6 +175,11 @@ export function CircularRebarPanel({
     )
     return { ...generated, key: barsKey(generated.bars) }
   }, [cfg, R, Ri, cover, tieDia])
+
+  // Push spacing / overlap analysis to the parent for section-figure highlighting.
+  useEffect(() => {
+    onAnalysis?.(result.analysis)
+  }, [result.analysis, onAnalysis])
 
   const applyBars = (generatedBars: Rebar[], preserveManual = true) => {
     const primaryDia = cfg.kind === 'layered' ? (cfg.layers[0]?.barDia ?? cfg.barDia) : cfg.barDia
@@ -208,6 +226,12 @@ export function CircularRebarPanel({
     if (kind === 'bundle') {
       next.nBundles = cfg.nBundles || 6
       next.barsPerBundle = cfg.barsPerBundle || 2
+      next.bundleSpacing = cfg.bundleSpacing ?? null
+      next.bundleBarDias =
+        cfg.bundleBarDias?.length === next.barsPerBundle
+          ? cfg.bundleBarDias
+          : Array.from({ length: next.barsPerBundle }, (_, i) => cfg.bundleBarDias?.[i] ?? cfg.barDia)
+      next.bundleInnerGap = cfg.bundleInnerGap || cfg.barDia + Math.max(cfg.barDia, 25)
     }
     if (kind === 'triple') {
       next.nGroups = cfg.nGroups || 6
@@ -341,7 +365,13 @@ export function CircularRebarPanel({
                 value={cfg.barsPerBundle}
                 min={2}
                 step={1}
-                onChange={(v) => patch({ barsPerBundle: Math.round(v) })}
+                onChange={(v) => {
+                  const per = Math.round(v)
+                  const dias = resolveBundleBarDias({ ...cfg, barsPerBundle: per })
+                  // Grow / shrink the diameter list to match the new count.
+                  const nextDias = Array.from({ length: Math.max(1, per) }, (_, i) => dias[i] ?? cfg.barDia)
+                  patch({ barsPerBundle: per, bundleBarDias: nextDias })
+                }}
               />
               <NumField
                 label="Number of bundles"
@@ -349,6 +379,24 @@ export function CircularRebarPanel({
                 min={4}
                 step={1}
                 onChange={(v) => patch({ nBundles: Math.round(v) })}
+              />
+              <NumField
+                label="Bundle spacing (clear)"
+                unit="mm"
+                value={cfg.bundleSpacing ?? 0}
+                min={0}
+                step={5}
+                hint="Clear gap between adjacent bundles (not within-bundle). 0 = equal angular only."
+                onChange={(v) => patch({ bundleSpacing: v > 0 ? v : null })}
+              />
+              <NumField
+                label="Spacing within bundle"
+                unit="mm"
+                value={cfg.bundleInnerGap}
+                min={0}
+                step={5}
+                hint="Centre-to-centre of bars inside one bundle"
+                onChange={(v) => patch({ bundleInnerGap: v })}
               />
             </>
           )}
@@ -408,6 +456,157 @@ export function CircularRebarPanel({
             </>
           )}
         </div>
+
+        {/* Per-bar diameters inside a bundle — independent of count */}
+        {cfg.kind === 'bundle' && (
+          <SubCard
+            title={
+              <span className="flex items-center gap-1.5">
+                Bundle bar diameters
+                <span className="font-body text-[10px] font-normal normal-case tracking-normal text-ink-3">
+                  one ⌀ per bar in the bundle · {cfg.barsPerBundle} slot{cfg.barsPerBundle === 1 ? '' : 's'}
+                </span>
+              </span>
+            }
+          >
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
+              {resolveBundleBarDias(cfg).map((d, i) => (
+                <DiameterField
+                  key={`bundle-dia-${i}`}
+                  label={`Bar ${i + 1} ⌀`}
+                  value={d}
+                  onChange={(v) => {
+                    const next = resolveBundleBarDias(cfg).slice()
+                    next[i] = v
+                    // Keep cfg.barDia = max so pitch / shared panel stay conservative.
+                    const maxD = Math.max(...next)
+                    patch({ bundleBarDias: next, barDia: maxD })
+                  }}
+                  onCustomizeChange={onBarDiaCustomizeChange}
+                />
+              ))}
+            </div>
+            <p className={`${noteSmCls} mt-1.5`}>
+              Diameters may differ inside a bundle. Bundle spacing (clear) is measured between neighbouring
+              bundles; within-bundle bars are not checked against the normal minimum bar-spacing rule.
+            </p>
+          </SubCard>
+        )}
+
+        {/* Bundle / spacing analysis summary */}
+        {result.analysis && (cfg.kind === 'bundle' || !result.analysis.overlapOk || !result.analysis.spacingOk) && (
+          <div
+            className={`rounded-lg border p-2.5 ${
+              !result.analysis.overlapOk
+                ? 'border-bad/35 bg-bad/8'
+                : !result.analysis.spacingOk
+                  ? 'border-warn2/35 bg-warn2/8'
+                  : 'border-line bg-panel/55'
+            }`}
+            data-testid="circular-rebar-analysis"
+          >
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+                Spacing & overlap
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Chip status={result.analysis.overlapOk ? 'pass' : 'fail'} />
+                <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.05em] text-ink-3">
+                  {result.analysis.overlapOk ? 'no overlap' : 'overlap'}
+                </span>
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {result.analysis.bundle && (
+                <>
+                  <Readout label="Bundles" value={`${result.analysis.bundle.nBundles}`} />
+                  <Readout
+                    label="Bars / bundle"
+                    value={`${result.analysis.bundle.barsPerBundle}`}
+                  />
+                  <Readout
+                    label="Bundle bar ⌀"
+                    value={result.analysis.bundle.barDias.map((d) => d.toFixed(d % 1 ? 1 : 0)).join(' / ')}
+                    title="Diameter of each bar slot inside a bundle"
+                  />
+                  <Readout
+                    label="Bundle spacing (req.)"
+                    value={
+                      result.analysis.bundle.bundleSpacing != null
+                        ? `${result.analysis.bundle.bundleSpacing.toFixed(0)} mm`
+                        : 'equal angular'
+                    }
+                    title="Requested clear spacing between adjacent bundles"
+                  />
+                  <Readout
+                    label="Bundle clear (achieved)"
+                    value={
+                      result.analysis.bundle.achievedBundleClear != null
+                        ? `${result.analysis.bundle.achievedBundleClear.toFixed(1)} mm`
+                        : '—'
+                    }
+                    title="Minimum clear distance between bars of neighbouring bundles"
+                    className={
+                      result.analysis.spacingOk ? 'font-semibold text-ok' : 'font-semibold text-bad'
+                    }
+                  />
+                  <Readout
+                    label="Within-bundle c/c"
+                    value={`${result.analysis.bundle.innerGap.toFixed(0)} mm`}
+                    title="Centre-to-centre of bars inside one bundle (exempt from min-spacing check)"
+                  />
+                </>
+              )}
+              <Readout
+                label="Min clear (inter-group)"
+                value={
+                  result.analysis.minClearBetweenGroups != null
+                    ? `${result.analysis.minClearBetweenGroups.toFixed(1)} mm`
+                    : '—'
+                }
+                title="Minimum clear between bars of different bundles/groups — used for the min-spacing check"
+              />
+              <Readout
+                label="Min spacing limit"
+                value={`≥ ${result.analysis.clearLimit.toFixed(0)} mm`}
+                title="max(smallest bar ⌀, 25 mm); applied only between different bundles/groups"
+              />
+              <Readout
+                label="Overlap status"
+                value={
+                  result.analysis.overlapOk
+                    ? 'None'
+                    : `${result.analysis.overlappingBarIndices.length} bar(s)`
+                }
+                className={
+                  result.analysis.overlapOk ? 'font-semibold text-ok' : 'font-semibold text-bad'
+                }
+                title="Solid sections must not intersect — overlapping bars are highlighted red on the section figure"
+              />
+            </div>
+            {!result.analysis.overlapOk && (
+              <p className={`${noteCls} mt-1.5 text-bad`}>
+                Overlapping reinforcement is highlighted in <b>red</b> on the section figure. Adjust bundle
+                spacing, diameters, or count to clear the intersections.
+                {result.analysis.overlaps.length > 0 && (
+                  <>
+                    {' '}
+                    Worst pair: bars{' '}
+                    {result.analysis.overlaps
+                      .slice(0, 3)
+                      .map((o) => `${o.i + 1}–${o.j + 1}`)
+                      .join(', ')}
+                    {result.analysis.overlaps.length > 3 ? '…' : ''}.
+                  </>
+                )}
+              </p>
+            )}
+            <p className={`${noteSmCls} mt-1`}>
+              Minimum clear-spacing is checked between bars of <b>different</b> bundles only; bars inside the
+              same bundle are exempt from that rule but still fail if they physically overlap.
+            </p>
+          </div>
+        )}
 
         {/* Layered editor */}
         <div className="grid grid-cols-2 gap-1.5">

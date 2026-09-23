@@ -4,6 +4,9 @@ import type {
   InteractionSurface,
   LoadCase,
   MeshSettings,
+  NeutralAxisDetail,
+  Point,
+  SectionReinforcementClass,
   SurfaceSample,
 } from './types'
 import type { CodeSpec } from './codes'
@@ -104,6 +107,116 @@ export function naForDirection(
   return best
 }
 
+/**
+ * Derive xu, xu,max and under/over-reinforced classification from a capacity
+ * contour point. Coordinates are section (user) frame: centroid at (cx, cy),
+ * boundary extents from the interaction model via vmax/vmin of the rotated frame.
+ *
+ * xu is the distance from the extreme compression fibre to the NA, measured
+ * along the compression normal n = (−sin θ, cos θ). Global-axis projections
+ * of that depth vector are reported as xuGlobalX / xuGlobalY.
+ */
+export function neutralAxisDetail(
+  cp: ContourPoint,
+  model: AnalysisModel,
+  centroid: Point,
+  xuMaxRatio: number,
+  Mu: number | null,
+  Mu0: number | null = null,
+): NeutralAxisDetail {
+  const frame = rotateFrame(model, cp.theta)
+  const { vmin, vmax, vSteel, boundaryUV, cos, sin } = frame
+  const h = Math.max(1e-9, vmax - vmin)
+  const n: Point = { x: -Math.sin(cp.theta), y: Math.cos(cp.theta) }
+
+  // Actual extreme-compression boundary vertex (max v in the rotated frame).
+  // Inverse of rot: x = u cosθ − v sinθ, y = u sinθ + v cosθ (centred → user).
+  let uExt = 0
+  let vExt = vmax
+  for (const p of boundaryUV) {
+    if (p.y >= vExt - 1e-9) {
+      vExt = p.y
+      uExt = p.x
+    }
+  }
+  const extremeComp: Point = {
+    x: centroid.x + uExt * cos - vExt * sin,
+    y: centroid.y + uExt * sin + vExt * cos,
+  }
+
+  const ratio = xuMaxRatio
+  // effective depth: extreme compression fibre → extreme tension steel
+  const dEff = Math.max(1e-9, vmax - (Number.isFinite(vSteel) ? vSteel : vmin))
+  const xuMax = ratio * dEff
+
+  let xu: number | null = null
+  let vna = 0
+  let classification: SectionReinforcementClass = 'no-compression'
+  // NA point shares the same u as the extreme fibre so the xu dimension is
+  // drawn perpendicular to the NA (along the compression normal).
+  const naAt = (v: number): Point => ({
+    x: centroid.x + uExt * cos - v * sin,
+    y: centroid.y + uExt * sin + v * cos,
+  })
+  let naPoint: Point = { ...extremeComp }
+
+  if (Math.abs(cp.b) < 1e-12) {
+    // uniform strain plane
+    if (cp.a > 1e-9) {
+      // whole section compressed — NA outside / beyond the tension face
+      xu = Infinity
+      classification = 'fully-compressed'
+      vna = vmin - h
+      naPoint = naAt(vna)
+    } else {
+      xu = null
+      classification = 'no-compression'
+      vna = vmax + h
+      naPoint = naAt(vna)
+    }
+  } else {
+    vna = -cp.a / cp.b
+    xu = vmax - vna
+    naPoint = naAt(vna)
+    if (xu <= 0) {
+      xu = null
+      classification = 'no-compression'
+    } else if (vna < vmin - 1e-6) {
+      // NA below the section — fully compressed (pivot C)
+      classification = 'fully-compressed'
+    } else if (xu <= xuMax + 1e-6) {
+      classification = 'under-reinforced'
+    } else {
+      classification = 'over-reinforced'
+    }
+  }
+
+  const xuFinite = xu !== null && Number.isFinite(xu) ? xu : null
+  // Global-axis components of the xu depth vector (from extreme fibre toward NA)
+  const xuGlobalX = xuFinite !== null ? -xuFinite * n.x : null
+  const xuGlobalY = xuFinite !== null ? -xuFinite * n.y : null
+
+  return {
+    xu: xuFinite !== null ? xuFinite : xu === Infinity ? Infinity : null,
+    xuMax,
+    xuMaxRatio: ratio,
+    d: dEff,
+    h,
+    theta: cp.theta,
+    vna,
+    vmax,
+    vmin,
+    extremeComp,
+    naPoint,
+    normal: n,
+    xuGlobalX,
+    xuGlobalY,
+    classification,
+    Mu,
+    Mu0,
+  }
+}
+
 /** Pure-bending (P = 0) moment capacities in both signs about each axis, N·mm. */
 export function flexuralCapacity(surface: InteractionSurface): {
   MxPos: number
@@ -160,6 +273,16 @@ export function pmCurve(
   return out
 }
 
+/**
+ * Optional context for attaching xu / xu,max / under-over classification to a
+ * load-case result. When omitted the NA fields stay null (keeps existing call
+ * sites and tests working without a full analysis model).
+ */
+export interface NaContext {
+  model: AnalysisModel
+  centroid: Point
+}
+
 /** Full case check against the rigorous surface + the code's simplified power law. */
 export function checkLoadCase(
   surface: InteractionSurface,
@@ -170,6 +293,7 @@ export function checkLoadCase(
   Ag: number,
   Asc: number,
   shape: 'rect' | 'circ',
+  naCtx?: NaContext | null,
 ): CaseResult {
   const P = lc.Pu * 1e3 // N
   const Mx = lc.Mux * 1e6 // N·mm
@@ -184,6 +308,19 @@ export function checkLoadCase(
     MEd,
     simplified: null,
     alphaN: null,
+    na: null,
+  }
+
+  const ratio = spec.xuMaxRatio(fy)
+
+  const attachNa = (dx: number, dy: number, MRdVal: number | null): NeutralAxisDetail | null => {
+    if (!naCtx) return null
+    const cp = naForDirection(surface, P, dx, dy)
+    if (!cp) return null
+    // pure-bending capacity along the same direction (for under-reinforced Mu display)
+    const c0 = contourAtP(surface, 0)
+    const Mu0 = c0 ? rayCapacity(c0, dx, dy) : null
+    return neutralAxisDetail(cp, naCtx.model, naCtx.centroid, ratio, MRdVal, Mu0)
   }
 
   // axial range first
@@ -199,12 +336,27 @@ export function checkLoadCase(
   const Muy1 = rayCapacity(contour, 0, My >= 0 ? 1 : -1)
 
   if (MEd < 1) {
-    // pure axial case
+    // pure axial case — NA is irrelevant / fully compressed when P > 0
     const U = P >= 0 ? P / surface.Puz : P / surface.Pt
-    return { ...base, Mux1, Muy1, U, ok: U <= 1.0, axialGoverned: true }
+    let na: NeutralAxisDetail | null = null
+    if (naCtx && P > 0) {
+      // uniform compression plane
+      const cp: ContourPoint = {
+        P,
+        Mx: 0,
+        My: 0,
+        a: naCtx.model.conc.ec2,
+        b: 0,
+        theta: 0,
+      }
+      na = neutralAxisDetail(cp, naCtx.model, naCtx.centroid, ratio, null, null)
+    }
+    return { ...base, Mux1, Muy1, U, ok: U <= 1.0, axialGoverned: true, na }
   }
 
-  const MRd = rayCapacity(contour, Mx / MEd, My / MEd)
+  const dx = Mx / MEd
+  const dy = My / MEd
+  const MRd = rayCapacity(contour, dx, dy)
   const U = MRd > 0 ? MEd / MRd : Infinity
 
   // simplified power-law check (reported alongside; rigorous value governs)
@@ -216,5 +368,7 @@ export function checkLoadCase(
     simplified = Math.pow(Math.abs(Mx) / Mux1, alphaN) + Math.pow(Math.abs(My) / Muy1, alphaN)
   }
 
-  return { ...base, Mux1, Muy1, MRd, simplified, alphaN, U, ok: U <= 1.0, axialGoverned: false }
+  const na = attachNa(dx, dy, MRd)
+
+  return { ...base, Mux1, Muy1, MRd, simplified, alphaN, U, ok: U <= 1.0, axialGoverned: false, na }
 }

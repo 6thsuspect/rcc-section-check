@@ -174,6 +174,55 @@ export interface InteractionSurface {
   Pt: number
 }
 
+/**
+ * Neutral-axis depth and ductility classification for a capacity state.
+ * xu is measured from the extreme compression fibre along the compression
+ * normal (perpendicular to the NA), in mm. Global-axis projections follow
+ * the section X/Y directions.
+ */
+export type SectionReinforcementClass = 'under-reinforced' | 'over-reinforced' | 'fully-compressed' | 'no-compression'
+
+export interface NeutralAxisDetail {
+  /** Depth of NA from extreme compression fibre, mm. null if no compression zone. */
+  xu: number | null
+  /** Limiting NA depth xu,max = k·d, mm. */
+  xuMax: number | null
+  /** xu,max / d ratio from the design code (fy-dependent). */
+  xuMaxRatio: number
+  /** Effective depth: extreme compression fibre → extreme tension steel, mm. */
+  d: number
+  /** Overall section depth along the compression normal, mm. */
+  h: number
+  /** NA orientation θ (rad) — compression normal is (−sin θ, cos θ). */
+  theta: number
+  /** v-coordinate of the NA in the rotated frame (centred), mm. */
+  vna: number
+  /** Extreme compression fibre v-coordinate (centred), mm. */
+  vmax: number
+  /** Extreme tension fibre / steel v-coordinate (centred), mm. */
+  vmin: number
+  /** Global coordinates of the extreme compression point used for xu. */
+  extremeComp: Point
+  /** Global coordinates of the NA point along the same normal. */
+  naPoint: Point
+  /** Unit compression normal in global axes (points toward compressed side). */
+  normal: Point
+  /** Projection of xu onto global X (signed, mm): xu · nx. */
+  xuGlobalX: number | null
+  /** Projection of xu onto global Y (signed, mm): xu · ny. */
+  xuGlobalY: number | null
+  /** Ductility class by xu ≶ xu,max (IS 456 Cl 38.1 style). */
+  classification: SectionReinforcementClass
+  /**
+   * Design moment capacity of the capacity strain plane, N·mm.
+   * For under-reinforced sections this is the Mu based on the actual xu;
+   * always equal to MRd of the governing capacity point when a compression zone exists.
+   */
+  Mu: number | null
+  /** Pure-bending (P = 0) moment capacity along the same direction, N·mm. */
+  Mu0: number | null
+}
+
 export interface CaseResult {
   loadCase: LoadCase
   /** Rigorous utilisation (radial in Mx–My at constant P), governs verdict. */
@@ -190,6 +239,8 @@ export interface CaseResult {
   alphaN: number | null
   ok: boolean
   axialGoverned: boolean
+  /** Neutral-axis depth, xu,max and under/over-reinforced classification. */
+  na: NeutralAxisDetail | null
 }
 
 export interface MeshSettings {
