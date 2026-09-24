@@ -18,6 +18,7 @@ import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
 import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './components/SLSResults'
+import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
 import { neutralAxisAnalysis, type NeutralAxisResult } from './engine/flexure'
 import {
   buildSlsModel,
@@ -26,6 +27,12 @@ import {
   type SlsCaseResult,
   type SlsInputs,
 } from './engine/sls'
+import {
+  crackWidthCheck,
+  DEFAULT_EXPOSURE,
+  type CrackWidthResult,
+  type CrackWidthSettings,
+} from './engine/crackWidth'
 import { spacingReport } from './engine/barSpacing'
 import {
   Banner,
@@ -63,6 +70,11 @@ export default function App() {
   const update = (patch: Partial<AppState>) =>
     setState((s) => {
       const next: AppState = { ...s, ...patch }
+      // A code change invalidates the crack-width exposure class (each code
+      // uses its own exposure taxonomy) — reset it to the new code's default.
+      if (patch.code !== undefined && patch.code !== s.code) {
+        next.crackWidth = { ...next.crackWidth, exposure: DEFAULT_EXPOSURE[patch.code] }
+      }
       const automaticDiameterChanged =
         patch.bars !== undefined &&
         patch.bars.some((bar, i) => isAutomaticBar(bar) && bar.dia !== s.bars[i]?.dia)
@@ -363,6 +375,25 @@ export default function App() {
           tensionBar: slsSel.tensionBar,
         }
       : null
+
+  /**
+   * Crack-width check per SLS load case — reuses the SLS cracked-section
+   * results (σs, xu, d, φ) and the shared geometry/reinforcement, applying the
+   * method of the selected code. Recomputes automatically whenever the
+   * section, reinforcement, material, service loads or exposure change.
+   */
+  const crackWidthResults = useMemo(() => {
+    const out = new Map<string, CrackWidthResult | null>()
+    if (!slsModel) return out
+    for (const lc of state.slsCases) {
+      const res = slsResults.get(lc.id) ?? null
+      out.set(lc.id, res ? crackWidthCheck(state.code, state.fck, slsModel, state.bars, res, state.crackWidth) : null)
+    }
+    return out
+  }, [slsModel, slsResults, state.slsCases, state.code, state.fck, state.bars, state.crackWidth])
+
+  const updateCrackWidth = (patch: Partial<CrackWidthSettings>) =>
+    update({ crackWidth: { ...state.crackWidth, ...patch } })
 
   const exportPdf = () => {
     if (!surface || !props || results.length === 0) return
@@ -762,6 +793,21 @@ export default function App() {
               select={setSlsSelCase}
             />
             <SlsCalculationPanel lc={slsSelected} result={slsSel} />
+
+            <CrackWidthInputsPanel code={state.code} settings={state.crackWidth} update={updateCrackWidth} />
+            <CrackWidthResultsTable
+              code={state.code}
+              cases={state.slsCases}
+              results={crackWidthResults}
+              selected={slsSelected?.id ?? null}
+              select={setSlsSelCase}
+            />
+            <CrackWidthDetailPanel
+              code={state.code}
+              settings={state.crackWidth}
+              lc={slsSelected}
+              result={(slsSelected && crackWidthResults.get(slsSelected.id)) ?? null}
+            />
 
             <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">

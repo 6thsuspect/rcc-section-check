@@ -39,7 +39,9 @@ code requires member-level input (for example minimum-eccentricity moments, whic
 the unsupported length), the module accepts that input and applies the clause, but it
 does not derive effective lengths itself. Serviceability is covered for **stress limits** by a
 separate SLS module (working-stress / direct-stress method of IS 456:2000 Annex C — concrete
-σcbc and reinforcement σst / σsc against the cracked transformed-section stresses); explicit
-crack-width calculation remains outside scope in this revision. The ULS and SLS modules share the
+σcbc and reinforcement σst / σsc against the cracked transformed-section stresses) **and for
+crack width** by the method of the selected code (IS 456 Annex F; IRC:112 Cl 12.3.4 / EN 1992-2;
+IRS Concrete Bridge Code Cl 15.9.8.2), each with a PASS/FAIL verdict against the code's
+permissible width for the exposure class. The ULS and SLS modules share the
 section, materials and reinforcement but keep **separate, independently edited load-case lists** —
 factored actions for ULS and characteristic (service) actions for SLS.

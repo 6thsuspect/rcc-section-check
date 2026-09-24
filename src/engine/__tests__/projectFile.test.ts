@@ -121,6 +121,44 @@ describe('parseProjectFile', () => {
     expect(parsed.slsCases[0].id).not.toBe(parsed.cases[0].id)
   })
 
+  it('round-trips the crack-width settings (exposure + duration)', () => {
+    const st = initialState()
+    st.code = 'IRC112'
+    st.crackWidth = { exposure: 'XD2', longTerm: true }
+    const json = JSON.stringify({ version: '1.2', app: 'RCC Section Check', exportedAt: '', state: st })
+    const parsed = parseProjectFile(json)
+    expect(parsed.crackWidth).toEqual({ exposure: 'XD2', longTerm: true })
+  })
+
+  it('resets an exposure that is invalid for the code and defaults missing crack-width settings', () => {
+    // IS 456 file that carries an IRC-only exposure class → falls back to default.
+    const bad = JSON.stringify({
+      version: '1.2',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 500 }, { x: 0, y: 500 }], voids: [] },
+        bars: [{ x: 40, y: 40, dia: 20 }],
+        cases: [],
+        code: 'IS456',
+        crackWidth: { exposure: 'XD2', longTerm: true },
+      },
+    })
+    const parsed = parseProjectFile(bad)
+    expect(parsed.crackWidth.exposure).toBe('moderate') // valid IS 456 default
+    expect(parsed.crackWidth.longTerm).toBe(true)
+
+    // Legacy file with no crack-width block at all → code default, short-term.
+    const legacy = JSON.stringify({
+      version: '1.1',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 500 }, { x: 0, y: 500 }], voids: [] },
+        bars: [{ x: 40, y: 40, dia: 20 }],
+        cases: [],
+      },
+    })
+    const parsedLegacy = parseProjectFile(legacy)
+    expect(parsedLegacy.crackWidth).toEqual({ exposure: 'moderate', longTerm: false })
+  })
+
   it('throws error for invalid JSON or missing geometry', () => {
     expect(() => parseProjectFile('invalid json')).toThrow()
     expect(() => parseProjectFile(JSON.stringify({ code: 'IS456' }))).toThrow('Invalid project file: missing or invalid geometry boundary.')

@@ -3,6 +3,7 @@ import { initialState } from './state'
 import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
 import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
+import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
 
 export interface ProjectFile {
   version: string
@@ -76,8 +77,15 @@ export function parseProjectFile(jsonText: string): AppState {
     throw new Error('Invalid project file: missing or invalid load cases list.')
   }
 
+  const code: AppState['code'] = ['IS456', 'IRC112', 'IRSCBC'].includes(rawState.code)
+    ? rawState.code
+    : defState.code
+  const rawCw = rawState.crackWidth && typeof rawState.crackWidth === 'object' ? rawState.crackWidth : {}
+  const exposureOk =
+    typeof rawCw.exposure === 'string' && EXPOSURE_OPTIONS[code].some((o) => o.value === rawCw.exposure)
+
   const sanitized: AppState = {
-    code: ['IS456', 'IRC112', 'IRSCBC'].includes(rawState.code) ? rawState.code : defState.code,
+    code,
     geometry: {
       boundary: rawState.geometry.boundary.map((p: any) => ({
         x: Number.isFinite(p?.x) ? Number(p.x) : 0,
@@ -140,6 +148,10 @@ export function parseProjectFile(jsonText: string): AppState {
       : rawState.cases.map((c: any, idx: number) =>
           mapCase(c, `slc-fallback-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
         ),
+    crackWidth: {
+      exposure: exposureOk ? rawCw.exposure : DEFAULT_EXPOSURE[code],
+      longTerm: rawCw.longTerm === true,
+    },
     mesh:
       rawState.mesh && typeof rawState.mesh === 'object'
         ? {

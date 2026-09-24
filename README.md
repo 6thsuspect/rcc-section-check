@@ -15,12 +15,22 @@ P–M diagram and the Mx–My capacity contour with every load case overlaid, an
 utilisation ratio plus the selected code's clause checks.
 
 Two top-bar modules share the same section, materials and reinforcement: the **ULS Check**
-(ultimate P–Mx–My interaction and capacity) and the **SLS Check** (serviceability stress limits by
-the IS 456:2000 Annex C working-stress method — concrete σcbc and reinforcement σst / σsc against
-the cracked transformed-section stresses, with PASS/FAIL per case). **Load cases are entered
-separately for each module** — the ULS panel holds factored actions and the SLS panel holds
-characteristic (service) actions; the two lists edit independently and switching tabs changes
-neither.
+(ultimate P–Mx–My interaction and capacity) and the **SLS Check** (serviceability limits — the
+IS 456:2000 Annex C working-stress method for concrete σcbc and reinforcement σst / σsc against
+the cracked transformed-section stresses, **plus a crack-width check** by the method of the
+selected code, each with PASS/FAIL per case). **Load cases are entered separately for each
+module** — the ULS panel holds factored actions and the SLS panel holds characteristic (service)
+actions; the two lists edit independently and switching tabs changes neither.
+
+### Crack-width check (SLS tab)
+The crack-width check reuses the cracked-section tension-steel stress σs, neutral-axis depth and
+effective depth from the SLS stress solve, and applies the method of the selected code:
+- **IS 456:2000** — Annex F surface formula `w = 3·a_cr·ε_m / (1 + 2(a_cr − c_min)/(h − x))`,
+  permissible width by exposure (Cl 35.3.2: 0.3 / 0.2 / 0.1 mm).
+- **IRC:112-2020** — Cl 12.3.4 (EN 1992-2) `w_k = s_r,max·(ε_sm − ε_cm)`, Table 12.1 limits.
+- **IRS Concrete Bridge Code 1997** — Cl 15.9.8.2 (BS 8110-2 basis), Table 10 limits.
+Only the exposure class and load duration are entered; section, cover, bar size and depth come
+from the shared inputs. The result, permissible width, utilisation and clause update automatically.
 
 ## Stack
 
@@ -50,10 +60,12 @@ src/engine/               Code-agnostic analysis kernel
   cover.ts                Per-face cover model, bar offsets, cover audit + snap
   checks.ts               Clause compliance checks per code
   sls.ts                  SLS working-stress check (σcbc / σst, transformed section)
+  crackWidth.ts           SLS crack-width check per code (IS 456 Annex F / IRC:112 / IRS CBC)
   __tests__/              Golden regression tests (docs/11 worked example)
 src/components/           Editors, section preview, charts, results panels
   CoverPanel.tsx          Per-face cover inputs, schematic and layout actions
   SLSResults.tsx          SLS stress table, summary and calculation panels
+  CrackWidth.tsx          SLS crack-width inputs, per-case results and calculation panels
 src/App.tsx               State + analysis pipeline wiring (ULS + SLS modules)
 ```
 
