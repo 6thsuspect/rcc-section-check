@@ -844,11 +844,14 @@ export function LoadCasesPanel({
   selected,
   update,
   select,
+  subtitle = 'factored ULS actions',
 }: {
   cases: LoadCase[]
   selected: string | null
   update: (cases: LoadCase[]) => void
   select: (id: string) => void
+  /** Context shown next to the title (ULS vs SLS load set). */
+  subtitle?: string
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
 
@@ -962,7 +965,7 @@ export function LoadCasesPanel({
           />
         </span>
       }
-      subtitle="factored ULS actions"
+      subtitle={subtitle}
       action={
         <button className={btnCls} onClick={addCase}>
           <Icon name="plus" size={12} />

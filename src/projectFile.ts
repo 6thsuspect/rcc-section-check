@@ -2,7 +2,8 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
-import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface } from './engine/types'
+import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
+import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
 
 export interface ProjectFile {
   version: string
@@ -16,7 +17,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.1',
+    version: '1.3',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -55,6 +56,15 @@ export function parseProjectFile(jsonText: string): AppState {
 
   const defState = initialState()
 
+  /** Coerce one persisted load-case row into a sanitized LoadCase. */
+  const mapCase = (c: any, id: string, name: string): LoadCase => ({
+    id,
+    name,
+    Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
+    Mux: Number.isFinite(c?.Mux) ? Number(c.Mux) : 0,
+    Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
+  })
+
   if (!rawState.geometry || typeof rawState.geometry !== 'object' || !Array.isArray(rawState.geometry.boundary)) {
     throw new Error('Invalid project file: missing or invalid geometry boundary.')
   }
@@ -67,8 +77,33 @@ export function parseProjectFile(jsonText: string): AppState {
     throw new Error('Invalid project file: missing or invalid load cases list.')
   }
 
+  const code: AppState['code'] = ['IS456', 'IRC112', 'IRSCBC'].includes(rawState.code)
+    ? rawState.code
+    : defState.code
+  const rawCw = rawState.crackWidth && typeof rawState.crackWidth === 'object' ? rawState.crackWidth : {}
+  const exposureOk =
+    typeof rawCw.exposure === 'string' && EXPOSURE_OPTIONS[code].some((o) => o.value === rawCw.exposure)
+
+  // v1.2 adds separate service (SLS) load cases; older files seed from the ULS
+  // cases. v1.3 adds a third list for the crack-width check, which falls back to
+  // the SLS cases. Fresh ids keep every list independently editable.
+  const slsCases: LoadCase[] = Array.isArray(rawState.slsCases)
+    ? rawState.slsCases.map((c: any, idx: number) =>
+        mapCase(c, typeof c?.id === 'string' ? c.id : `slc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+      )
+    : rawState.cases.map((c: any, idx: number) =>
+        mapCase(c, `slc-fallback-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+      )
+  const crackCases: LoadCase[] = Array.isArray(rawState.crackCases)
+    ? rawState.crackCases.map((c: any, idx: number) =>
+        mapCase(c, typeof c?.id === 'string' ? c.id : `cwc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `CWC${idx + 1}`),
+      )
+    : slsCases.map((c, idx) =>
+        mapCase(c, `cwc-fallback-${idx + 1}-${Date.now()}`, c.name),
+      )
+
   const sanitized: AppState = {
-    code: ['IS456', 'IRC112', 'IRSCBC'].includes(rawState.code) ? rawState.code : defState.code,
+    code,
     geometry: {
       boundary: rawState.geometry.boundary.map((p: any) => ({
         x: Number.isFinite(p?.x) ? Number(p.x) : 0,
@@ -118,13 +153,16 @@ export function parseProjectFile(jsonText: string): AppState {
     tieDia: Number.isFinite(rawState.tieDia) ? Number(rawState.tieDia) : defState.tieDia,
     barDia: Number.isFinite(rawState.barDia) ? Number(rawState.barDia) : defState.barDia,
     memberLength: Number.isFinite(rawState.memberLength) ? Number(rawState.memberLength) : defState.memberLength,
-    cases: rawState.cases.map((c: any, idx: number) => ({
-      id: typeof c?.id === 'string' ? c.id : `lc-${idx + 1}-${Date.now()}`,
-      name: typeof c?.name === 'string' ? c.name : `LC${idx + 1}`,
-      Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
-      Mux: Number.isFinite(c?.Mux) ? Number(c.Mux) : 0,
-      Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
-    })),
+    cases: rawState.cases.map((c: any, idx: number) =>
+      mapCase(c, typeof c?.id === 'string' ? c.id : `lc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `LC${idx + 1}`),
+    ),
+    slsCases,
+    // v1.3 crack-width load cases; older files inherit the (sanitized) SLS set.
+    crackCases,
+    crackWidth: {
+      exposure: exposureOk ? rawCw.exposure : DEFAULT_EXPOSURE[code],
+      longTerm: rawCw.longTerm === true,
+    },
     mesh:
       rawState.mesh && typeof rawState.mesh === 'object'
         ? {

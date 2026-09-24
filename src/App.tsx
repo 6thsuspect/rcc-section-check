@@ -11,15 +11,40 @@ import { isAutomaticBar, repositionAutomaticBars, validateOuterCoverFit } from '
 import { exportReport } from './report'
 import { exportProjectFile, parseProjectFile } from './projectFile'
 import { initialState, type AppState } from './state'
-import { SectionPreview, type NAInfo } from './components/SectionPreview'
+import { SectionPreview, type NAInfo, type StressOverlay } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
 import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
 import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
+import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './components/SLSResults'
+import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
 import { neutralAxisAnalysis, type NeutralAxisResult } from './engine/flexure'
+import {
+  buildSlsModel,
+  slsMaterialLimits,
+  slsStress,
+  type SlsCaseResult,
+  type SlsInputs,
+} from './engine/sls'
+import {
+  crackWidthCheck,
+  DEFAULT_EXPOSURE,
+  type CrackWidthResult,
+  type CrackWidthSettings,
+} from './engine/crackWidth'
 import { spacingReport } from './engine/barSpacing'
-import { Banner, Card, EmptyState, Icon, STANDARD_BAR_DIAMETERS, btnCls, btnPrimaryCls } from './components/ui'
+import {
+  Banner,
+  Card,
+  EmptyState,
+  Icon,
+  SegButton,
+  SegGroup,
+  STANDARD_BAR_DIAMETERS,
+  btnCls,
+  btnPrimaryCls,
+} from './components/ui'
 
 /** Page container, shared by the header bar and the working area. */
 const shell = 'mx-auto w-full max-w-[1640px] px-3 sm:px-5'
@@ -28,7 +53,11 @@ export default function App() {
   const [state, setState] = useState<AppState>(initialState)
   const [customizeBarDiameter, setCustomizeBarDiameter] = useState(false)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
+  const [slsSelCase, setSlsSelCase] = useState<string | null>(state.slsCases[0]?.id ?? null)
+  const [crackSelCase, setCrackSelCase] = useState<string | null>(state.crackCases[0]?.id ?? null)
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
+  /** Which top-bar module is open: the ULS interaction check or the SLS stress check. */
+  const [view, setView] = useState<'uls' | 'sls'>('uls')
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -42,6 +71,11 @@ export default function App() {
   const update = (patch: Partial<AppState>) =>
     setState((s) => {
       const next: AppState = { ...s, ...patch }
+      // A code change invalidates the crack-width exposure class (each code
+      // uses its own exposure taxonomy) — reset it to the new code's default.
+      if (patch.code !== undefined && patch.code !== s.code) {
+        next.crackWidth = { ...next.crackWidth, exposure: DEFAULT_EXPOSURE[patch.code] }
+      }
       const automaticDiameterChanged =
         patch.bars !== undefined &&
         patch.bars.some((bar, i) => isAutomaticBar(bar) && bar.dia !== s.bars[i]?.dia)
@@ -110,6 +144,12 @@ export default function App() {
         setCustomizeBarDiameter(!STANDARD_BAR_DIAMETERS.includes(newAppState.barDia))
         if (newAppState.cases.length > 0) {
           setSelCase(newAppState.cases[0].id)
+        }
+        if (newAppState.slsCases.length > 0) {
+          setSlsSelCase(newAppState.slsCases[0].id)
+        }
+        if (newAppState.crackCases.length > 0) {
+          setCrackSelCase(newAppState.crackCases[0].id)
         }
         setImportError(null)
         setImportSuccess(`Successfully imported project from "${file.name}"`)
@@ -248,6 +288,10 @@ export default function App() {
 
   const selected = state.cases.find((c) => c.id === selCase) ?? state.cases[0] ?? null
   const selResult = results.find((r) => r.loadCase.id === selected?.id) ?? null
+  // Selected service (SLS) case — independent from the ULS selection above.
+  const slsSelected = state.slsCases.find((c) => c.id === slsSelCase) ?? state.slsCases[0] ?? null
+  // Selected crack-width case — independent from the ULS and SLS-stress selections.
+  const crackSelected = state.crackCases.find((c) => c.id === crackSelCase) ?? state.crackCases[0] ?? null
   const anyFail =
     results.some((r) => !r.ok) || checks.some((c) => c.status === 'fail') || spacing.overlaps.length > 0
 
@@ -275,6 +319,88 @@ export default function App() {
       caption: `Neutral axis at the capacity state for ${selected.name} (P = Pu along the demand direction; NA angle ${((cp.theta * 180) / Math.PI).toFixed(0)}°)`,
     }
   }, [surface, selected, selResult, selNA])
+
+  /* ------------------------------------------------------------------ *
+   * SLS stress check (working-stress method) — shares the same section,
+   * materials, reinforcement and load cases as the ULS module; nothing
+   * here mutates state, so switching tabs never alters the inputs.
+   * ------------------------------------------------------------------ */
+  const slsLimits = useMemo(() => {
+    const maxDia = state.bars.length ? Math.max(...state.bars.map((b) => b.dia)) : 0
+    return slsMaterialLimits(state.fck, grade.fy, maxDia)
+  }, [state.fck, grade.fy, state.bars])
+
+  const slsInputs: SlsInputs = useMemo(
+    () => ({
+      geometry: state.geometry,
+      bars: state.bars,
+      fck: state.fck,
+      fy: grade.fy,
+      m: slsLimits.m,
+      sigmaCbc: slsLimits.sigmaCbc,
+      sigmaSt: slsLimits.sigmaSt,
+      sigmaSc: slsLimits.sigmaSc,
+    }),
+    [state.geometry, state.bars, state.fck, grade.fy, slsLimits],
+  )
+
+  const slsModel = useMemo(() => (valid ? buildSlsModel(slsInputs) : null), [valid, slsInputs])
+
+  const slsResults = useMemo(() => {
+    const out = new Map<string, SlsCaseResult | null>()
+    if (!slsModel) return out
+    for (const lc of state.slsCases) out.set(lc.id, slsStress(slsModel, slsInputs, lc))
+    return out
+  }, [slsModel, slsInputs, state.slsCases])
+
+  const slsList: SlsCaseResult[] = useMemo(
+    () => state.slsCases.map((c) => slsResults.get(c.id) ?? null).filter((r): r is SlsCaseResult => r !== null),
+    [slsResults, state.slsCases],
+  )
+  const slsAnyFail = slsList.some((r) => !r.ok)
+  const slsSel = slsSelected ? (slsResults.get(slsSelected.id) ?? null) : null
+
+  const slsNaInfo: NAInfo | null = useMemo(() => {
+    if (!slsSel || !Number.isFinite(slsSel.xu)) return null
+    return {
+      theta: slsSel.phi,
+      vna: slsSel.vna,
+      vTop: slsSel.vTop,
+      xu: slsSel.xu,
+      caption: `SLS neutral axis for ${slsSel.caseName} at the service moment (MEd = ${(slsSel.MEd / 1e6).toFixed(1)} kN·m, NA angle ${((slsSel.phi * 180) / Math.PI).toFixed(0)}°) — xu = ${slsSel.xu.toFixed(0)} mm from the extreme compression fibre`,
+    }
+  }, [slsSel])
+
+  const slsStressOverlay: StressOverlay | null =
+    slsSel && Number.isFinite(slsSel.xu)
+      ? {
+          sigmaC: slsSel.sigmaC,
+          sigmaCbc: slsSel.sigmaCbc,
+          sigmaSt: slsSel.sigmaSt,
+          sigmaStPerm: slsSel.sigmaStPerm,
+          tensionBar: slsSel.tensionBar,
+        }
+      : null
+
+  /**
+   * Crack-width check per crack-width load case — runs its own cracked-section
+   * solve (σs, xu, d) on state.crackCases (independent of the SLS-stress list)
+   * and applies the crack-width method of the selected code. Recomputes
+   * automatically whenever the section, reinforcement, material, service loads
+   * or exposure change.
+   */
+  const crackWidthResults = useMemo(() => {
+    const out = new Map<string, CrackWidthResult | null>()
+    if (!slsModel) return out
+    for (const lc of state.crackCases) {
+      const res = slsStress(slsModel, slsInputs, lc)
+      out.set(lc.id, res ? crackWidthCheck(state.code, state.fck, slsModel, state.bars, res, state.crackWidth) : null)
+    }
+    return out
+  }, [slsModel, slsInputs, state.crackCases, state.code, state.fck, state.bars, state.crackWidth])
+
+  const updateCrackWidth = (patch: Partial<CrackWidthSettings>) =>
+    update({ crackWidth: { ...state.crackWidth, ...patch } })
 
   const exportPdf = () => {
     if (!surface || !props || results.length === 0) return
@@ -326,6 +452,17 @@ export default function App() {
             </div>
           </div>
 
+          <SegGroup className="shrink-0" aria-label="Check module">
+            <SegButton active={view === 'uls'} onClick={() => setView('uls')} title="Ultimate limit state — P–Mx–My interaction & capacity checks">
+              <Icon name="target" size={13} />
+              ULS Check
+            </SegButton>
+            <SegButton active={view === 'sls'} onClick={() => setView('sls')} title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
+              <Icon name="shield" size={13} />
+              SLS Check
+            </SegButton>
+          </SegGroup>
+
           <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <input
               type="file"
@@ -334,7 +471,7 @@ export default function App() {
               accept=".json,.rcc"
               className="hidden"
             />
-            {surface && props && (
+            {view === 'uls' && surface && props && (
               <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
                 <span title="Pure axial (squash) capacity of the section">
                   <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Puz</span>
@@ -361,7 +498,34 @@ export default function App() {
               </div>
             )}
 
-            {surface && props && (
+            {view === 'sls' && slsList.length > 0 && (
+              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
+                <span title="Permissible concrete stress in bending (IS 456 Table 21)">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σcbc</span>
+                  {slsLimits.sigmaCbc.toFixed(1)} N/mm²
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span title="Permissible tensile steel stress (IS 456 Table 22)">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σst</span>
+                  {slsLimits.sigmaSt.toFixed(0)} N/mm²
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span
+                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
+                    slsAnyFail ? 'text-bad' : 'text-ok'
+                  }`}
+                >
+                  <span
+                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${slsAnyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
+                  >
+                    <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
+                  </span>
+                  {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
+                </span>
+              </div>
+            )}
+
+            {view === 'uls' && surface && props && (
               <span
                 className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
                   anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
@@ -370,6 +534,18 @@ export default function App() {
               >
                 <Icon name={anyFail ? 'alert' : 'check'} size={10} />
                 {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+              </span>
+            )}
+
+            {view === 'sls' && slsList.length > 0 && (
+              <span
+                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
+                  slsAnyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
+                }`}
+                title="SLS stress verdict across all load cases"
+              >
+                <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
+                {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
               </span>
             )}
 
@@ -469,13 +645,27 @@ export default function App() {
             update={(bars) => update({ bars, predefined: state.predefined })}
           />
           <LoadCasesPanel
-            cases={state.cases}
-            selected={selected?.id ?? null}
-            update={(cases) => update({ cases })}
-            select={setSelCase}
+            cases={view === 'uls' ? state.cases : state.slsCases}
+            selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
+            update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
+            select={view === 'uls' ? setSelCase : setSlsSelCase}
+            subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
           />
+          {view === 'sls' && (
+            <>
+              <LoadCasesPanel
+                cases={state.crackCases}
+                selected={crackSelected?.id ?? null}
+                update={(cases) => update({ crackCases: cases })}
+                select={setCrackSelCase}
+                subtitle="service actions · crack width check"
+              />
+              <CrackWidthInputsPanel code={state.code} settings={state.crackWidth} update={updateCrackWidth} />
+            </>
+          )}
         </div>
 
+        {view === 'uls' && (
         <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           {issues.length > 0 && (
             <Banner tone="error">
@@ -560,6 +750,97 @@ export default function App() {
             </span>
           </footer>
         </div>
+        )}
+
+        {view === 'sls' && (
+          <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
+            {issues.length > 0 && (
+              <Banner tone="error">
+                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {issues.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+            {coverFitIssues.length > 0 && (
+              <Banner tone="warn">
+                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {coverFitIssues.map((issue) => (
+                    <li key={issue.axis}>
+                      {issue.message} Reduce the face covers, use a smaller bar, or increase the section size.
+                    </li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+
+            <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
+              <Card
+                title="Section"
+                subtitle={state.predefined ? 'generated from the shape parameters, editable' : 'custom boundary'}
+              >
+                <SectionPreview
+                  geometry={state.geometry}
+                  bars={state.bars}
+                  props={props}
+                  na={slsNaInfo}
+                  cover={state.cover}
+                  audit={coverAudit}
+                  radialCoverOnly={state.shapeClass === 'circ'}
+                  overlapping={spacing.overlapping}
+                  activeFace={activeFace}
+                  onHoverFace={setActiveFace}
+                  onSelectFace={setActiveFace}
+                  stress={slsStressOverlay}
+                />
+              </Card>
+              <SlsSummaryPanel
+                results={slsList}
+                limits={slsLimits}
+                anyFail={slsAnyFail}
+                extrapolated={slsLimits.extrapolated}
+              />
+            </div>
+
+            <SlsResultsTable
+              cases={state.slsCases}
+              results={slsResults}
+              selected={slsSelected?.id ?? null}
+              select={setSlsSelCase}
+            />
+            <SlsCalculationPanel lc={slsSelected} result={slsSel} />
+
+            <CrackWidthResultsTable
+              code={state.code}
+              cases={state.crackCases}
+              results={crackWidthResults}
+              selected={crackSelected?.id ?? null}
+              select={setCrackSelCase}
+            />
+            <CrackWidthDetailPanel
+              code={state.code}
+              settings={state.crackWidth}
+              lc={crackSelected}
+              result={(crackSelected && crackWidthResults.get(crackSelected.id)) ?? null}
+            />
+
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+              <p className="max-w-[92ch]">
+                SLS stresses are checked by the working-stress (direct-stress) method of IS 456:2000 Annex C on a
+                cracked transformed section under the service actions of each load case, and crack widths are checked
+                by the method of the selected code. Both SLS load-case lists (stress and crack width) are entered
+                separately from the factored ULS cases and from each other — enter characteristic (unfactored) service
+                moments for a code-consistent SLS check.
+              </p>
+              <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                Serviceability · IS 456 Annex C
+              </span>
+            </footer>
+          </div>
+        )}
       </main>
     </div>
   )

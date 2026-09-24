@@ -2,6 +2,7 @@ import type { DesignCodeId, LoadCase, Rebar, SectionGeometry, MeshSettings } fro
 import { DEFAULT_MESH } from './engine/types'
 import { defaultPredefined, generateSection, type PredefinedSection } from './engine/sections'
 import { uniformCover, type CoverSpec } from './engine/cover'
+import { DEFAULT_EXPOSURE, type CrackWidthSettings } from './engine/crackWidth'
 
 export interface AppState {
   code: DesignCodeId
@@ -18,7 +19,20 @@ export interface AppState {
   barDia: number
   /** Unsupported length, mm (0 = not provided). */
   memberLength: number
+  /** Factored (ULS) load cases. */
   cases: LoadCase[]
+  /**
+   * Service (SLS) load cases — entered separately from the factored ULS cases.
+   * The SLS stress check runs on these characteristic actions.
+   */
+  slsCases: LoadCase[]
+  /**
+   * Service (SLS) load cases for the crack-width check — a third, independently
+   * edited list. The crack width runs its own cracked-section solve on these.
+   */
+  crackCases: LoadCase[]
+  /** Crack-width check inputs (exposure class + load duration) for the SLS tab. */
+  crackWidth: CrackWidthSettings
   mesh: MeshSettings
 }
 
@@ -54,6 +68,19 @@ export function initialState(): AppState {
       { id: newCaseId(), name: 'LC1', Pu: 2500, Mux: 180, Muy: 100 },
       { id: newCaseId(), name: 'LC2', Pu: 1200, Mux: 320, Muy: 40 },
     ],
+    // Service (characteristic) actions for the SLS stress + crack-width checks —
+    // a separate, independently editable list from the factored ULS cases above.
+    slsCases: [
+      { id: newCaseId(), name: 'SLC1', Pu: 600, Mux: 150, Muy: 25 },
+      { id: newCaseId(), name: 'SLC2', Pu: 500, Mux: 160, Muy: 30 },
+    ],
+    // Service actions for the crack-width check — separate from both the ULS
+    // and the SLS stress lists; the crack width runs its own solve on these.
+    crackCases: [
+      { id: newCaseId(), name: 'CWC1', Pu: 600, Mux: 150, Muy: 25 },
+      { id: newCaseId(), name: 'CWC2', Pu: 500, Mux: 160, Muy: 30 },
+    ],
+    crackWidth: { exposure: DEFAULT_EXPOSURE.IS456, longTerm: false },
     mesh: DEFAULT_MESH,
   }
 }
