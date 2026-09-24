@@ -51,6 +51,25 @@ export interface NAInfo {
   vTop?: number
 }
 
+/**
+ * Optional SLS stress overlay drawn on the section (only supplied by the SLS
+ * window; absent for ULS, so the ULS figure is unchanged). Annotates the
+ * extreme-fibre concrete stress and the governing tension/compression bar
+ * stresses next to the neutral axis already drawn from `na`.
+ */
+export interface StressOverlay {
+  /** Max concrete compressive stress at the extreme fibre, N/mm². */
+  sigmaC: number
+  /** Permissible concrete stress σcbc, N/mm². */
+  sigmaCbc: number
+  /** Max tensile steel stress, N/mm². */
+  sigmaSt: number
+  /** Permissible tensile steel stress σst, N/mm². */
+  sigmaStPerm: number
+  /** Index of the most-tensioned bar (−1 if none). */
+  tensionBar: number
+}
+
 export function SectionPreview({
   geometry,
   bars,
@@ -63,6 +82,7 @@ export function SectionPreview({
   activeFace,
   onHoverFace,
   onSelectFace,
+  stress,
 }: {
   geometry: SectionGeometry
   bars: Rebar[]
@@ -79,6 +99,8 @@ export function SectionPreview({
   activeFace?: ActiveFace | null
   onHoverFace?: (face: ActiveFace | null) => void
   onSelectFace?: (face: ActiveFace | null) => void
+  /** SLS stress annotations (SLS window only). */
+  stress?: StressOverlay | null
 }) {
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
@@ -458,6 +480,43 @@ export function SectionPreview({
             </text>
           </g>
         )}
+
+        {/* SLS stress annotations (SLS window only — absent for ULS) */}
+        {stress && na && props && showNA && na.xu != null && Number.isFinite(na.xu) &&
+          (() => {
+            const n = { x: -Math.sin(na.theta), y: Math.cos(na.theta) }
+            const vTop = na.vTop ?? 0
+            // σc label sits just inside the extreme compression fibre.
+            const cOff = 16 / scale
+            const cPos = { x: X(props.cx + (vTop - cOff) * n.x), y: Y(props.cy + (vTop - cOff) * n.y) }
+            const cOk = stress.sigmaC <= stress.sigmaCbc
+            const tb = stress.tensionBar >= 0 ? bars[stress.tensionBar] : null
+            const sOk = stress.sigmaSt <= stress.sigmaStPerm
+            const r = tb ? Math.max(2.2, (tb.dia / 2) * scale) : 0
+            const sPos = tb ? { x: X(tb.x) + r + 4, y: Y(tb.y) - r - 2 } : null
+            const chip = (x: number, y: number, text: string, ok: boolean, anchor: 'start' | 'middle' | 'end') => (
+              <text
+                x={x}
+                y={y}
+                fontSize={Math.max(9, fontSize - 1)}
+                fontFamily={FONT}
+                fontWeight="700"
+                textAnchor={anchor}
+                paintOrder="stroke"
+                stroke="var(--color-card, #fff)"
+                strokeWidth="3"
+                fill={ok ? 'var(--color-ok)' : 'var(--color-bad)'}
+              >
+                {text}
+              </text>
+            )
+            return (
+              <g className="pointer-events-none">
+                {chip(cPos.x, cPos.y, `σc ${stress.sigmaC.toFixed(1)}`, cOk, 'middle')}
+                {sPos && chip(sPos.x, sPos.y, `σst ${stress.sigmaSt.toFixed(0)}`, sOk, 'start')}
+              </g>
+            )
+          })()}
 
         {cx !== null && cy !== null && (
           <g>

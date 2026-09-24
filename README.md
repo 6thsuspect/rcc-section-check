@@ -14,6 +14,11 @@ interaction surface by strain-compatibility analysis of the actual geometry, dra
 P–M diagram and the Mx–My capacity contour with every load case overlaid, and reports a
 utilisation ratio plus the selected code's clause checks.
 
+Two top-bar modules share the same section, materials, reinforcement and load cases: the **ULS
+Check** (ultimate P–Mx–My interaction and capacity) and the **SLS Check** (serviceability stress
+limits by the IS 456:2000 Annex C working-stress method — concrete σcbc and reinforcement σst / σsc
+against the cracked transformed-section stresses, with PASS/FAIL per case).
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest
@@ -41,10 +46,12 @@ src/engine/               Code-agnostic analysis kernel
   sections.ts             Predefined parametric section generators
   cover.ts                Per-face cover model, bar offsets, cover audit + snap
   checks.ts               Clause compliance checks per code
+  sls.ts                  SLS working-stress check (σcbc / σst, transformed section)
   __tests__/              Golden regression tests (docs/11 worked example)
 src/components/           Editors, section preview, charts, results panels
   CoverPanel.tsx          Per-face cover inputs, schematic and layout actions
-src/App.tsx               State + analysis pipeline wiring
+  SLSResults.tsx          SLS stress table, summary and calculation panels
+src/App.tsx               State + analysis pipeline wiring (ULS + SLS modules)
 ```
 
 ## Engineering notes

@@ -37,5 +37,7 @@ It does **not** perform member design: load combinations, slenderness amplificat
 second-order moments and shear/torsion design are the caller's responsibility. Where a
 code requires member-level input (for example minimum-eccentricity moments, which need
 the unsupported length), the module accepts that input and applies the clause, but it
-does not derive effective lengths itself. Serviceability checks (crack width, stress
-limits) are outside scope in this revision.
+does not derive effective lengths itself. Serviceability is covered for **stress limits** by a
+separate SLS module (working-stress / direct-stress method of IS 456:2000 Annex C — concrete
+σcbc and reinforcement σst / σsc against the cracked transformed-section stresses); explicit
+crack-width calculation remains outside scope in this revision.
