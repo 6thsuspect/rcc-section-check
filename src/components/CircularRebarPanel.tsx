@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Rebar } from '../engine/types'
 import { isAutomaticBar } from '../engine/reinforcement'
+import { spacingReport } from '../engine/barSpacing'
 import type { PredefinedSection } from '../engine/sections'
 import {
   ARRANGEMENT_LABELS,
   defaultCircularRebarConfig,
   defaultLayer,
   generateCircularRebar,
+  bundleDiameters,
+  bundleInnerSpacingUsed,
+  bundleSpacingUsed,
   pitchRadius,
   sanitizeCircularConfig,
   type CircularArrangementKind,
@@ -194,6 +198,10 @@ export function CircularRebarPanel({
   if (R == null) return null
 
   const outerPitch = pitchRadius(R, cover, tieDia, cfg.barDia)
+  const liveCfg = sanitizeCircularConfig({ ...cfg, sectionRadius: R, innerRadius: Ri > 0 ? Ri : undefined, cover, tieDia })
+  const bundleDias = bundleDiameters(liveCfg)
+  const bundleEq = Math.sqrt(bundleDias.reduce((a, d) => a + d * d, 0))
+  const bundleCheck = spacingReport(result.bars)
 
   const setKind = (kind: CircularArrangementKind) => {
     const next = defaultCircularRebarConfig(kind, R, cover, tieDia, cfg.barDia || barDia)
@@ -208,6 +216,10 @@ export function CircularRebarPanel({
     if (kind === 'bundle') {
       next.nBundles = cfg.nBundles || 6
       next.barsPerBundle = cfg.barsPerBundle || 2
+      next.bundleSpacing = cfg.bundleSpacing ?? null
+      next.bundleInnerSpacing = cfg.bundleInnerSpacing ?? null
+      next.bundleMixedDia = cfg.bundleMixedDia ?? false
+      next.bundleBarDias = cfg.bundleBarDias?.length ? cfg.bundleBarDias : next.bundleBarDias
     }
     if (kind === 'triple') {
       next.nGroups = cfg.nGroups || 6
@@ -350,6 +362,49 @@ export function CircularRebarPanel({
                 step={1}
                 onChange={(v) => patch({ nBundles: Math.round(v) })}
               />
+              <OptionalMmField
+                label="Bundle spacing (c/c)"
+                value={cfg.bundleSpacing ?? null}
+                placeholder={`equal · ${bundleSpacingUsed({ ...cfg, bundleSpacing: null }).toFixed(0)}`}
+                title="Centre-to-centre distance between adjacent bundles on the pitch circle. Blank = bundles equally spaced around the ring."
+                onChange={(v) => patch({ bundleSpacing: v, angularSpacingDeg: null })}
+              />
+              <OptionalMmField
+                label="Bar spacing in bundle (c/c)"
+                value={cfg.bundleInnerSpacing ?? null}
+                placeholder={`auto · ${bundleInnerSpacingUsed({ ...cfg, bundleInnerSpacing: null }).toFixed(0)}`}
+                title="Centre-to-centre distance between bars inside one bundle — independent of the bundle spacing. Enter the bar diameter for bars in contact."
+                onChange={(v) => patch({ bundleInnerSpacing: v })}
+              />
+              <div className="col-span-2">
+                <Check
+                  checked={!!cfg.bundleMixedDia}
+                  onChange={(on) =>
+                    patch({
+                      bundleMixedDia: on,
+                      bundleBarDias: on
+                        ? Array.from({ length: Math.max(cfg.barsPerBundle, cfg.bundleBarDias?.length ?? 0) }, (_, k) => cfg.bundleBarDias?.[k] ?? cfg.barDia)
+                        : cfg.bundleBarDias,
+                    })
+                  }
+                  label="Different ⌀ per bar in bundle"
+                  title="Give each bar position of the bundle its own diameter. The list is kept when the bars-per-bundle count changes."
+                />
+              </div>
+              {cfg.bundleMixedDia &&
+                bundleDias.map((d, k) => (
+                  <DiameterField
+                    key={`bdia-${k}`}
+                    label={`Bundle bar ${k + 1} ⌀`}
+                    value={d}
+                    onChange={(v) => {
+                      const next = Array.from({ length: Math.max(cfg.bundleBarDias?.length ?? 0, k + 1) }, (_, j) => cfg.bundleBarDias?.[j] ?? cfg.barDia)
+                      next[k] = v
+                      patch({ bundleBarDias: next })
+                    }}
+                    onCustomizeChange={onBarDiaCustomizeChange}
+                  />
+                ))}
             </>
           )}
 
@@ -382,6 +437,7 @@ export function CircularRebarPanel({
                 step={5}
                 onChange={(v) => patch({ startAngleDeg: v })}
               />
+              {cfg.kind !== 'bundle' && (
               <label className="flex min-w-0 flex-col gap-[3px]">
                 <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                   Angular spacing (blank = equal)
@@ -405,6 +461,7 @@ export function CircularRebarPanel({
                   </span>
                 </span>
               </label>
+              )}
             </>
           )}
         </div>
@@ -418,6 +475,36 @@ export function CircularRebarPanel({
           />
           <Readout label="Bars generated" value={`${result.bars.length}`} />
         </div>
+        {cfg.kind === 'bundle' && (
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3" data-testid="bundle-summary">
+            <Readout
+              label="Bundle ⌀ (equiv.)"
+              value={`${bundleEq.toFixed(1)} mm`}
+              title={`√Σφ² of ⌀ ${bundleDias.join(' + ')} — a bundle is treated as one bar of equal area`}
+            />
+            <Readout label="Bars per bundle" value={`${bundleDias.length} · ⌀ ${bundleDias.join('+')}`} />
+            <Readout
+              label="Bundle spacing c/c"
+              value={`${bundleSpacingUsed(liveCfg).toFixed(0)} mm`}
+              title={cfg.bundleSpacing ? 'Entered bundle spacing' : 'Equal spacing around the pitch circle'}
+            />
+            <Readout label="Spacing in bundle c/c" value={`${bundleInnerSpacingUsed(liveCfg).toFixed(0)} mm`} />
+            <Readout
+              label="Min clear (outside bundle)"
+              value={
+                bundleCheck.minClear === null
+                  ? '—'
+                  : `${bundleCheck.minClear.toFixed(0)} / ≥ ${bundleCheck.clearLimit.toFixed(0)} mm ${bundleCheck.minClearOk ? '✓' : '✗'}`
+              }
+              title="Clear gap between adjacent bars of different bundles; bars inside one bundle are excluded"
+            />
+            <Readout
+              label="Overlap"
+              value={bundleCheck.overlaps.length === 0 ? 'none ✓' : `${bundleCheck.overlaps.length} pair(s) ✗`}
+              title="Intersection check of every bar, including bars inside a bundle"
+            />
+          </div>
+        )}
         <p className={`${noteSmCls} -mt-0.5`}>
           Pitch radius = R − cover − ⌀tie − ⌀bar/2, using the governing face cover from the cover panel. Generated
           bars fill the reinforcement table and stay individually editable.
@@ -573,5 +660,44 @@ export function CircularRebarPanel({
         </div>
       </div>
     </Card>
+  )
+}
+
+/** Optional millimetre input: blank = automatic (null). */
+function OptionalMmField({
+  label,
+  value,
+  placeholder,
+  title,
+  onChange,
+}: {
+  label: string
+  value: number | null
+  placeholder: string
+  title?: string
+  onChange: (v: number | null) => void
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-[3px]" title={title}>
+      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
+      <span className={fieldBoxCls}>
+        <input
+          type="number"
+          className={fieldCls}
+          value={value ?? ''}
+          placeholder={placeholder}
+          step={5}
+          min={0}
+          onChange={(e) => {
+            const t = e.target.value
+            const v = parseFloat(t)
+            onChange(t === '' || !Number.isFinite(v) || v <= 0 ? null : v)
+          }}
+        />
+        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+          mm
+        </span>
+      </span>
+    </label>
   )
 }

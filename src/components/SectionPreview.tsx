@@ -45,6 +45,10 @@ export interface NAInfo {
   /** Signed offset of the NA from the centroid along the compression normal, mm. */
   vna: number
   caption: string
+  /** Actual NA depth from the extreme compression fibre, mm (draws the xu dimension). */
+  xu?: number
+  /** Offset of the extreme compression fibre from the centroid along the compression normal, mm. */
+  vTop?: number
 }
 
 export function SectionPreview({
@@ -55,6 +59,7 @@ export function SectionPreview({
   cover,
   audit,
   radialCoverOnly = false,
+  overlapping,
   activeFace,
   onHoverFace,
   onSelectFace,
@@ -69,6 +74,8 @@ export function SectionPreview({
   audit?: CoverAudit | null
   /** Circular rings use one governing radial value all around the section. */
   radialCoverOnly?: boolean
+  /** Indices of bars that intersect another bar — drawn in red. */
+  overlapping?: Set<number> | null
   activeFace?: ActiveFace | null
   onHoverFace?: (face: ActiveFace | null) => void
   onSelectFace?: (face: ActiveFace | null) => void
@@ -88,7 +95,10 @@ export function SectionPreview({
   const xmax = Math.max(...xs)
   const ymin = Math.min(...ys)
   const ymax = Math.max(...ys)
-  const scale = Math.min((W - 2 * PAD) / Math.max(1, xmax - xmin), (H - 2 * PAD) / Math.max(1, ymax - ymin))
+  // leave room outside the section for the xu dimension line when it is drawn
+  const showXu = !!(na && props && showNA && na.xu != null && na.vTop != null)
+  const pad = showXu ? PAD + 14 : PAD
+  const scale = Math.min((W - 2 * pad) / Math.max(1, xmax - xmin), (H - 2 * pad) / Math.max(1, ymax - ymin))
   const ox = (W - (xmax - xmin) * scale) / 2
   const oy = (H - (ymax - ymin) * scale) / 2
   const X = (x: number) => ox + (x - xmin) * scale
@@ -103,6 +113,7 @@ export function SectionPreview({
 
   // neutral-axis geometry in user coordinates
   let naEls: { x1: number; y1: number; x2: number; y2: number; poly: string; lx: number; ly: number } | null = null
+  let xuEls: XuDimension | null = null
   if (na && props && showNA) {
     const d = { x: Math.cos(na.theta), y: Math.sin(na.theta) }
     const n = { x: -Math.sin(na.theta), y: Math.cos(na.theta) }
@@ -112,14 +123,19 @@ export function SectionPreview({
     const B = { x: P0.x + L * d.x, y: P0.y + L * d.y }
     const C = { x: B.x + L * n.x, y: B.y + L * n.y }
     const Dp = { x: A.x + L * n.x, y: A.y + L * n.y }
+    if (showXu) xuEls = xuDimension(geometry.boundary, { x: props.cx, y: props.cy }, d, n, na.vTop!, na.xu!, scale, X, Y)
+    // the NA tag goes on the opposite side of the section from the xu dimension so they never collide
+    const tagSide = xuEls ? -xuEls.side : 1
+    const tagU = xuEls ? xuEls.uEdgeOpp + (tagSide * 10) / scale : 0.15 * L
+    const tag = { x: P0.x + tagU * d.x, y: P0.y + tagU * d.y }
     naEls = {
       x1: X(A.x),
       y1: Y(A.y),
       x2: X(B.x),
       y2: Y(B.y),
       poly: [A, B, C, Dp].map((p) => `${X(p.x)},${Y(p.y)}`).join(' '),
-      lx: X(P0.x + 0.15 * L * d.x + 6 / scale * n.x),
-      ly: Y(P0.y + 0.15 * L * d.y) - 5,
+      lx: X(tag.x + (6 / scale) * n.x),
+      ly: Y(tag.y) - 5,
     }
   }
 
@@ -246,6 +262,9 @@ export function SectionPreview({
 
       <ZoomableSvg W={W} H={H} id="fig-section" ariaLabel="Scaled preview of the section with reinforcement">
         <defs>
+          <marker id={`${clipId}-arr`} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1.5 L10,5 L0,8.5 z" className="fill-demand" />
+          </marker>
           <clipPath id={clipId}>
             <path
               clipRule="evenodd"
@@ -395,8 +414,47 @@ export function SectionPreview({
               strokeWidth="1.8"
               strokeDasharray="9 4 2 4"
             />
-            <text x={naEls.lx} y={naEls.ly} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelColor}>
+            <text
+              x={naEls.lx}
+              y={naEls.ly}
+              fontSize={fontSize}
+              fontFamily={FONT}
+              fontWeight="600"
+              fill={labelColor}
+              textAnchor={xuEls && xuEls.tagAnchorEnd ? 'end' : 'start'}
+            >
               NA
+            </text>
+          </g>
+        )}
+
+        {/* xu dimension: outside the section, parallel to the compression normal, from the extreme fibre to the NA */}
+        {xuEls && (
+          <g className="pointer-events-none">
+            <line {...xuEls.ext1} className="stroke-demand" strokeWidth="0.8" />
+            <line {...xuEls.ext2} className="stroke-demand" strokeWidth="0.8" />
+            <line
+              {...xuEls.dim}
+              className="stroke-demand"
+              strokeWidth="1.2"
+              markerStart={`url(#${clipId}-arr)`}
+              markerEnd={xuEls.clipped ? undefined : `url(#${clipId}-arr)`}
+            />
+            <text
+              x={xuEls.label.x}
+              y={xuEls.label.y}
+              transform={`rotate(${xuEls.label.angle} ${xuEls.label.x} ${xuEls.label.y})`}
+              fontSize={Math.max(9, fontSize)}
+              fontFamily={FONT}
+              fontWeight="700"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              paintOrder="stroke"
+              stroke="var(--color-card, #fff)"
+              strokeWidth="3"
+              className="fill-demand"
+            >
+              xu = {na!.xu!.toFixed(0)} mm{xuEls.clipped ? ' (NA beyond section)' : ''}
             </text>
           </g>
         )}
@@ -419,17 +477,21 @@ export function SectionPreview({
           const r = Math.max(2.2, (b.dia / 2) * scale)
           const st = audit?.bars[i] ?? null
           const bad = st !== null && !st.ok
+          const clash = !!overlapping?.has(i)
           return (
             <g key={i}>
               <circle
                 cx={X(b.x)}
                 cy={Y(b.y)}
                 r={r}
-                className="fill-capacity"
-                stroke={bad ? 'var(--color-bad)' : 'none'}
-                strokeWidth={bad ? 1.6 : 0}
+                className={clash ? undefined : 'fill-capacity'}
+                fill={clash ? 'var(--color-bad)' : undefined}
+                fillOpacity={clash ? 0.78 : undefined}
+                stroke={clash ? '#8f1d1d' : bad ? 'var(--color-bad)' : 'none'}
+                strokeWidth={clash ? 1.2 : bad ? 1.6 : 0}
+                data-overlap={clash ? 'true' : undefined}
               >
-                <title>{barTooltip(i, b, st)}</title>
+                <title>{`${barTooltip(i, b, st)}${clash ? ' — OVERLAPS another bar' : ''}`}</title>
               </circle>
               {showLabels && (
                 <text
@@ -467,6 +529,14 @@ export function SectionPreview({
             </span>
           </p>
         )}
+        {overlapping && overlapping.size > 0 && (
+          <p className={`${noteSmCls} flex items-start gap-1.5`}>
+            <span aria-hidden="true" className="mt-[3px] h-2.5 w-2.5 shrink-0 rounded-full bg-bad" />
+            <span className="font-semibold text-bad">
+              {overlapping.size} bar(s) filled red intersect another bar — see Reinforcement spacing & overlap.
+            </span>
+          </p>
+        )}
         {na && showNA && (
           <p className={`${noteSmCls} flex items-start gap-1.5`}>
             <span aria-hidden="true" className="mt-[5px] h-0 w-4 shrink-0 border-t-2 border-dotted border-demand" />
@@ -491,4 +561,114 @@ export function SectionPreview({
       )}
     </div>
   )
+}
+
+interface Seg {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+interface XuDimension {
+  ext1: Seg
+  ext2: Seg
+  dim: Seg
+  label: { x: number; y: number; angle: number }
+  /** +1 → dimension on the +d side of the section, −1 → on the −d side. */
+  side: 1 | -1
+  /** Along-NA coordinate (relative to the NA foot point) of the section edge opposite the dimension. */
+  uEdgeOpp: number
+  tagAnchorEnd: boolean
+  /** True when the NA lies so far outside the section that the dimension is cut at the view edge. */
+  clipped: boolean
+}
+
+/**
+ * Geometry of the xu dimension line. It is placed outside the section, beyond
+ * the section's extent along the NA direction, and runs parallel to the
+ * compression normal from the extreme compression fibre to the NA line, so it
+ * is aligned with the NA and clear of the bars, cover labels and axes.
+ */
+function xuDimension(
+  boundary: { x: number; y: number }[],
+  G: { x: number; y: number },
+  d: { x: number; y: number },
+  n: { x: number; y: number },
+  vTop: number,
+  xu: number,
+  scale: number,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+): XuDimension {
+  const proj = boundary.map((p) => ({ u: (p.x - G.x) * d.x + (p.y - G.y) * d.y, v: (p.x - G.x) * n.x + (p.y - G.y) * n.y }))
+  const umin = Math.min(...proj.map((p) => p.u))
+  const umax = Math.max(...proj.map((p) => p.u))
+  const vmin = Math.min(...proj.map((p) => p.v))
+  const top = proj.reduce((a, b) => (b.v > a.v + 1e-6 ? b : a), proj[0])
+  const h = vTop - vmin
+  // pick the side whose dimension stays nearest the left / bottom of the view (reads naturally) —
+  // for bending about X that is the left side, for bending about Y the bottom side
+  const toScreen = (u: number, v: number) => ({ x: X(G.x + u * d.x + v * n.x), y: Y(G.y + u * d.y + v * n.y) })
+  const gap = 18 / scale
+  const vEndRaw = vTop - xu
+  const vLimit = vmin - 0.3 * h
+  const clipped = vEndRaw < vLimit
+  const vEnd = clipped ? vLimit : vEndRaw
+  // along-NA extent of the section inside the xu band only (vEnd ≤ v ≤ vTop): the dimension
+  // just has to clear that part of the section, which keeps it close for inclined axes
+  const bandU: number[] = []
+  const vLo = Math.min(vEnd, vTop)
+  for (let i = 0; i < proj.length; i++) {
+    const p1 = proj[i]
+    const p2 = proj[(i + 1) % proj.length]
+    if (p1.v >= vLo - 1e-9 && p1.v <= vTop + 1e-9) bandU.push(p1.u)
+    for (const vc of [vLo, vTop]) {
+      if ((p1.v - vc) * (p2.v - vc) < 0) bandU.push(p1.u + ((vc - p1.v) / (p2.v - p1.v)) * (p2.u - p1.u))
+    }
+  }
+  const bMin = bandU.length ? Math.min(...bandU) : umin
+  const bMax = bandU.length ? Math.max(...bandU) : umax
+  // how far the dimension line and its label would run outside the view on each side
+  const overflow = (sd: 1 | -1) => {
+    const u = sd < 0 ? bMin - gap : bMax + gap
+    const a = toScreen(u, vTop)
+    const b = toScreen(u, vEnd)
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+    const m = toScreen(u + (sd * 9) / scale, (vTop + vEnd) / 2)
+    const half = Math.max(len, 90) / 2 // label extends ~45 px either side of its centre along the line
+    const ux = (b.x - a.x) / len
+    const uy = (b.y - a.y) / len
+    const pts = [a, b, { x: m.x - ux * half, y: m.y - uy * half }, { x: m.x + ux * half, y: m.y + uy * half }]
+    return pts.reduce((acc, p) => acc + Math.max(0, 4 - p.x) + Math.max(0, p.x - (W - 4)) + Math.max(0, 4 - p.y) + Math.max(0, p.y - (H - 4)), 0)
+  }
+  const minus = toScreen(bMin, vTop)
+  const plus = toScreen(bMax, vTop)
+  // prefer the side that reads naturally (left for bending about X, bottom for bending about Y) …
+  const natural: 1 | -1 = minus.x < plus.x - 1 || (Math.abs(minus.x - plus.x) <= 1 && minus.y > plus.y) ? -1 : 1
+  // … unless the other side keeps more of the dimension inside the figure
+  const side: 1 | -1 = overflow(natural) <= overflow(-natural as 1 | -1) + 0.5 ? natural : (-natural as 1 | -1)
+  const uDim = side < 0 ? bMin - gap : bMax + gap
+  const uEdge = side < 0 ? bMin : bMax
+  const P = (u: number, v: number) => toScreen(u, v)
+  const a = P(uDim, vTop)
+  const b = P(uDim, vEnd)
+  const e1a = P(top.u, vTop)
+  const e1b = P(uDim + (side * 4) / scale, vTop)
+  const e2a = P(uEdge + (side * 3) / scale, vEnd)
+  const e2b = P(uDim + (side * 4) / scale, vEnd)
+  const mid = P(uDim + (side * 9) / scale, (vTop + vEnd) / 2)
+  let angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
+  if (angle > 90) angle -= 180
+  if (angle <= -90) angle += 180
+  return {
+    ext1: { x1: e1a.x, y1: e1a.y, x2: e1b.x, y2: e1b.y },
+    ext2: { x1: e2a.x, y1: e2a.y, x2: e2b.x, y2: e2b.y },
+    dim: { x1: a.x, y1: a.y, x2: b.x, y2: b.y },
+    label: { x: mid.x, y: mid.y, angle },
+    side,
+    uEdgeOpp: side < 0 ? umax : umin,
+    tagAnchorEnd: toScreen(side < 0 ? umax : umin, vTop - xu).x < toScreen(side < 0 ? umin : umax, vTop - xu).x,
+    clipped,
+  }
 }

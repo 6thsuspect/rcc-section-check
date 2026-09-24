@@ -1,5 +1,5 @@
 import type { ConcreteModel, DesignCodeId, SteelModel } from './types'
-import { steelBilinear, steelIS456 } from './materials'
+import { ES, steelBilinear, steelIS456 } from './materials'
 
 /**
  * Code parameter registry. Every code-dependent constant lives here so a code
@@ -55,6 +55,13 @@ export interface CodeSpec {
   maxBarSpacing: number
   /** Short-column slenderness threshold on l/D. */
   shortLimit: number
+  /**
+   * Limiting neutral-axis depth ratio xu,max / d (balanced-failure strain
+   * compatibility) used to classify a section as under- or over-reinforced.
+   * `ecu` is the ultimate concrete strain of the code's stress block.
+   */
+  xuMaxRatio: (fy: number, ecu: number) => number
+  xuMaxLabel: string
 }
 
 const GRADES_ALL: SteelGradeSpec[] = [
@@ -95,6 +102,10 @@ const IS456: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 300,
   shortLimit: 12,
+  // Cl 38.1(f) + Annex G-1.1 note: steel strain at failure ≥ 0.87fy/Es + 0.002
+  // → 0.53 / 0.48 / 0.46 for Fe250 / Fe415 / Fe500.
+  xuMaxRatio: (fy, ecu) => ecu / (ecu + (0.87 * fy) / ES + 0.002),
+  xuMaxLabel: 'xu,max/d = εcu / (εcu + 0.87fy/Es + 0.002) (Cl 38.1(f), Annex G-1.1)',
 }
 
 /** IRC:112-2020 — Cl 6.4.2.8 stress block (Table 6.5 / Annexure A2.2), Cl 8.3.2 biaxial, Cl 16.2 detailing. */
@@ -136,6 +147,9 @@ const IRC112: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 200,
   shortLimit: 12,
+  // Balanced strain: extreme tension steel just reaches the design yield strain fyd/Es.
+  xuMaxRatio: (fy, ecu) => ecu / (ecu + fy / 1.15 / ES),
+  xuMaxLabel: 'xu,max/d = εcu / (εcu + fyd/Es), ductility limit εs ≥ εyd (IRC:SP:105 commentary)',
 }
 
 /** IRS Concrete Bridge Code 1997 — Cl 15.6 columns, Fig 4A/4B materials, eq. 16/17 biaxial. */
@@ -175,6 +189,9 @@ const IRSCBC: CodeSpec = {
   minBarsCirc: 6,
   maxBarSpacing: 300,
   shortLimit: 12,
+  // Simplified flexural design is limited to a neutral-axis depth of 0.5·d.
+  xuMaxRatio: () => 0.5,
+  xuMaxLabel: 'x ≤ 0.5·d (simplified flexure limit, Cl 15.4.2.2.1)',
 }
 
 export const CODES: Record<DesignCodeId, CodeSpec> = { IS456, IRC112, IRSCBC }
