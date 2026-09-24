@@ -32,8 +32,10 @@ effective depth from the SLS stress solve, and applies the method of the selecte
 - **IRS Concrete Bridge Code 1997** — Cl 15.9.8.2 (BS 8110-2 basis), Table 10 limits.
 Only the exposure class and load duration are entered; section, cover, bar size and depth come
 from the shared inputs. Crack width is evaluated on its **own** characteristic (service) load-case
-list (Load Cases panel under the crack-width heading), independent of the factored ULS list and
-the SLS stress list. The result, permissible width, utilisation and clause update automatically.
+list, and the load cases together with the exposure-class and load-duration inputs sit in the
+**left input column, immediately after the SLS Load Cases panel** — independent of the factored
+ULS list and the SLS stress list. The result, permissible width, utilisation and clause update
+automatically.
 
 ## Stack
 

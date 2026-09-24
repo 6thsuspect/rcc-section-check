@@ -651,6 +651,18 @@ export default function App() {
             select={view === 'uls' ? setSelCase : setSlsSelCase}
             subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
           />
+          {view === 'sls' && (
+            <>
+              <LoadCasesPanel
+                cases={state.crackCases}
+                selected={crackSelected?.id ?? null}
+                update={(cases) => update({ crackCases: cases })}
+                select={setCrackSelCase}
+                subtitle="service actions · crack width check"
+              />
+              <CrackWidthInputsPanel code={state.code} settings={state.crackWidth} update={updateCrackWidth} />
+            </>
+          )}
         </div>
 
         {view === 'uls' && (
@@ -801,14 +813,6 @@ export default function App() {
             />
             <SlsCalculationPanel lc={slsSelected} result={slsSel} />
 
-            <LoadCasesPanel
-              cases={state.crackCases}
-              selected={crackSelected?.id ?? null}
-              update={(cases) => update({ crackCases: cases })}
-              select={setCrackSelCase}
-              subtitle="service actions · crack width check"
-            />
-            <CrackWidthInputsPanel code={state.code} settings={state.crackWidth} update={updateCrackWidth} />
             <CrackWidthResultsTable
               code={state.code}
               cases={state.crackCases}
