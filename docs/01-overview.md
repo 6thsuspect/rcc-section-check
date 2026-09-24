@@ -40,4 +40,6 @@ the unsupported length), the module accepts that input and applies the clause, b
 does not derive effective lengths itself. Serviceability is covered for **stress limits** by a
 separate SLS module (working-stress / direct-stress method of IS 456:2000 Annex C — concrete
 σcbc and reinforcement σst / σsc against the cracked transformed-section stresses); explicit
-crack-width calculation remains outside scope in this revision.
+crack-width calculation remains outside scope in this revision. The ULS and SLS modules share the
+section, materials and reinforcement but keep **separate, independently edited load-case lists** —
+factored actions for ULS and characteristic (service) actions for SLS.

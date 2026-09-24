@@ -46,6 +46,7 @@ export default function App() {
   const [state, setState] = useState<AppState>(initialState)
   const [customizeBarDiameter, setCustomizeBarDiameter] = useState(false)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
+  const [slsSelCase, setSlsSelCase] = useState<string | null>(state.slsCases[0]?.id ?? null)
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
   /** Which top-bar module is open: the ULS interaction check or the SLS stress check. */
   const [view, setView] = useState<'uls' | 'sls'>('uls')
@@ -130,6 +131,9 @@ export default function App() {
         setCustomizeBarDiameter(!STANDARD_BAR_DIAMETERS.includes(newAppState.barDia))
         if (newAppState.cases.length > 0) {
           setSelCase(newAppState.cases[0].id)
+        }
+        if (newAppState.slsCases.length > 0) {
+          setSlsSelCase(newAppState.slsCases[0].id)
         }
         setImportError(null)
         setImportSuccess(`Successfully imported project from "${file.name}"`)
@@ -268,6 +272,8 @@ export default function App() {
 
   const selected = state.cases.find((c) => c.id === selCase) ?? state.cases[0] ?? null
   const selResult = results.find((r) => r.loadCase.id === selected?.id) ?? null
+  // Selected service (SLS) case — independent from the ULS selection above.
+  const slsSelected = state.slsCases.find((c) => c.id === slsSelCase) ?? state.slsCases[0] ?? null
   const anyFail =
     results.some((r) => !r.ok) || checks.some((c) => c.status === 'fail') || spacing.overlaps.length > 0
 
@@ -325,16 +331,16 @@ export default function App() {
   const slsResults = useMemo(() => {
     const out = new Map<string, SlsCaseResult | null>()
     if (!slsModel) return out
-    for (const lc of state.cases) out.set(lc.id, slsStress(slsModel, slsInputs, lc))
+    for (const lc of state.slsCases) out.set(lc.id, slsStress(slsModel, slsInputs, lc))
     return out
-  }, [slsModel, slsInputs, state.cases])
+  }, [slsModel, slsInputs, state.slsCases])
 
   const slsList: SlsCaseResult[] = useMemo(
-    () => state.cases.map((c) => slsResults.get(c.id) ?? null).filter((r): r is SlsCaseResult => r !== null),
-    [slsResults, state.cases],
+    () => state.slsCases.map((c) => slsResults.get(c.id) ?? null).filter((r): r is SlsCaseResult => r !== null),
+    [slsResults, state.slsCases],
   )
   const slsAnyFail = slsList.some((r) => !r.ok)
-  const slsSel = selected ? (slsResults.get(selected.id) ?? null) : null
+  const slsSel = slsSelected ? (slsResults.get(slsSelected.id) ?? null) : null
 
   const slsNaInfo: NAInfo | null = useMemo(() => {
     if (!slsSel || !Number.isFinite(slsSel.xu)) return null
@@ -601,10 +607,11 @@ export default function App() {
             update={(bars) => update({ bars, predefined: state.predefined })}
           />
           <LoadCasesPanel
-            cases={state.cases}
-            selected={selected?.id ?? null}
-            update={(cases) => update({ cases })}
-            select={setSelCase}
+            cases={view === 'uls' ? state.cases : state.slsCases}
+            selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
+            update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
+            select={view === 'uls' ? setSelCase : setSlsSelCase}
+            subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
           />
         </div>
 
@@ -749,18 +756,19 @@ export default function App() {
             </div>
 
             <SlsResultsTable
-              cases={state.cases}
+              cases={state.slsCases}
               results={slsResults}
-              selected={selected?.id ?? null}
-              select={setSelCase}
+              selected={slsSelected?.id ?? null}
+              select={setSlsSelCase}
             />
-            <SlsCalculationPanel lc={selected} result={slsSel} />
+            <SlsCalculationPanel lc={slsSelected} result={slsSel} />
 
             <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">
                 SLS stresses are checked by the working-stress (direct stress) method of IS 456:2000 Annex C on a
-                cracked transformed section under the service actions of each load case. Load cases are shared with
-                the ULS module — enter characteristic (unfactored) service moments for a code-consistent SLS check.
+                cracked transformed section under the service actions of each load case. Service load cases are
+                entered separately from the factored ULS cases (Load Cases panel) — enter characteristic
+                (unfactored) service moments for a code-consistent SLS check.
               </p>
               <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
                 Serviceability · IS 456 Annex C

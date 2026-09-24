@@ -18,7 +18,13 @@ export interface AppState {
   barDia: number
   /** Unsupported length, mm (0 = not provided). */
   memberLength: number
+  /** Factored (ULS) load cases. */
   cases: LoadCase[]
+  /**
+   * Service (SLS) load cases — entered separately from the factored ULS cases.
+   * The SLS stress check runs on these characteristic actions.
+   */
+  slsCases: LoadCase[]
   mesh: MeshSettings
 }
 
@@ -53,6 +59,12 @@ export function initialState(): AppState {
     cases: [
       { id: newCaseId(), name: 'LC1', Pu: 2500, Mux: 180, Muy: 100 },
       { id: newCaseId(), name: 'LC2', Pu: 1200, Mux: 320, Muy: 40 },
+    ],
+    // Service (characteristic) actions for the SLS stress check — a separate,
+    // independently editable list from the factored ULS cases above.
+    slsCases: [
+      { id: newCaseId(), name: 'SLC1', Pu: 1000, Mux: 140, Muy: 20 },
+      { id: newCaseId(), name: 'SLC2', Pu: 800, Mux: 164, Muy: 27 },
     ],
     mesh: DEFAULT_MESH,
   }

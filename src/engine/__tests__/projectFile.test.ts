@@ -91,6 +91,36 @@ describe('parseProjectFile', () => {
     expect(parsed.cover).toEqual(st.cover)
   })
 
+  it('round-trips separate service (SLS) load cases independently of the ULS cases', () => {
+    const st = initialState()
+    st.slsCases = [{ id: 's1', name: 'SLC1', Pu: 900, Mux: 80, Muy: 20 }]
+    const json = JSON.stringify({ version: '1.2', app: 'RCC Section Check', exportedAt: '', state: st })
+    const parsed = parseProjectFile(json)
+    expect(parsed.slsCases).toEqual([{ id: 's1', name: 'SLC1', Pu: 900, Mux: 80, Muy: 20 }])
+    // editing the SLS set must leave the factored ULS set untouched
+    expect(parsed.cases).toEqual(st.cases)
+    expect(parsed.slsCases[0].id).not.toBe(parsed.cases[0].id)
+  })
+
+  it('seeds slsCases from the ULS cases (fresh ids) when a legacy file has none', () => {
+    const legacy = JSON.stringify({
+      version: '1.1',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 500 }, { x: 0, y: 500 }], voids: [] },
+        bars: [{ x: 40, y: 40, dia: 20 }],
+        cases: [{ id: 'c1', name: 'LC1', Pu: 1500, Mux: 100, Muy: 50 }],
+      },
+    })
+    const parsed = parseProjectFile(legacy)
+    expect(parsed.cases.length).toBe(1)
+    expect(parsed.slsCases.length).toBe(1)
+    // same actions, but a distinct id so the two lists edit independently
+    expect(parsed.slsCases[0].Pu).toBe(1500)
+    expect(parsed.slsCases[0].Mux).toBe(100)
+    expect(parsed.slsCases[0].Muy).toBe(50)
+    expect(parsed.slsCases[0].id).not.toBe(parsed.cases[0].id)
+  })
+
   it('throws error for invalid JSON or missing geometry', () => {
     expect(() => parseProjectFile('invalid json')).toThrow()
     expect(() => parseProjectFile(JSON.stringify({ code: 'IS456' }))).toThrow('Invalid project file: missing or invalid geometry boundary.')

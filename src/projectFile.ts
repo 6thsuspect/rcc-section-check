@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
-import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface } from './engine/types'
+import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
 
 export interface ProjectFile {
   version: string
@@ -16,7 +16,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.1',
+    version: '1.2',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -54,6 +54,15 @@ export function parseProjectFile(jsonText: string): AppState {
   const rawState = parsed.state && typeof parsed.state === 'object' ? parsed.state : parsed
 
   const defState = initialState()
+
+  /** Coerce one persisted load-case row into a sanitized LoadCase. */
+  const mapCase = (c: any, id: string, name: string): LoadCase => ({
+    id,
+    name,
+    Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
+    Mux: Number.isFinite(c?.Mux) ? Number(c.Mux) : 0,
+    Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
+  })
 
   if (!rawState.geometry || typeof rawState.geometry !== 'object' || !Array.isArray(rawState.geometry.boundary)) {
     throw new Error('Invalid project file: missing or invalid geometry boundary.')
@@ -118,13 +127,19 @@ export function parseProjectFile(jsonText: string): AppState {
     tieDia: Number.isFinite(rawState.tieDia) ? Number(rawState.tieDia) : defState.tieDia,
     barDia: Number.isFinite(rawState.barDia) ? Number(rawState.barDia) : defState.barDia,
     memberLength: Number.isFinite(rawState.memberLength) ? Number(rawState.memberLength) : defState.memberLength,
-    cases: rawState.cases.map((c: any, idx: number) => ({
-      id: typeof c?.id === 'string' ? c.id : `lc-${idx + 1}-${Date.now()}`,
-      name: typeof c?.name === 'string' ? c.name : `LC${idx + 1}`,
-      Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
-      Mux: Number.isFinite(c?.Mux) ? Number(c.Mux) : 0,
-      Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
-    })),
+    cases: rawState.cases.map((c: any, idx: number) =>
+      mapCase(c, typeof c?.id === 'string' ? c.id : `lc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `LC${idx + 1}`),
+    ),
+    // v1.2 adds separate service (SLS) load cases. Older files have none, so we
+    // seed the SLS set from the ULS cases (with fresh ids) to keep the two lists
+    // independently editable; v1.2 files round-trip their own slsCases.
+    slsCases: Array.isArray(rawState.slsCases)
+      ? rawState.slsCases.map((c: any, idx: number) =>
+          mapCase(c, typeof c?.id === 'string' ? c.id : `slc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+        )
+      : rawState.cases.map((c: any, idx: number) =>
+          mapCase(c, `slc-fallback-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+        ),
     mesh:
       rawState.mesh && typeof rawState.mesh === 'object'
         ? {
