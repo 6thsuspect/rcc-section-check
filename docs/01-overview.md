@@ -43,5 +43,6 @@ separate SLS module (working-stress / direct-stress method of IS 456:2000 Annex 
 crack width** by the method of the selected code (IS 456 Annex F; IRC:112 Cl 12.3.4 / EN 1992-2;
 IRS Concrete Bridge Code Cl 15.9.8.2), each with a PASS/FAIL verdict against the code's
 permissible width for the exposure class. The ULS and SLS modules share the
-section, materials and reinforcement but keep **separate, independently edited load-case lists** —
-factored actions for ULS and characteristic (service) actions for SLS.
+section, materials and reinforcement but keep **three separate, independently edited load-case
+lists** — factored actions for ULS, characteristic (service) actions for the SLS working-stress
+check, and a further characteristic set for the crack-width check.

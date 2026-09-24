@@ -17,7 +17,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.2',
+    version: '1.3',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -84,6 +84,24 @@ export function parseProjectFile(jsonText: string): AppState {
   const exposureOk =
     typeof rawCw.exposure === 'string' && EXPOSURE_OPTIONS[code].some((o) => o.value === rawCw.exposure)
 
+  // v1.2 adds separate service (SLS) load cases; older files seed from the ULS
+  // cases. v1.3 adds a third list for the crack-width check, which falls back to
+  // the SLS cases. Fresh ids keep every list independently editable.
+  const slsCases: LoadCase[] = Array.isArray(rawState.slsCases)
+    ? rawState.slsCases.map((c: any, idx: number) =>
+        mapCase(c, typeof c?.id === 'string' ? c.id : `slc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+      )
+    : rawState.cases.map((c: any, idx: number) =>
+        mapCase(c, `slc-fallback-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
+      )
+  const crackCases: LoadCase[] = Array.isArray(rawState.crackCases)
+    ? rawState.crackCases.map((c: any, idx: number) =>
+        mapCase(c, typeof c?.id === 'string' ? c.id : `cwc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `CWC${idx + 1}`),
+      )
+    : slsCases.map((c, idx) =>
+        mapCase(c, `cwc-fallback-${idx + 1}-${Date.now()}`, c.name),
+      )
+
   const sanitized: AppState = {
     code,
     geometry: {
@@ -138,16 +156,9 @@ export function parseProjectFile(jsonText: string): AppState {
     cases: rawState.cases.map((c: any, idx: number) =>
       mapCase(c, typeof c?.id === 'string' ? c.id : `lc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `LC${idx + 1}`),
     ),
-    // v1.2 adds separate service (SLS) load cases. Older files have none, so we
-    // seed the SLS set from the ULS cases (with fresh ids) to keep the two lists
-    // independently editable; v1.2 files round-trip their own slsCases.
-    slsCases: Array.isArray(rawState.slsCases)
-      ? rawState.slsCases.map((c: any, idx: number) =>
-          mapCase(c, typeof c?.id === 'string' ? c.id : `slc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
-        )
-      : rawState.cases.map((c: any, idx: number) =>
-          mapCase(c, `slc-fallback-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SLC${idx + 1}`),
-        ),
+    slsCases,
+    // v1.3 crack-width load cases; older files inherit the (sanitized) SLS set.
+    crackCases,
     crackWidth: {
       exposure: exposureOk ? rawCw.exposure : DEFAULT_EXPOSURE[code],
       longTerm: rawCw.longTerm === true,

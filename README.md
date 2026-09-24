@@ -19,8 +19,9 @@ Two top-bar modules share the same section, materials and reinforcement: the **U
 IS 456:2000 Annex C working-stress method for concrete σcbc and reinforcement σst / σsc against
 the cracked transformed-section stresses, **plus a crack-width check** by the method of the
 selected code, each with PASS/FAIL per case). **Load cases are entered separately for each
-module** — the ULS panel holds factored actions and the SLS panel holds characteristic (service)
-actions; the two lists edit independently and switching tabs changes neither.
+check** — the ULS panel holds factored actions, the SLS panel holds characteristic (service)
+actions for the stress check, and the crack-width check has its own service load-case list; the
+three lists edit independently and switching tabs changes none of them.
 
 ### Crack-width check (SLS tab)
 The crack-width check reuses the cracked-section tension-steel stress σs, neutral-axis depth and
@@ -30,7 +31,9 @@ effective depth from the SLS stress solve, and applies the method of the selecte
 - **IRC:112-2020** — Cl 12.3.4 (EN 1992-2) `w_k = s_r,max·(ε_sm − ε_cm)`, Table 12.1 limits.
 - **IRS Concrete Bridge Code 1997** — Cl 15.9.8.2 (BS 8110-2 basis), Table 10 limits.
 Only the exposure class and load duration are entered; section, cover, bar size and depth come
-from the shared inputs. The result, permissible width, utilisation and clause update automatically.
+from the shared inputs. Crack width is evaluated on its **own** characteristic (service) load-case
+list (Load Cases panel under the crack-width heading), independent of the factored ULS list and
+the SLS stress list. The result, permissible width, utilisation and clause update automatically.
 
 ## Stack
 

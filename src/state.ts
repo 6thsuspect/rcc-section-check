@@ -26,6 +26,11 @@ export interface AppState {
    * The SLS stress check runs on these characteristic actions.
    */
   slsCases: LoadCase[]
+  /**
+   * Service (SLS) load cases for the crack-width check — a third, independently
+   * edited list. The crack width runs its own cracked-section solve on these.
+   */
+  crackCases: LoadCase[]
   /** Crack-width check inputs (exposure class + load duration) for the SLS tab. */
   crackWidth: CrackWidthSettings
   mesh: MeshSettings
@@ -68,6 +73,12 @@ export function initialState(): AppState {
     slsCases: [
       { id: newCaseId(), name: 'SLC1', Pu: 600, Mux: 150, Muy: 25 },
       { id: newCaseId(), name: 'SLC2', Pu: 500, Mux: 160, Muy: 30 },
+    ],
+    // Service actions for the crack-width check — separate from both the ULS
+    // and the SLS stress lists; the crack width runs its own solve on these.
+    crackCases: [
+      { id: newCaseId(), name: 'CWC1', Pu: 600, Mux: 150, Muy: 25 },
+      { id: newCaseId(), name: 'CWC2', Pu: 500, Mux: 160, Muy: 30 },
     ],
     crackWidth: { exposure: DEFAULT_EXPOSURE.IS456, longTerm: false },
     mesh: DEFAULT_MESH,

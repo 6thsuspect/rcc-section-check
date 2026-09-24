@@ -11,7 +11,7 @@ import {
   CrackWidthInputsPanel,
   CrackWidthResultsTable,
 } from '../../components/CrackWidth'
-import { buildSlsModel, slsMaterialLimits, slsStress, type SlsCaseResult, type SlsInputs } from '../../engine/sls'
+import { buildSlsModel, slsMaterialLimits, slsStress, type SlsInputs } from '../../engine/sls'
 import { crackWidthCheck, type CrackWidthResult, type CrackWidthSettings } from '../../engine/crackWidth'
 import { initialState } from '../../state'
 
@@ -41,14 +41,12 @@ function fixture(code: 'IS456' | 'IRC112') {
   }
   const model = buildSlsModel(inp)
   const settings: CrackWidthSettings = { exposure: code === 'IRC112' ? 'XC3' : 'moderate', longTerm: false }
-  const sls = new Map<string, SlsCaseResult | null>()
   const cw = new Map<string, CrackWidthResult | null>()
-  for (const lc of s.slsCases) {
+  for (const lc of s.crackCases) {
     const res = slsStress(model, inp, lc)
-    sls.set(lc.id, res)
     cw.set(lc.id, res ? crackWidthCheck(code, s.fck, model, inp.bars, res, settings) : null)
   }
-  const selected = s.slsCases[0]?.id ?? null
+  const selected = s.crackCases[0]?.id ?? null
   return { s, settings, cw, selected }
 }
 
@@ -60,8 +58,8 @@ describe('Crack width panel render hygiene', () => {
     renderToStaticMarkup(
       <>
         <CrackWidthInputsPanel code="IS456" settings={settings} update={update} />
-        <CrackWidthResultsTable code="IS456" cases={s.slsCases} results={cw} selected={selected} select={select} />
-        <CrackWidthDetailPanel code="IS456" settings={settings} lc={s.slsCases[0]} result={cw.get(s.slsCases[0].id) ?? null} />
+        <CrackWidthResultsTable code="IS456" cases={s.crackCases} results={cw} selected={selected} select={select} />
+        <CrackWidthDetailPanel code="IS456" settings={settings} lc={s.crackCases[0]} result={cw.get(s.crackCases[0].id) ?? null} />
       </>,
     )
     expect(msgs).toEqual([])
@@ -72,8 +70,8 @@ describe('Crack width panel render hygiene', () => {
     renderToStaticMarkup(
       <>
         <CrackWidthInputsPanel code="IRC112" settings={settings} update={() => {}} />
-        <CrackWidthResultsTable code="IRC112" cases={s.slsCases} results={cw} selected={selected} select={() => {}} />
-        <CrackWidthDetailPanel code="IRC112" settings={settings} lc={s.slsCases[0]} result={cw.get(s.slsCases[0].id) ?? null} />
+        <CrackWidthResultsTable code="IRC112" cases={s.crackCases} results={cw} selected={selected} select={() => {}} />
+        <CrackWidthDetailPanel code="IRC112" settings={settings} lc={s.crackCases[0]} result={cw.get(s.crackCases[0].id) ?? null} />
       </>,
     )
     expect(msgs).toEqual([])

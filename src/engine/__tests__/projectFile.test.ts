@@ -159,6 +159,36 @@ describe('parseProjectFile', () => {
     expect(parsedLegacy.crackWidth).toEqual({ exposure: 'moderate', longTerm: false })
   })
 
+  it('round-trips the crack-width load cases independently of the ULS and SLS-stress lists', () => {
+    const st = initialState()
+    st.crackCases = [{ id: 'cwc1', name: 'CWC1', Pu: 450, Mux: 120, Muy: 18 }]
+    const json = JSON.stringify({ version: '1.3', app: 'RCC Section Check', exportedAt: '', state: st })
+    const parsed = parseProjectFile(json)
+    expect(parsed.crackCases).toEqual([{ id: 'cwc1', name: 'CWC1', Pu: 450, Mux: 120, Muy: 18 }])
+    // editing the crack-width list leaves the ULS and SLS-stress lists untouched
+    expect(parsed.cases).toEqual(st.cases)
+    expect(parsed.slsCases).toEqual(st.slsCases)
+    expect(parsed.crackCases[0].id).not.toBe(parsed.slsCases[0].id)
+  })
+
+  it('seeds crackCases from the SLS cases (fresh ids) when a legacy file has none', () => {
+    const legacy = JSON.stringify({
+      version: '1.2',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 500 }, { x: 0, y: 500 }], voids: [] },
+        bars: [{ x: 40, y: 40, dia: 20 }],
+        cases: [{ id: 'c1', name: 'LC1', Pu: 1500, Mux: 100, Muy: 50 }],
+        slsCases: [{ id: 's1', name: 'SLC1', Pu: 900, Mux: 70, Muy: 20 }],
+      },
+    })
+    const parsed = parseProjectFile(legacy)
+    expect(parsed.slsCases.length).toBe(1)
+    expect(parsed.crackCases.length).toBe(1)
+    // inherits the SLS service actions, but with a distinct id
+    expect(parsed.crackCases[0].Pu).toBe(900)
+    expect(parsed.crackCases[0].id).not.toBe(parsed.slsCases[0].id)
+  })
+
   it('throws error for invalid JSON or missing geometry', () => {
     expect(() => parseProjectFile('invalid json')).toThrow()
     expect(() => parseProjectFile(JSON.stringify({ code: 'IS456' }))).toThrow('Invalid project file: missing or invalid geometry boundary.')

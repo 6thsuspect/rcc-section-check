@@ -54,6 +54,7 @@ export default function App() {
   const [customizeBarDiameter, setCustomizeBarDiameter] = useState(false)
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
   const [slsSelCase, setSlsSelCase] = useState<string | null>(state.slsCases[0]?.id ?? null)
+  const [crackSelCase, setCrackSelCase] = useState<string | null>(state.crackCases[0]?.id ?? null)
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
   /** Which top-bar module is open: the ULS interaction check or the SLS stress check. */
   const [view, setView] = useState<'uls' | 'sls'>('uls')
@@ -146,6 +147,9 @@ export default function App() {
         }
         if (newAppState.slsCases.length > 0) {
           setSlsSelCase(newAppState.slsCases[0].id)
+        }
+        if (newAppState.crackCases.length > 0) {
+          setCrackSelCase(newAppState.crackCases[0].id)
         }
         setImportError(null)
         setImportSuccess(`Successfully imported project from "${file.name}"`)
@@ -286,6 +290,8 @@ export default function App() {
   const selResult = results.find((r) => r.loadCase.id === selected?.id) ?? null
   // Selected service (SLS) case — independent from the ULS selection above.
   const slsSelected = state.slsCases.find((c) => c.id === slsSelCase) ?? state.slsCases[0] ?? null
+  // Selected crack-width case — independent from the ULS and SLS-stress selections.
+  const crackSelected = state.crackCases.find((c) => c.id === crackSelCase) ?? state.crackCases[0] ?? null
   const anyFail =
     results.some((r) => !r.ok) || checks.some((c) => c.status === 'fail') || spacing.overlaps.length > 0
 
@@ -377,20 +383,21 @@ export default function App() {
       : null
 
   /**
-   * Crack-width check per SLS load case — reuses the SLS cracked-section
-   * results (σs, xu, d, φ) and the shared geometry/reinforcement, applying the
-   * method of the selected code. Recomputes automatically whenever the
-   * section, reinforcement, material, service loads or exposure change.
+   * Crack-width check per crack-width load case — runs its own cracked-section
+   * solve (σs, xu, d) on state.crackCases (independent of the SLS-stress list)
+   * and applies the crack-width method of the selected code. Recomputes
+   * automatically whenever the section, reinforcement, material, service loads
+   * or exposure change.
    */
   const crackWidthResults = useMemo(() => {
     const out = new Map<string, CrackWidthResult | null>()
     if (!slsModel) return out
-    for (const lc of state.slsCases) {
-      const res = slsResults.get(lc.id) ?? null
+    for (const lc of state.crackCases) {
+      const res = slsStress(slsModel, slsInputs, lc)
       out.set(lc.id, res ? crackWidthCheck(state.code, state.fck, slsModel, state.bars, res, state.crackWidth) : null)
     }
     return out
-  }, [slsModel, slsResults, state.slsCases, state.code, state.fck, state.bars, state.crackWidth])
+  }, [slsModel, slsInputs, state.crackCases, state.code, state.fck, state.bars, state.crackWidth])
 
   const updateCrackWidth = (patch: Partial<CrackWidthSettings>) =>
     update({ crackWidth: { ...state.crackWidth, ...patch } })
@@ -794,27 +801,35 @@ export default function App() {
             />
             <SlsCalculationPanel lc={slsSelected} result={slsSel} />
 
+            <LoadCasesPanel
+              cases={state.crackCases}
+              selected={crackSelected?.id ?? null}
+              update={(cases) => update({ crackCases: cases })}
+              select={setCrackSelCase}
+              subtitle="service actions · crack width check"
+            />
             <CrackWidthInputsPanel code={state.code} settings={state.crackWidth} update={updateCrackWidth} />
             <CrackWidthResultsTable
               code={state.code}
-              cases={state.slsCases}
+              cases={state.crackCases}
               results={crackWidthResults}
-              selected={slsSelected?.id ?? null}
-              select={setSlsSelCase}
+              selected={crackSelected?.id ?? null}
+              select={setCrackSelCase}
             />
             <CrackWidthDetailPanel
               code={state.code}
               settings={state.crackWidth}
-              lc={slsSelected}
-              result={(slsSelected && crackWidthResults.get(slsSelected.id)) ?? null}
+              lc={crackSelected}
+              result={(crackSelected && crackWidthResults.get(crackSelected.id)) ?? null}
             />
 
             <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">
-                SLS stresses are checked by the working-stress (direct stress) method of IS 456:2000 Annex C on a
-                cracked transformed section under the service actions of each load case. Service load cases are
-                entered separately from the factored ULS cases (Load Cases panel) — enter characteristic
-                (unfactored) service moments for a code-consistent SLS check.
+                SLS stresses are checked by the working-stress (direct-stress) method of IS 456:2000 Annex C on a
+                cracked transformed section under the service actions of each load case, and crack widths are checked
+                by the method of the selected code. Both SLS load-case lists (stress and crack width) are entered
+                separately from the factored ULS cases and from each other — enter characteristic (unfactored) service
+                moments for a code-consistent SLS check.
               </p>
               <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
                 Serviceability · IS 456 Annex C
