@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { AdvancedCoverFigure, faceCoverForInput } from './AdvancedCoverFigure'
 import { generateSection } from '../engine/sections'
 import {
   COVER_FACES,
@@ -8,7 +9,6 @@ import {
   getCoverForFace,
   hasInnerOverrides,
   innerCover,
-  isUniformCover,
   outerCover,
   radialCover,
   setAllOuterCover,
@@ -30,7 +30,6 @@ import {
   btnPrimaryCls,
   btnMiniCls,
   Card,
-  Check,
   fieldBoxCls,
   fieldCls,
   Icon,
@@ -43,6 +42,19 @@ import {
 /** Stable fingerprint of a bar list — used to detect an out-of-date layout. */
 function barsKey(bars: AppState['bars']): string {
   return bars.map((b) => `${b.x.toFixed(2)},${b.y.toFixed(2)},${b.dia}`).join('|')
+}
+
+/** Every face cover of the section, as the Advanced Cover inputs display it. */
+function allFaceCovers(cover: CoverSpec, geometry: AppState['geometry'], sectionType: ReturnType<typeof detectSectionType>): number[] {
+  if (sectionType === 'circle' || sectionType === 'hollow-circle') {
+    // a ring takes the governing face value, so every stored face value must agree for "uniform"
+    const out = [faceCoverForInput(cover, geometry, sectionType, 'outer', 0), ...COVER_FACES.map((f) => outerCover(cover, f))]
+    if (sectionType === 'hollow-circle') out.push(faceCoverForInput(cover, geometry, sectionType, 'inner', 0), radialCover(cover, 'inner'))
+    return out
+  }
+  const out = geometry.boundary.map((_, i) => faceCoverForInput(cover, geometry, sectionType, 'outer', i))
+  geometry.voids.forEach((v, vi) => v.forEach((_, i) => out.push(faceCoverForInput(cover, geometry, sectionType, 'inner', i, vi))))
+  return out.length ? out : [outerCover(cover, 'bottom')]
 }
 
 export interface ActiveFace {
@@ -69,26 +81,37 @@ export function ClearCoverPanel({
 }) {
   const cover = state.cover
   const [note, setNote] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null)
-  const [unlinked, setUnlinked] = useState(false)
 
   const hasVoid = state.geometry.voids.length > 0
   const sectionType = detectSectionType(state.geometry, state.predefined, state.shapeClass)
   const circular = state.shapeClass === 'circ'
-  const allEqual = isUniformCover(cover)
-  const linked = allEqual && !unlinked
+  const advancedId = useId()
+
+  // every face value exactly as the Advanced Cover inputs show it
+  const faceValues = allFaceCovers(cover, state.geometry, sectionType)
+  const coverMin = Math.min(...faceValues)
+  const coverMax = Math.max(...faceValues)
+  const uniform = coverMax - coverMin < 1e-9
+  const faceCount =
+    sectionType === 'circle'
+      ? 1
+      : sectionType === 'hollow-circle'
+        ? 2
+        : state.geometry.boundary.length + state.geometry.voids.reduce((n, v) => n + v.length, 0)
+  const uniformValue = uniform ? coverMin : radialCover(cover)
+  // Advanced cover is hidden by default; a project that already carries
+  // individual face values opens with it visible so they are not concealed.
+  const [showAdvanced, setShowAdvanced] = useState(() => !uniform)
 
   const patchCover = (next: CoverSpec) => {
     setNote(null)
     update({ cover: next })
   }
 
-  const setFace = (face: CoverFace, v: number) => {
-    patchCover(linked ? setAllOuterCover(cover, v) : setOuterCover(cover, face, v))
-  }
-
-  const toggleLink = (on: boolean) => {
-    setUnlinked(!on)
-    if (on) patchCover(setAllOuterCover(cover, Math.max(...COVER_FACES.map((f) => outerCover(cover, f)))))
+  /** Uniform cover: one value for every outer and void face (the default mode). */
+  const setUniform = (v: number) => {
+    const base = setAllOuterCover(cover, v)
+    patchCover(circular ? setUniformOuterCover(base, v, state.geometry) : base)
   }
 
   // Auto-focus field when activeFace is selected from SVG
@@ -133,35 +156,58 @@ export function ClearCoverPanel({
       title={
         <span className="flex items-center gap-1.5">
           <Icon name="target" size={13} className="text-ink-3" />
-          <span>Clear cover — per face</span>
+          <span>Clear cover</span>
           <InfoTooltip
             content={
               <span>
-                Nominal cover is measured from each concrete face to the outside of the <b>links</b>.
-                For rectangular sections, you can detail 4 directional faces. For polygon/irregular sections,
-                a separate cover input is automatically generated for every face.
+                Nominal cover is measured from each concrete face to the outside of the <b>links</b>. Uniform cover
+                applies one value to every face; open <b>Advanced cover</b> to detail each face individually.
               </span>
             }
           />
         </span>
       }
-      action={
-        sectionType === 'rectangular' ? (
-          <Check
-            checked={linked}
-            onChange={toggleLink}
-            label={
-              <span className="inline-flex items-center gap-1">
-                <Icon name={linked ? 'link' : 'close'} size={11} className={linked ? 'text-accent' : 'text-ink-3'} />
-                Link faces
-              </span>
-            }
-            title={linked ? 'All faces share one value — click to detail them independently' : 'Use one value for every face'}
-          />
-        ) : undefined
-      }
     >
       <div className="flex flex-col gap-2.5">
+        {/* --- UNIFORM COVER: default, primary, highlighted --- */}
+        <div
+          className={`rounded-lg border px-2.5 pb-2.5 pt-2 transition-colors ${
+            uniform ? 'border-accent/45 bg-accent-wash/55 shadow-[inset_3px_0_0_var(--color-accent)]' : 'border-edge bg-panel/50'
+          }`}
+          data-testid="uniform-cover"
+        >
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+            <span className="flex items-center gap-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-accent-strong">
+              <Icon name="check" size={11} />
+              Uniform cover
+              <span className="rounded-full border border-accent/40 bg-card px-1.5 py-px font-body text-[9px] font-semibold normal-case tracking-normal text-accent">
+                default
+              </span>
+            </span>
+            {!uniform && (
+              <span className="rounded-full border border-warn2/35 bg-warn2/10 px-1.5 py-px text-[9.5px] font-semibold text-warn2">
+                advanced values active · {coverMin}–{coverMax} mm
+              </span>
+            )}
+          </div>
+          <NumField
+            id="cover-input-uniform"
+            label="Clear cover — all faces"
+            unit="mm"
+            value={uniformValue}
+            min={0}
+            step={5}
+            hint={
+              uniform
+                ? hasVoid
+                  ? 'Applied to every outer and void face'
+                  : 'Applied to every concrete face'
+                : 'Entering a value resets every face to it'
+            }
+            onChange={setUniform}
+          />
+        </div>
+
         <p className="flex items-start gap-1.5 rounded-field border border-accent/20 bg-accent-wash/45 px-2 py-1.5 text-[10.5px] leading-snug text-ink-2">
           <Icon name="target" size={12} className="mt-px shrink-0 text-accent" />
           <span>
@@ -170,118 +216,259 @@ export function ClearCoverPanel({
           </span>
         </p>
 
-        {/* --- 1. RECTANGULAR SECTION --- */}
-        {sectionType === 'rectangular' && (
-          <>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
-              {COVER_FACES.map((face, idx) => {
-                const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
-                return (
-                  <div
-                    key={face}
-                    className={`rounded-field p-1 transition-colors ${
-                      isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                    }`}
-                    onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
-                    onMouseLeave={() => setActiveFace?.(null)}
-                  >
-                    <NumField
-                      id={`cover-input-outer-0-${idx}`}
-                      label={`${FACE_LABELS[face]}${linked ? ' *' : ''}`}
-                      unit="mm"
-                      value={outerCover(cover, face)}
-                      min={0}
-                      step={5}
-                      hint={FACE_HINTS[face]}
-                      onChange={(v) => setFace(face, v)}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-            {linked && (
-              <p className={`${noteSmCls} -mt-0.5`}>
-                <b>*</b> Faces linked — editing any face sets all four to{' '}
-                <b>{outerCover(cover, 'bottom')} mm</b>. Unlink to detail them independently.
-              </p>
-            )}
-          </>
-        )}
+        {/* --- ADVANCED COVER toggle: options + figure are shown / hidden together --- */}
+        <button
+          type="button"
+          className={`${btnCls} w-full justify-between`}
+          aria-expanded={showAdvanced}
+          aria-controls={advancedId}
+          onClick={() => setShowAdvanced((v) => !v)}
+          title="Detail an individual cover value for each face"
+        >
+          <span className="flex items-center gap-1.5">
+            <Icon name="ruler" size={12} />
+            {showAdvanced ? 'Hide advanced cover' : 'Show advanced cover'}
+          </span>
+          <span className="text-[10.5px] font-normal text-ink-3">
+            {faceCount} face{faceCount === 1 ? '' : 's'} {showAdvanced ? '▴' : '▾'}
+          </span>
+        </button>
 
-        {/* --- 2. SOLID CIRCLE SECTION --- */}
-        {sectionType === 'circle' && (
-          <div className="flex flex-col gap-2">
-            <NumField
-              id="cover-input-outer-0-0"
-              label="Uniform Cover"
-              unit="mm"
-              value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
-              min={0}
-              step={5}
-              hint="Uniform clear cover around the circumference"
-              onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
-            />
-          </div>
-        )}
-
-        {/* --- 3. HOLLOW CIRCLE SECTION --- */}
-        {sectionType === 'hollow-circle' && (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <NumField
-              id="cover-input-outer-0-0"
-              label="Outer Clear Cover"
-              unit="mm"
-              value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
-              min={0}
-              step={5}
-              hint="Uniform outer circumference cover"
-              onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
-            />
-            <NumField
-              id="cover-input-inner-0-0"
-              label="Inner Clear Cover"
-              unit="mm"
-              value={cover.uniformInnerCover ?? innerCover(cover, 'bottom')}
-              min={0}
-              step={5}
-              hint="Uniform inner void circumference cover"
-              onChange={(v) => patchCover(setUniformInnerCover(cover, v, state.geometry))}
-            />
-          </div>
-        )}
-
-        {/* --- 4. POLYGON / IRREGULAR SECTION --- */}
-        {(sectionType === 'polygon' || sectionType === 'hollow-polygon') && (
-          <div className="flex flex-col gap-2">
-            <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
-              Outer Boundary Faces ({boundaryCount} detected)
+        {showAdvanced && (
+          <div id={advancedId} className="flex flex-col gap-2.5 rounded-lg border border-line bg-card/60 p-2" data-testid="advanced-cover">
+            <span className="font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              Advanced cover — individual face values
             </span>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
-              {Array.from({ length: boundaryCount }).map((_, idx) => {
-                const val = getCoverForFace(cover, 'outer', idx, 0, state.geometry)
-                const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
-                return (
-                  <div
-                    key={`outer-${idx}`}
-                    className={`rounded-field p-1 transition-colors ${
-                      isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                    }`}
-                    onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
-                    onMouseLeave={() => setActiveFace?.(null)}
-                  >
-                    <NumField
-                      id={`cover-input-outer-0-${idx}`}
-                      label={`Face ${idx + 1}`}
-                      unit="mm"
-                      value={val}
-                      min={0}
-                      step={5}
-                      onChange={(v) => patchCover(setOuterFaceCover(cover, idx, v, state.geometry))}
+            {/* --- 1. RECTANGULAR SECTION --- */}
+            {sectionType === 'rectangular' && (
+              <>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
+                  {COVER_FACES.map((face, idx) => {
+                    const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
+                    return (
+                      <div
+                        key={face}
+                        className={`rounded-field p-1 transition-colors ${
+                          isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                        }`}
+                        onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
+                        onMouseLeave={() => setActiveFace?.(null)}
+                      >
+                        <NumField
+                          id={`cover-input-outer-0-${idx}`}
+                          label={FACE_LABELS[face]}
+                          unit="mm"
+                          value={outerCover(cover, face)}
+                          min={0}
+                          step={5}
+                          hint={FACE_HINTS[face]}
+                          onChange={(v) => patchCover(setOuterCover(cover, face, v))}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* --- 2. SOLID CIRCLE SECTION --- */}
+            {sectionType === 'circle' && (
+              <div className="flex flex-col gap-2">
+                <NumField
+                  id="cover-input-outer-0-0"
+                  label="Uniform Cover"
+                  unit="mm"
+                  value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
+                  min={0}
+                  step={5}
+                  hint="Uniform clear cover around the circumference"
+                  onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
+                />
+              </div>
+            )}
+
+            {/* --- 3. HOLLOW CIRCLE SECTION --- */}
+            {sectionType === 'hollow-circle' && (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <NumField
+                  id="cover-input-outer-0-0"
+                  label="Outer Clear Cover"
+                  unit="mm"
+                  value={cover.uniformOuterCover ?? outerCover(cover, 'bottom')}
+                  min={0}
+                  step={5}
+                  hint="Uniform outer circumference cover"
+                  onChange={(v) => patchCover(setUniformOuterCover(cover, v, state.geometry))}
+                />
+                <NumField
+                  id="cover-input-inner-0-0"
+                  label="Inner Clear Cover"
+                  unit="mm"
+                  value={cover.uniformInnerCover ?? innerCover(cover, 'bottom')}
+                  min={0}
+                  step={5}
+                  hint="Uniform inner void circumference cover"
+                  onChange={(v) => patchCover(setUniformInnerCover(cover, v, state.geometry))}
+                />
+              </div>
+            )}
+
+            {/* --- 4. POLYGON / IRREGULAR SECTION --- */}
+            {(sectionType === 'polygon' || sectionType === 'hollow-polygon') && (
+              <div className="flex flex-col gap-2">
+                <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                  Outer Boundary Faces ({boundaryCount} detected)
+                </span>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
+                  {Array.from({ length: boundaryCount }).map((_, idx) => {
+                    const val = getCoverForFace(cover, 'outer', idx, 0, state.geometry)
+                    const isActive = activeFace?.surface === 'outer' && activeFace?.faceIndex === idx
+                    return (
+                      <div
+                        key={`outer-${idx}`}
+                        className={`rounded-field p-1 transition-colors ${
+                          isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                        }`}
+                        onMouseEnter={() => setActiveFace?.({ surface: 'outer', faceIndex: idx })}
+                        onMouseLeave={() => setActiveFace?.(null)}
+                      >
+                        <NumField
+                          id={`cover-input-outer-0-${idx}`}
+                          label={`Face ${idx + 1}`}
+                          unit="mm"
+                          value={val}
+                          min={0}
+                          step={5}
+                          onChange={(v) => patchCover(setOuterFaceCover(cover, idx, v, state.geometry))}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* --- HOLLOW SECTIONS INNER FACES --- */}
+            {hasVoid && (
+              <SubCard
+                title={
+                  <span className="flex items-center gap-1.5">
+                    Void / inner faces ({state.geometry.voids.length} void{state.geometry.voids.length > 1 ? 's' : ''})
+                    <InfoTooltip
+                      content={
+                        <span>
+                          Cover for bars lining the faces of an internal void — the cell walls of a box pier, the soffit
+                          under a voided deck. Leave a face blank to inherit the outer face of the same orientation.
+                        </span>
+                      }
                     />
+                  </span>
+                }
+                action={
+                  hasInnerOverrides(cover) ? (
+                    <button
+                      type="button"
+                      className={btnMiniCls}
+                      onClick={() =>
+                        patchCover({
+                          ...cover,
+                          inner: { bottom: null, right: null, top: null, left: null },
+                          innerFaces: undefined,
+                          uniformInnerCover: undefined,
+                        })
+                      }
+                      title="Clear the void-face values — they then follow the outer faces"
+                    >
+                      clear overrides
+                    </button>
+                  ) : undefined
+                }
+              >
+                {sectionType === 'hollow-polygon' ? (
+                  <div className="flex flex-col gap-3">
+                    {state.geometry.voids.map((vPoly, vIdx) => (
+                      <div key={`void-${vIdx}`} className="flex flex-col gap-1.5">
+                        {state.geometry.voids.length > 1 && (
+                          <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                            Void {vIdx + 1} ({vPoly.length} faces)
+                          </span>
+                        )}
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
+                          {vPoly.map((_, idx) => {
+                            const val = getCoverForFace(cover, 'inner', idx, vIdx, state.geometry)
+                            const isActive =
+                              activeFace?.surface === 'inner' &&
+                              activeFace?.faceIndex === idx &&
+                              (activeFace?.voidIndex ?? 0) === vIdx
+                            return (
+                              <div
+                                key={`inner-${vIdx}-${idx}`}
+                                className={`rounded-field p-1 transition-colors ${
+                                  isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
+                                }`}
+                                onMouseEnter={() =>
+                                  setActiveFace?.({ surface: 'inner', faceIndex: idx, voidIndex: vIdx })
+                                }
+                                onMouseLeave={() => setActiveFace?.(null)}
+                              >
+                                <NumField
+                                  id={`cover-input-inner-${vIdx}-${idx}`}
+                                  label={`Face ${idx + 1}`}
+                                  unit="mm"
+                                  value={val}
+                                  min={0}
+                                  step={5}
+                                  onChange={(v) => patchCover(setInnerFaceCover(cover, idx, v, vIdx, state.geometry))}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )
-              })}
-            </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
+                    {COVER_FACES.map((face) => (
+                      <InnerCoverField
+                        key={face}
+                        face={face}
+                        value={cover.inner[face]}
+                        inherit={outerCover(cover, face)}
+                        onChange={(v) => patchCover(setInnerCover(cover, face, v))}
+                      />
+                    ))}
+                  </div>
+                )}
+              </SubCard>
+            )}
+
+
+            <figure className="rounded-lg border border-line bg-panel/40 px-2 pb-1.5 pt-2">
+              <AdvancedCoverFigure
+                geometry={state.geometry}
+                cover={cover}
+                sectionType={sectionType}
+                audit={audit}
+                activeFace={activeFace}
+                setActiveFace={setActiveFace}
+              />
+              <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-0 w-4 border-t border-dashed border-ok" aria-hidden="true" /> clear cover met
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-0 w-4 border-t border-dashed border-bad" aria-hidden="true" /> short
+                </span>
+                <span className="normal-case tracking-normal">
+                  {sectionType === 'rectangular'
+                    ? 'face names match the inputs · mm'
+                    : sectionType === 'circle' || sectionType === 'hollow-circle'
+                      ? 'true shape · mm'
+                      : `F n = Face n${hasVoid ? ', VF n = void Face n' : ''} · mm`}
+                </span>
+              </figcaption>
+            </figure>
           </div>
         )}
 
@@ -295,114 +482,6 @@ export function ClearCoverPanel({
             </span>
           </p>
         )}
-
-        {/* --- HOLLOW SECTIONS INNER FACES --- */}
-        {hasVoid && (
-          <SubCard
-            title={
-              <span className="flex items-center gap-1.5">
-                Void / inner faces ({state.geometry.voids.length} void{state.geometry.voids.length > 1 ? 's' : ''})
-                <InfoTooltip
-                  content={
-                    <span>
-                      Cover for bars lining the faces of an internal void — the cell walls of a box pier, the soffit
-                      under a voided deck. Leave a face blank to inherit the outer face of the same orientation.
-                    </span>
-                  }
-                />
-              </span>
-            }
-            action={
-              hasInnerOverrides(cover) ? (
-                <button
-                  type="button"
-                  className={btnMiniCls}
-                  onClick={() =>
-                    patchCover({
-                      ...cover,
-                      inner: { bottom: null, right: null, top: null, left: null },
-                      innerFaces: undefined,
-                      uniformInnerCover: undefined,
-                    })
-                  }
-                  title="Clear the void-face values — they then follow the outer faces"
-                >
-                  clear overrides
-                </button>
-              ) : undefined
-            }
-          >
-            {sectionType === 'hollow-polygon' ? (
-              <div className="flex flex-col gap-3">
-                {state.geometry.voids.map((vPoly, vIdx) => (
-                  <div key={`void-${vIdx}`} className="flex flex-col gap-1.5">
-                    {state.geometry.voids.length > 1 && (
-                      <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
-                        Void {vIdx + 1} ({vPoly.length} faces)
-                      </span>
-                    )}
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
-                      {vPoly.map((_, idx) => {
-                        const val = getCoverForFace(cover, 'inner', idx, vIdx, state.geometry)
-                        const isActive =
-                          activeFace?.surface === 'inner' &&
-                          activeFace?.faceIndex === idx &&
-                          (activeFace?.voidIndex ?? 0) === vIdx
-                        return (
-                          <div
-                            key={`inner-${vIdx}-${idx}`}
-                            className={`rounded-field p-1 transition-colors ${
-                              isActive ? 'bg-accent-wash ring-1 ring-accent' : ''
-                            }`}
-                            onMouseEnter={() =>
-                              setActiveFace?.({ surface: 'inner', faceIndex: idx, voidIndex: vIdx })
-                            }
-                            onMouseLeave={() => setActiveFace?.(null)}
-                          >
-                            <NumField
-                              id={`cover-input-inner-${vIdx}-${idx}`}
-                              label={`Face ${idx + 1}`}
-                              unit="mm"
-                              value={val}
-                              min={0}
-                              step={5}
-                              onChange={(v) => patchCover(setInnerFaceCover(cover, idx, v, vIdx, state.geometry))}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-4">
-                {COVER_FACES.map((face) => (
-                  <InnerCoverField
-                    key={face}
-                    face={face}
-                    value={cover.inner[face]}
-                    inherit={outerCover(cover, face)}
-                    onChange={(v) => patchCover(setInnerCover(cover, face, v))}
-                  />
-                ))}
-              </div>
-            )}
-          </SubCard>
-        )}
-
-        <figure className="rounded-lg border border-line bg-panel/40 px-2 pb-1.5 pt-2">
-          <CoverDiagram cover={cover} hasVoid={hasVoid} audit={audit} />
-          <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
-            <span className="inline-flex items-center gap-1">
-              <span className="h-px w-4 bg-ok" aria-hidden="true" /> cover met
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="h-px w-4 bg-bad" aria-hidden="true" /> short
-            </span>
-            {(hasInnerOverrides(cover) ? 8 : 4) + ' faces audited'}
-          </figcaption>
-        </figure>
 
         {/* Achieved cover audit list */}
         <Banner tone={minOk ? 'ok' : 'error'}>

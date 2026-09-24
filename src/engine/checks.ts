@@ -1,3 +1,4 @@
+import { bundleIdOf, sameBundle } from './barSpacing'
 import type {
   ComplianceCheck,
   LoadCase,
@@ -277,9 +278,13 @@ export function complianceChecks(spec: CodeSpec, inp: CheckInputs): ComplianceCh
       note: 'Nearest-neighbour approximation of peripheral spacing',
     })
     // clear distance between bars
+    // Bars of one bundle are in contact by design — excluded from this check
+    // (their bundle-to-bundle gap and any intersection are audited separately).
     let minClear = Infinity
+    const hasBundles = bars.some((b) => bundleIdOf(b) !== null)
     for (let i = 0; i < bars.length; i++) {
       for (let j = i + 1; j < bars.length; j++) {
+        if (sameBundle(bars[i], bars[j])) continue
         const c =
           Math.hypot(bars[j].x - bars[i].x, bars[j].y - bars[i].y) -
           (bars[i].dia + bars[j].dia) / 2
@@ -294,7 +299,9 @@ export function complianceChecks(spec: CodeSpec, inp: CheckInputs): ComplianceCh
       limit: `≥ ${fmt(clearLimit, 0)} mm`,
       status: minClear >= clearLimit ? 'pass' : minClear >= 0 ? 'warn' : 'fail',
       kind: 'check',
-      note: '≥ bar dia and ≥ (aggregate + 5 mm); 20 mm aggregate assumed',
+      note: `≥ bar dia and ≥ (aggregate + 5 mm); 20 mm aggregate assumed${
+        hasBundles ? ' · bars within the same bundle excluded' : ''
+      }`,
     })
   }
 

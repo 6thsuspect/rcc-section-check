@@ -49,7 +49,8 @@ function renderShape(kind: PredefinedSection['kind']) {
 describe('clear cover panel', () => {
   it('lists the four outer faces with their own values', () => {
     const { html } = renderShape('rect')
-    expect(html).toContain('Clear cover — per face')
+    expect(html).toContain('Clear cover')
+    expect(html).toContain('Uniform cover')
     for (const v of [30, 45, 60, 75]) expect(html).toContain(`value="${v}"`)
     // no voids in a solid rectangle → no void-face block
     expect(html).not.toContain('Void / inner faces')
@@ -84,5 +85,55 @@ describe('clear cover panel', () => {
     const { html } = renderShape('circle')
     expect(html).toContain('Circular ring')
     expect(html).toContain('75 mm')
+  })
+})
+
+describe('uniform + advanced cover', () => {
+  const kinds = ['rect', 'circle', 'tee', 'ishape', 'angle', 'box', 'hollowCircle'] as const
+
+  it('defaults to Uniform Cover with the Advanced Cover options and figure hidden', () => {
+    for (const kind of kinds) {
+      const def = defaultPredefined(kind)
+      const cover = normalizeCover({ outer: { bottom: 40, right: 40, top: 40, left: 40 } })
+      const gen = generateSection(def, { cover, tieDia: 8, barDia: 20 })
+      const state = { ...initialState(), geometry: gen.geometry, bars: gen.bars, predefined: def, shapeClass: gen.shapeClass, cover }
+      const html = renderToStaticMarkup(
+        <ClearCoverPanel state={state} update={() => {}} audit={auditCovers(gen.bars, gen.geometry, cover, 8)} />,
+      )
+      expect(html, kind).toContain('data-testid="uniform-cover"')
+      expect(html, kind).toContain('Show advanced cover')
+      expect(html, kind).toContain('aria-expanded="false"')
+      expect(html, kind).not.toContain('data-testid="advanced-cover"')
+      expect(html, kind).not.toContain('advanced-cover-figure')
+    }
+  })
+
+  it('shows the true section outline with a dashed cover line for every face and no bars', () => {
+    for (const kind of kinds) {
+      const { html, state } = renderShape(kind)
+      // non-uniform project → advanced opens so its values are visible
+      expect(html, kind).toContain('Hide advanced cover')
+      const fig = html.slice(html.indexOf('data-testid="advanced-cover-figure"'))
+      const svg = fig.slice(0, fig.indexOf('</svg>'))
+      const lines = svg.match(/data-cover-line="[^"]+"/g) ?? []
+      if (kind === 'circle') expect(lines, kind).toHaveLength(1)
+      else if (kind === 'hollowCircle') expect(lines, kind).toHaveLength(2)
+      else {
+        const faces = state.geometry.boundary.length + state.geometry.voids.reduce((s, v) => s + v.length, 0)
+        expect(lines, kind).toHaveLength(faces)
+      }
+      // no reinforcement drawn: the only circles are cover rings of circular sections
+      const circles = (svg.match(/<circle/g) ?? []).length
+      expect(circles, kind).toBe(kind === 'circle' ? 1 : kind === 'hollowCircle' ? 2 : 0)
+    }
+  })
+
+  it('labels the rectangular faces with their own values, including the left face', () => {
+    const { html } = renderShape('rect')
+    const fig = html.slice(html.indexOf('data-testid="advanced-cover-figure"'))
+    for (const [name, v] of [['Bottom', 30], ['Right', 45], ['Top', 60], ['Left', 75]] as const) {
+      expect(fig).toMatch(new RegExp(`>${name}</tspan><tspan[^>]*>${v}<`))
+    }
+    expect(fig).toContain('data-cover-line="o3"')
   })
 })

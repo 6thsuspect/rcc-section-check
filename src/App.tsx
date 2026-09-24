@@ -16,7 +16,9 @@ import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
 import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
-import { CompliancePanel, ResultsTable } from './components/Results'
+import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
+import { neutralAxisAnalysis, type NeutralAxisResult } from './engine/flexure'
+import { spacingReport } from './engine/barSpacing'
 import { Banner, Card, EmptyState, Icon, STANDARD_BAR_DIAMETERS, btnCls, btnPrimaryCls } from './components/ui'
 
 /** Page container, shared by the header bar and the working area. */
@@ -177,12 +179,12 @@ export default function App() {
     [valid, state.geometry, state.bars],
   )
 
-  // --- interaction surface (the expensive step) ---
-  const surface = useMemo(() => {
+  // --- analysis model + interaction surface (the expensive step) ---
+  const model = useMemo(() => {
     if (!valid || !props) return null
     const conc = spec.concrete(state.fck)
     const steel = spec.steel(grade.fy)
-    const model = buildAnalysisModel(
+    return buildAnalysisModel(
       { boundary: ensureCCW(state.geometry.boundary), voids: state.geometry.voids.map(ensureCCW) },
       state.bars,
       { x: props.cx, y: props.cy },
@@ -191,8 +193,21 @@ export default function App() {
       steel,
       spec.epsSteelLimit(grade),
     )
-    return generateSurface(model, state.mesh)
-  }, [valid, props, spec, grade, state.geometry, state.bars, state.fck, state.mesh])
+  }, [valid, props, spec, grade, state.geometry, state.bars, state.fck])
+
+  const surface = useMemo(() => (model ? generateSurface(model, state.mesh) : null), [model, state.mesh])
+
+  /** Neutral-axis depth, xu,max, classification and Mu for every load case (read-only use of the kernel). */
+  const naResults = useMemo(() => {
+    const out = new Map<string, NeutralAxisResult | null>()
+    if (!model || !surface) return out
+    const ecu = spec.concrete(state.fck).ecu
+    for (const lc of state.cases) out.set(lc.id, neutralAxisAnalysis(model, surface, lc, { spec, fy: grade.fy, ecu }))
+    return out
+  }, [model, surface, state.cases, spec, grade.fy, state.fck])
+
+  /** Bundle-aware spacing and overlap audit of the bar table (all section types). */
+  const spacing = useMemo(() => spacingReport(state.bars), [state.bars])
 
   const results: CaseResult[] = useMemo(() => {
     if (!surface || !props) return []
@@ -233,13 +248,25 @@ export default function App() {
 
   const selected = state.cases.find((c) => c.id === selCase) ?? state.cases[0] ?? null
   const selResult = results.find((r) => r.loadCase.id === selected?.id) ?? null
-  const anyFail = results.some((r) => !r.ok) || checks.some((c) => c.status === 'fail')
+  const anyFail =
+    results.some((r) => !r.ok) || checks.some((c) => c.status === 'fail') || spacing.overlaps.length > 0
 
   const flex = useMemo(() => (surface ? flexuralCapacity(surface) : null), [surface])
+
+  const selNA = selected ? (naResults.get(selected.id) ?? null) : null
 
   // governing neutral axis of the capacity state for the selected case
   const naInfo: NAInfo | null = useMemo(() => {
     if (!surface || !selected || !selResult || selResult.axialGoverned || selResult.MEd < 1) return null
+    if (selNA) {
+      return {
+        theta: selNA.theta,
+        vna: selNA.vna,
+        xu: selNA.xu,
+        vTop: selNA.vTop,
+        caption: `Neutral axis at the capacity state for ${selected.name} (P = Pu along the demand direction; NA angle ${((selNA.theta * 180) / Math.PI).toFixed(0)}°) — xu = ${selNA.xu.toFixed(0)} mm ${selNA.classification === 'under' ? '≤' : '>'} xu,max = ${selNA.xuMax.toFixed(0)} mm`,
+      }
+    }
     const cp = naForDirection(surface, selected.Pu * 1e3, selected.Mux, selected.Muy)
     if (!cp || Math.abs(cp.b) < 1e-9) return null
     return {
@@ -247,7 +274,7 @@ export default function App() {
       vna: -cp.a / cp.b,
       caption: `Neutral axis at the capacity state for ${selected.name} (P = Pu along the demand direction; NA angle ${((cp.theta * 180) / Math.PI).toFixed(0)}°)`,
     }
-  }, [surface, selected, selResult])
+  }, [surface, selected, selResult, selNA])
 
   const exportPdf = () => {
     if (!surface || !props || results.length === 0) return
@@ -264,6 +291,9 @@ export default function App() {
       results,
       checks,
       flex,
+      naResults: state.cases.map((c) => naResults.get(c.id) ?? null),
+      xuMaxLabel: spec.xuMaxLabel,
+      spacing,
       selectedName: selected?.name ?? '',
       svgs: {
         section: grab('fig-section', '0 0 460 340'),
@@ -485,6 +515,7 @@ export default function App() {
                 cover={state.cover}
                 audit={coverAudit}
                 radialCoverOnly={state.shapeClass === 'circ'}
+                overlapping={spacing.overlapping}
                 activeFace={activeFace}
                 onHoverFace={setActiveFace}
                 onSelectFace={setActiveFace}
@@ -506,6 +537,15 @@ export default function App() {
           </Card>
 
           <ResultsTable results={results} selected={selected?.id ?? null} select={setSelCase} />
+          <NeutralAxisPanel
+            cases={state.cases}
+            results={naResults}
+            selected={selected?.id ?? null}
+            select={setSelCase}
+            xuMaxLabel={spec.xuMaxLabel}
+            ready={!!surface}
+          />
+          <ReinforcementSpacingPanel report={spacing} />
           <CompliancePanel checks={checks} />
 
           <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">

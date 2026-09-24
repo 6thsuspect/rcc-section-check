@@ -14,6 +14,8 @@ import {
 } from './engine/cover'
 import { contourAtP, pmCurve } from './engine/surface'
 import type { AppState } from './state'
+import type { NeutralAxisResult } from './engine/flexure'
+import type { SpacingReport } from './engine/barSpacing'
 
 /**
  * Calculation report export. Builds a self-contained print document (all
@@ -56,6 +58,10 @@ export interface ReportContext {
   results: CaseResult[]
   checks: ComplianceCheck[]
   flex: { MxPos: number; MxNeg: number; MyPos: number; MyNeg: number } | null
+  /** Neutral-axis analysis per load case (same order as state.cases); optional for older callers. */
+  naResults?: (NeutralAxisResult | null)[]
+  xuMaxLabel?: string
+  spacing?: SpacingReport
   selectedName: string
   svgs: { section: string; pm: string; contour: string }
 }
@@ -255,6 +261,7 @@ export function exportReport(ctx: ReportContext): void {
 ${caseBlocks}
 <p class="small">The rigorous utilisation (radial demand/capacity in the M<sub>x</sub>–M<sub>y</sub> plane at constant P<sub>u</sub>)
 governs the verdict; the code's simplified power-law value is reported for traceability.</p>
+${naSection(ctx)}
 
 <h2 class="pb">6 &nbsp;Figures ${sel ? `(case ${esc(sel.loadCase.name)})` : ''}</h2>
 <div class="fig">${ctx.svgs.section}<p>Section with reinforcement, centroidal axes${sel && !sel.axialGoverned ? ', governing neutral axis and compression zone at the capacity state' : ''}.</p></div>
@@ -300,4 +307,39 @@ governs the verdict; the code's simplified power-law value is reported for trace
     win.focus()
     win.print()
   }, 450)
+}
+
+/** Neutral axis, xu,max, classification and Mu per case, plus the physical spacing / overlap audit. */
+function naSection(ctx: ReportContext): string {
+  const rows = ctx.state.cases
+    .map((c, i) => {
+      const n = ctx.naResults?.[i] ?? null
+      if (!n) return `<tr><td>${esc(c.name)}</td><td colspan="7">NA not defined (no bending or axial load outside range)</td></tr>`
+      return `<tr><td>${esc(c.name)}</td><td>${f(n.d, 1)}</td><td><b>${f(n.xu, 1)}</b></td><td>${f(n.xuMax, 1)}</td><td>${f(n.xu / n.d, 3)}</td><td>${
+        n.classification === 'under' ? 'Under-reinforced' : 'Over-reinforced'
+      }</td><td>${n.Mu !== null ? `<b>${f(n.Mu / 1e6, 1)}</b>` : '—'}</td><td>${f(n.MEd / 1e6, 1)}</td></tr>`
+    })
+    .join('')
+  const sp = ctx.spacing
+  const spacingRows = sp
+    ? `<tr><td>Bar overlap / intersection</td><td>${
+        sp.overlaps.length === 0
+          ? 'none'
+          : sp.overlaps.map((o) => `bars ${o.i + 1} &amp; ${o.j + 1} overlap by ${o.depth.toFixed(1)} mm${o.sameBundle ? ' (same bundle)' : ''}`).join('; ')
+      }</td></tr>${
+        sp.minClear !== null
+          ? `<tr><td>Minimum clear spacing${sp.bundles.length ? ' between bars / bundles (within-bundle pairs excluded)' : ''}</td><td>${sp.minClear.toFixed(1)} mm vs ≥ ${sp.clearLimit.toFixed(0)} mm — ${sp.minClearOk ? 'OK' : 'below limit'}</td></tr>`
+          : ''
+      }${
+        sp.bundles.length
+          ? `<tr><td>Bundles</td><td>${sp.bundles.length} bundles · ${[...new Set(sp.bundles.map((b) => b.bars.length))].join('/')} bars per bundle · ⌀ ${[...new Set(sp.bundles.map((b) => b.dias.join(' + ')))].join(', ')} · equivalent ⌀ ${Math.max(...sp.bundles.map((b) => b.eqDia)).toFixed(1)} mm${
+              sp.bundleSpacing ? ` · spacing c/c ${sp.bundleSpacing.min.toFixed(0)}${sp.bundleSpacing.max - sp.bundleSpacing.min > 0.5 ? `–${sp.bundleSpacing.max.toFixed(0)}` : ''} mm` : ''
+            }</td></tr>`
+          : ''
+      }`
+    : ''
+  return `<h3>Neutral axis depth &amp; flexural classification</h3>
+<table class="data"><tr><th>Case</th><th>d (mm)</th><th>x<sub>u</sub> (mm)</th><th>x<sub>u,max</sub> (mm)</th><th>x<sub>u</sub>/d</th><th>Section</th><th>M<sub>u</sub> (kN·m)</th><th>M<sub>Ed</sub> (kN·m)</th></tr>${rows}</table>
+<p class="small">x<sub>u</sub> solved from equilibrium at P<sub>u</sub> with the resisting moment aligned to the demand, measured from the extreme compression fibre normal to the NA; d to the extreme tension bar; ${esc(ctx.xuMaxLabel ?? '')}. M<sub>u</sub> (stress resultants at the actual x<sub>u</sub>) is reported for under-reinforced sections only.</p>
+${spacingRows ? `<h3>Reinforcement spacing &amp; overlap</h3><table class="calc">${spacingRows}</table>` : ''}`
 }

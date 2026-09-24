@@ -1,6 +1,7 @@
 import type { Point, Rebar, SectionGeometry } from './types'
 import { COVER_FACES } from './cover'
 import { pointInPolygon } from './geometry'
+import { BUNDLE_PREFIX, clearDistance, OVERLAP_TOL, sameBundle } from './barSpacing'
 
 /**
  * Circular-section reinforcement arrangement generators.
@@ -49,6 +50,27 @@ export interface CircularRebarConfig {
   // --- bundle ---
   barsPerBundle: number
   nBundles: number
+  /**
+   * Centre-to-centre spacing between adjacent bundles (straight chord between
+   * bundle centres on the pitch circle), mm. null → bundles equally spaced
+   * around the ring (or by the legacy angular spacing when one is set).
+   * Independent of the spacing of bars inside a bundle.
+   */
+  bundleSpacing?: number | null
+  /**
+   * Centre-to-centre spacing of bars within one bundle, mm. null → the
+   * original automatic value ⌀max + max(⌀max, 25). A value equal to the bar
+   * diameter places the bars in contact.
+   */
+  bundleInnerSpacing?: number | null
+  /** When true, each bar position of a bundle uses its own diameter from `bundleBarDias`. */
+  bundleMixedDia?: boolean
+  /**
+   * Diameter of bar position k within every bundle. Kept independent of
+   * `barsPerBundle`: positions beyond the list use `barDia`, and entries are
+   * retained when the count is reduced.
+   */
+  bundleBarDias?: number[]
 
   // --- triple ---
   nGroups: number
@@ -117,8 +139,21 @@ function clusterAbout(
   dia: number,
   gap: number,
 ): Rebar[] {
+  return clusterAboutMixed(centre, angleRad, Array.from({ length: Math.max(0, count) }, () => dia), gap)
+}
+
+/**
+ * clusterAbout with an individual diameter per bar position. With equal
+ * diameters it reproduces the original single-diameter cluster exactly; with
+ * mixed diameters the centre-to-centre distance is governed by the largest
+ * bar so no two bars of the cluster can intersect.
+ */
+function clusterAboutMixed(centre: Point, angleRad: number, dias: number[], gap: number): Rebar[] {
+  const count = dias.length
   if (count <= 0) return []
-  if (count === 1) return [{ x: centre.x, y: centre.y, dia }]
+  const dia = Math.max(...dias)
+  const D = (k: number) => dias[k]
+  if (count === 1) return [{ x: centre.x, y: centre.y, dia: D(0) }]
 
   const { radial, tangent } = frame(angleRad)
   const cc = Math.max(gap, dia) // centre-to-centre
@@ -126,8 +161,8 @@ function clusterAbout(
   if (count === 2) {
     const h = cc / 2
     return [
-      { x: centre.x - h * tangent.x, y: centre.y - h * tangent.y, dia },
-      { x: centre.x + h * tangent.x, y: centre.y + h * tangent.y, dia },
+      { x: centre.x - h * tangent.x, y: centre.y - h * tangent.y, dia: D(0) },
+      { x: centre.x + h * tangent.x, y: centre.y + h * tangent.y, dia: D(1) },
     ]
   }
 
@@ -140,16 +175,16 @@ function clusterAbout(
     }
     const baseY = (h * 1) / 3
     return [
-      { x: apex.x, y: apex.y, dia },
+      { x: apex.x, y: apex.y, dia: D(0) },
       {
         x: centre.x + baseY * radial.x - (cc / 2) * tangent.x,
         y: centre.y + baseY * radial.y - (cc / 2) * tangent.y,
-        dia,
+        dia: D(1),
       },
       {
         x: centre.x + baseY * radial.x + (cc / 2) * tangent.x,
         y: centre.y + baseY * radial.y + (cc / 2) * tangent.y,
-        dia,
+        dia: D(2),
       },
     ]
   }
@@ -162,7 +197,7 @@ function clusterAbout(
     out.push({
       x: centre.x + rCluster * Math.cos(a),
       y: centre.y + rCluster * Math.sin(a),
-      dia,
+      dia: D(i),
     })
   }
   return out
@@ -201,23 +236,60 @@ function generateAlternate(cfg: CircularRebarConfig): Rebar[] {
   return out
 }
 
+/** Diameter of every bar position in one bundle (independent of the bars-per-bundle count). */
+export function bundleDiameters(cfg: CircularRebarConfig): number[] {
+  const per = Math.max(1, Math.round(cfg.barsPerBundle))
+  return Array.from({ length: per }, (_, k) => {
+    const v = cfg.bundleMixedDia ? cfg.bundleBarDias?.[k] : undefined
+    return v != null && Number.isFinite(v) && v > 0 ? v : cfg.barDia
+  })
+}
+
+/** Centre-to-centre spacing of bars inside a bundle actually used by the generator, mm. */
+export function bundleInnerSpacingUsed(cfg: CircularRebarConfig): number {
+  const dia = Math.max(...bundleDiameters(cfg))
+  const auto = dia + Math.max(dia, 25)
+  const v = cfg.bundleInnerSpacing
+  return v != null && Number.isFinite(v) && v > 0 ? Math.max(v, dia) : auto
+}
+
+/** Pitch radius of the bundle centres, mm. */
+export function bundlePitchRadius(cfg: CircularRebarConfig): number {
+  return pitchRadius(cfg.sectionRadius, cfg.cover, cfg.tieDia, Math.max(...bundleDiameters(cfg)))
+}
+
+/** Angular step between adjacent bundle centres, radians. */
+export function bundleAngularStep(cfg: CircularRebarConfig): number {
+  const nBundles = Math.max(0, Math.round(cfg.nBundles))
+  const s = cfg.bundleSpacing
+  const r = bundlePitchRadius(cfg)
+  if (s != null && Number.isFinite(s) && s > 0 && r > 0) {
+    // straight centre-to-centre chord between neighbouring bundle centres
+    return 2 * Math.asin(Math.min(1, s / (2 * r)))
+  }
+  return angularStep(nBundles, cfg.angularSpacingDeg)
+}
+
+/** Centre-to-centre chord between adjacent bundle centres, mm. */
+export function bundleSpacingUsed(cfg: CircularRebarConfig): number {
+  return 2 * bundlePitchRadius(cfg) * Math.sin(bundleAngularStep(cfg) / 2)
+}
+
 function generateBundle(cfg: CircularRebarConfig): Rebar[] {
   const nBundles = Math.max(0, Math.round(cfg.nBundles))
-  const per = Math.max(1, Math.round(cfg.barsPerBundle))
   if (nBundles === 0) return []
-  const dia = cfg.barDia
-  // Bundle centre sits on the pitch circle of a single bar; cluster spreads inward/tangential.
-  const r = pitchRadius(cfg.sectionRadius, cfg.cover, cfg.tieDia, dia)
+  const dias = bundleDiameters(cfg)
+  // Bundle centre sits on the pitch circle of the largest bar; cluster spreads inward/tangential.
+  const r = bundlePitchRadius(cfg)
   const start = deg2rad(cfg.startAngleDeg)
-  const step = angularStep(nBundles, cfg.angularSpacingDeg)
-  // Clear gap within bundle ≈ max(dia, 25) → centre-to-centre = dia + clear.
-  const clear = Math.max(dia, 25)
-  const gap = dia + clear
+  const step = bundleAngularStep(cfg)
+  // Default centre-to-centre within the bundle = dia + max(dia, 25) (original behaviour).
+  const gap = bundleInnerSpacingUsed(cfg)
   const out: Rebar[] = []
   for (let i = 0; i < nBundles; i++) {
     const a = start + i * step
     const c = pointAt(0, 0, r, a)
-    out.push(...clusterAbout(c, a, per, dia, gap))
+    for (const b of clusterAboutMixed(c, a, dias, gap)) out.push({ ...b, groupId: `${BUNDLE_PREFIX}${i + 1}` })
   }
   return out
 }
@@ -305,6 +377,7 @@ export function generateCircularRebar(cfg: CircularRebarConfig): CircularRebarRe
     surface: 'outer' as const,
     layer: b.layer ?? (cfg.kind === 'layered' ? i : undefined),
     radial: true,
+    ...(b.groupId ? { groupId: b.groupId } : {}),
   }))
 
   const warnings = validateCircularBars(bars, cfg)
@@ -341,21 +414,38 @@ export function validateCircularBars(bars: Rebar[], cfg: CircularRebarConfig): s
     warnings.push(`${inVoid} bar(s) intrude into the inner void.`)
   }
 
-  // Minimum clear distance between any two bars.
+  // Minimum clear distance between bars. Bars of one bundle sit together by
+  // design, so they are excluded here; any intersection (in or out of a bundle)
+  // is reported separately as an overlap.
   let minClear = Infinity
+  let overlapPairs = 0
   for (let i = 0; i < bars.length; i++) {
     for (let j = i + 1; j < bars.length; j++) {
-      const c =
-        Math.hypot(bars[j].x - bars[i].x, bars[j].y - bars[i].y) -
-        (bars[i].dia + bars[j].dia) / 2
+      const c = clearDistance(bars[i], bars[j])
+      if (c < -OVERLAP_TOL) overlapPairs++
+      if (sameBundle(bars[i], bars[j])) continue
       minClear = Math.min(minClear, c)
     }
+  }
+  if (overlapPairs > 0) {
+    warnings.push(`${overlapPairs} overlapping bar pair(s) — bars intersect (highlighted red on the section).`)
+  }
+  if (cfg.kind === 'bundle') {
+    const n = Math.max(0, Math.round(cfg.nBundles))
+    const s = cfg.bundleSpacing
+    const r = pitchRadius(cfg.sectionRadius, cfg.cover, cfg.tieDia, Math.max(...bars.map((b) => b.dia)))
+    if (s != null && s > 0 && r > 0 && s > 2 * r) {
+      warnings.push(`Bundle spacing ${s.toFixed(0)} mm exceeds the pitch-circle diameter ${(2 * r).toFixed(0)} mm.`)
+    } else if (s != null && s > 0 && r > 0 && n * 2 * Math.asin(Math.min(1, s / (2 * r))) > 2 * Math.PI + 1e-6) {
+      warnings.push(`${n} bundles at ${s.toFixed(0)} mm spacing do not fit around the ring — bundles wrap past the start.`)
+    }
+    if (Math.round(cfg.barsPerBundle) > 4) warnings.push('More than 4 bars per bundle exceeds the usual code limit.')
   }
   if (Number.isFinite(minClear)) {
     const minDia = Math.min(...bars.map((b) => b.dia))
     const limit = Math.max(minDia, 25)
     if (minClear < 0) {
-      warnings.push(`Bars overlap (min clear ${minClear.toFixed(1)} mm).`)
+      if (overlapPairs === 0) warnings.push(`Bars overlap (min clear ${minClear.toFixed(1)} mm).`)
     } else if (minClear < limit) {
       warnings.push(
         `Clear spacing ${minClear.toFixed(0)} mm is below the recommended ≥ ${limit.toFixed(0)} mm.`,
@@ -403,6 +493,10 @@ export function defaultCircularRebarConfig(
     altBarDia: barDia,
     barsPerBundle: 2,
     nBundles: 6,
+    bundleSpacing: null,
+    bundleInnerSpacing: null,
+    bundleMixedDia: false,
+    bundleBarDias: [barDia, barDia],
     nGroups: 6,
     groupSpacing: barDia + Math.max(barDia, 25),
     layers: [
@@ -464,6 +558,10 @@ export function sanitizeCircularConfig(cfg: CircularRebarConfig): CircularRebarC
     altBarDia: sanitizeDiameter(cfg.altBarDia, barDia),
     barsPerBundle: clamp(Math.round(cfg.barsPerBundle || 1), 1, 8),
     nBundles: clamp(Math.round(cfg.nBundles || 0), 0, 100),
+    bundleSpacing: cfg.bundleSpacing != null && cfg.bundleSpacing > 0 ? cfg.bundleSpacing : null,
+    bundleInnerSpacing: cfg.bundleInnerSpacing != null && cfg.bundleInnerSpacing > 0 ? cfg.bundleInnerSpacing : null,
+    bundleMixedDia: !!cfg.bundleMixedDia,
+    bundleBarDias: (cfg.bundleBarDias ?? []).map((d) => sanitizeDiameter(d, barDia)),
     nGroups: clamp(Math.round(cfg.nGroups || 0), 0, 100),
     groupSpacing: clamp(cfg.groupSpacing || 0, 0, 500),
     layers: (cfg.layers ?? []).map((l) => ({
