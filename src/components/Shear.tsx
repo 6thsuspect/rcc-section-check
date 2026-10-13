@@ -26,6 +26,7 @@ import {
   SegButton,
   SegGroup,
   SubCard,
+  ZoomableSvg,
   btnMiniCls,
   cellCls,
   codeChipCls,
@@ -649,7 +650,7 @@ export function ShearSummaryPanel({
           </div>
 
           <div className="mt-3">
-            <ShearDiagram id={figureId} section={section} settings={settings} result={g} height={230} />
+            <ShearDiagram id={figureId} section={section} settings={settings} result={g} />
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -691,174 +692,201 @@ export function ShearDiagram({
   section,
   settings,
   result,
-  height = 260,
   id,
 }: {
   section: ShearSectionData
   settings: ShearSettings
   result: ShearCaseResult | null
-  height?: number
   /** DOM id so the print report can capture the figure (fig-shear). */
   id?: string
 }) {
   const b = Math.max(section.b, 1)
   const h = Math.max(section.h, 1)
   const d = Math.min(Math.max(section.d, 1), h)
-  const legs = Math.max(settings.linkLegs, 2)
+  const legs = Math.max(Math.round(settings.linkLegs), 2)
   const spacing = Math.max(settings.linkSpacing, 1)
+  const cover = section.coverTension
+  const axisName = section.axis === 'y' ? 'y' : 'x'
 
-  // Left panel: section, in the shear/bending plane.
-  const padX = 46
-  const padY = 26
-  const boxW = 168
-  const boxH = 168
+  /* ---- left panel: the section in the shear/bending plane (scale drawing) ---- */
+  const boxX = 66 // leaves room for the d dimension on the left of a wide section
+  const boxY = 56
+  const boxW = 118
+  const boxH = 136
   const sc = Math.min(boxW / b, boxH / h)
   const w = b * sc
   const hh = h * sc
-  const x0 = padX + (boxW - w) / 2
-  const y0 = padY + (boxH - hh) / 2
+  const x0 = boxX + (boxW - w) / 2
+  const y0 = boxY + (boxH - hh) / 2
+  const cx = x0 + w / 2
+  const midY = y0 + hh / 2
   const tensionAtBottom = section.tensionFace === 'bottom' || section.tensionFace === 'right'
-  const compFace = tensionAtBottom ? y0 : y0 + hh
-  const dEff = d * sc
-  const cover = Math.max(section.coverTension * sc, 3)
-  const linkInset = Math.min(cover, Math.min(w, hh) / 3)
+  const compY = tensionAtBottom ? y0 : y0 + hh
+  const tensY = tensionAtBottom ? y0 + hh : y0
+  const dEnd = compY + (tensionAtBottom ? 1 : -1) * d * sc
+  const barInset = Math.max(Math.min(cover * sc, 11), 3.5)
+  const linkInset = Math.max(Math.min((cover + settings.linkDia) * sc, Math.min(w, hh) / 3), barInset)
   const lx = x0 + linkInset
   const ly = y0 + linkInset
-  const lw = w - 2 * linkInset
-  const lh = hh - 2 * linkInset
+  const lw = Math.max(w - 2 * linkInset, 2)
+  const lh = Math.max(hh - 2 * linkInset, 2)
+  const step = (w - 2 * barInset) / 3
+  const barXs = [0, 1, 2, 3].map((i) => x0 + barInset + i * step)
 
-  // Right panel: elevation, links at the provided spacing (scaled to fit).
-  const ex = 268
-  const ey = 32
-  const eh = 150
-  const es = Math.min((408 - ex) / Math.max(spacing, 1), eh * 0.5) // screen mm per link spacing
-  const nLinks = Math.max(2, Math.min(Math.floor(150 / Math.max(es, 12)), 6))
-  const links = Array.from({ length: nLinks }, (_, i) => ex + (i + 1) * es)
+  /* ---- right panel: member elevation with links at the provided spacing ---- */
+  const ex = 252
+  const exR = 446
+  const eyTop = 64
+  const eh = 126
+  const eyBot = eyTop + eh
+  // Links are drawn at a legible pitch and the dimension between them carries the
+  // real spacing value, so the elevation is deliberately not to scale.
+  const pitch = Math.min(46, Math.max(24, (exR - ex) / 4))
+  const nLinks = Math.max(2, Math.floor((exR - ex - 12) / pitch) + 1)
+  const linkXs = Array.from({ length: nLinks }, (_, i) => ex + 6 + i * pitch)
 
-  const stress = result ? result.tauV : 0
-  const capacity = result ? result.tauC : 0
+  const provided = result ? result.asvPerSProvided : (legs * barArea(settings.linkDia)) / spacing
+  const leftLines = [
+    `b = ${fmtN(b, 0)} mm net (mid-depth) · h = ${fmtN(h, 0)} mm`,
+    `depth along ${axisName} · d = ${fmtN(d, 0)} mm`,
+    `tension face: ${FACE_LABEL[section.tensionFace].toLowerCase()} · Asl = ${fmtN(section.Asl, 0)} mm²`,
+    `${section.tensionBarCount} tension bars · clear cover ${fmtN(cover, 0)} mm`,
+  ]
+  const rightLines = [
+    `⌀${fmtN(settings.linkDia, 0)} @ ${fmtN(spacing, 0)} c/c · ${legs} legs · Asv/sv = ${fmtN(provided, 3)}`,
+    result
+      ? `required ${fmtN(result.asvPerSReq, 3)} mm²/mm · ${result.asvPerSProvided + 1e-9 >= result.asvPerSReq ? 'passes' : 'fails'}`
+      : 'required — (no case selected)',
+    `sv,max = ${fmtN(result ? result.spaceMax : 0.75 * d, 0)} mm · sv,req = ${
+      result && Number.isFinite(result.spaceReq) ? `${fmtN(result.spaceReq, 0)} mm` : '—'
+    }`,
+    `VRd = ${fmtN(result ? result.VRd / 1e3 : 0, 0)} kN · VEd = ${fmtN(result ? result.VEd / 1e3 : 0, 0)} kN`,
+  ]
 
   return (
-    <svg
+    <ZoomableSvg
+      W={460}
+      H={300}
       id={id}
-      viewBox="0 0 460 250"
-      width="100%"
-      height={height}
-      role="img"
-      aria-label="Shear reinforcement diagram: link cross-section and member elevation"
-      style={{ display: 'block' }}
+      ariaLabel="Shear reinforcement diagram: link cross-section in the shear plane and a member elevation with the provided link spacing"
     >
       {/* ---------------- link cross-section ---------------- */}
-      <text x={padX} y={16} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
+      <text x={14} y={18} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
         LINK CROSS-SECTION
       </text>
-      <rect x={x0} y={y0} width={w} height={hh} rx={2} className="fill-concrete stroke-edge-strong" strokeWidth={1} />
-      <rect x={lx} y={ly} width={lw} height={lh} rx={4} fill="none" className="stroke-capacity" strokeWidth={1.6} />
-      {Array.from({ length: legs }, (_, i) => {
-        const x = lx + ((i + 0.5) / legs) * lw
-        return <line key={i} x1={x} y1={ly} x2={x} y2={ly + lh} className="stroke-capacity" strokeWidth={1.4} />
-      })}
-      {/* tension-face bars */}
-      {[0.12, 0.38, 0.62, 0.88].map((u, i) => (
-        <circle key={i} cx={lx + u * lw} cy={tensionAtBottom ? ly + lh - 2 : ly + 2} r={3} className="fill-ink-2" />
-      ))}
-      {/* shear force arrow */}
-      <line
-        x1={x0 + w / 2}
-        y1={tensionAtBottom ? y0 - 16 : y0 + hh + 16}
-        x2={x0 + w / 2}
-        y2={tensionAtBottom ? y0 - 2 : y0 + hh + 2}
-        className="stroke-demand"
-        strokeWidth={2}
-      />
+
+      {/* shear force arrow, pointing towards the face in tension */}
+      <text x={cx} y={32} fontSize={9.5} textAnchor="middle" className="fill-demand">
+        {result ? `Vu = ${fmtN(result.loadCase.Vu, 0)} kN` : 'Vu'}
+      </text>
+      <line x1={cx} y1={38} x2={cx} y2={52} className="stroke-demand" strokeWidth={2} />
       <path
-        d={`M ${x0 + w / 2 - 4} ${tensionAtBottom ? y0 - 6 : y0 + hh + 6} L ${x0 + w / 2} ${tensionAtBottom ? y0 - 1 : y0 + hh + 1} L ${x0 + w / 2 + 4} ${tensionAtBottom ? y0 - 6 : y0 + hh + 6}`}
+        d={
+          tensionAtBottom
+            ? `M ${cx - 4} 45 L ${cx} 52 L ${cx + 4} 45`
+            : `M ${cx - 4} 45 L ${cx} 38 L ${cx + 4} 45`
+        }
         fill="none"
         className="stroke-demand"
         strokeWidth={2}
       />
+
+      {/* section, links and longitudinal bars */}
+      <rect x={x0} y={y0} width={w} height={hh} rx={1.5} className="fill-concrete stroke-ink" strokeWidth={1.3} />
+      <rect x={lx} y={ly} width={lw} height={lh} rx={3} fill="none" className="stroke-capacity" strokeWidth={1.5} />
+      {Array.from({ length: legs }, (_, i) => {
+        const x = lx + ((i + 0.5) / legs) * lw
+        return <line key={i} x1={x} y1={ly} x2={x} y2={ly + lh} className="stroke-capacity" strokeWidth={1.3} />
+      })}
+      {barXs.map((x, i) => (
+        <circle key={`t${i}`} cx={x} cy={tensY + (tensionAtBottom ? -barInset : barInset)} r={2.6} className="fill-ink" />
+      ))}
+      {barXs.slice(1, 3).map((x, i) => (
+        <circle
+          key={`c${i}`}
+          cx={x}
+          cy={compY + (tensionAtBottom ? barInset : -barInset)}
+          r={2.4}
+          fill="none"
+          className="stroke-ink-2"
+          strokeWidth={1}
+        />
+      ))}
+
+      {/* effective depth d, measured from the compression fibre */}
+      <line x1={x0 - 12} y1={compY} x2={x0 - 12} y2={dEnd} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0 - 16} y1={compY} x2={x0 - 8} y2={compY} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0 - 16} y1={dEnd} x2={x0 - 8} y2={dEnd} className="stroke-ink-3" strokeWidth={0.9} />
       <text
-        x={x0 + w / 2}
-        y={tensionAtBottom ? y0 - 20 : y0 + hh + 28}
+        x={x0 - 18}
+        y={compY + (tensionAtBottom ? 1 : -1) * ((d * sc) / 2)}
         fontSize={9.5}
-        textAnchor="middle"
-        className="fill-demand"
+        textAnchor="end"
+        dominantBaseline="middle"
+        className="fill-ink-2"
       >
-        {result ? `Vu = ${fmtN(result.loadCase.Vu, 0)} kN` : 'Vu'}
-      </text>
-      {/* depth dimension */}
-      <line x1={x0 - 12} y1={compFace} x2={x0 - 12} y2={compFace + dEff} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 - 16} y1={compFace} x2={x0 - 6} y2={compFace} className="stroke-ink-3" strokeWidth={0.9} />
-      <line
-        x1={x0 - 16}
-        y1={compFace + dEff}
-        x2={x0 - 6}
-        y2={compFace + dEff}
-        className="stroke-ink-3"
-        strokeWidth={0.9}
-      />
-      <text x={x0 - 18} y={compFace + dEff / 2} fontSize={9.5} textAnchor="end" dominantBaseline="middle" className="fill-ink-2">
         d = {fmtN(d, 0)}
       </text>
-      {/* dimensions */}
-      <text x={x0 + w / 2} y={y0 + hh + 14} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
-        b = {fmtN(b, 0)} mm
+
+      {/* overall depth and the tension-steel tag (right of the section) */}
+      <line x1={x0 + w + 6} y1={y0} x2={x0 + w + 6} y2={y0 + hh} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0 + w + 2} y1={y0} x2={x0 + w + 10} y2={y0} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0 + w + 2} y1={y0 + hh} x2={x0 + w + 10} y2={y0 + hh} className="stroke-ink-3" strokeWidth={0.9} />
+      <text x={x0 + w + 13} y={midY} fontSize={9.5} dominantBaseline="middle" className="fill-ink-2">
+        h = {fmtN(h, 0)}
       </text>
-      <text x={x0 + w + 12} y={y0 + hh / 2} fontSize={9.5} className="fill-ink-2">
-        h = {fmtN(h, 0)} mm
-      </text>
-      <text x={x0 + w + 12} y={y0 + hh / 2 + 11} fontSize={8.5} className="fill-ink-3">
-        {legs} link legs
-      </text>
-      <text x={padX} y={y0 + boxH + 26} fontSize={9} className="fill-ink-3">
-        tension face: {FACE_LABEL[section.tensionFace].toLowerCase()} · τv = {fmtN(stress, 3)} N/mm² · vc ={' '}
-        {fmtN(capacity, 3)} N/mm²
+      {Math.abs(tensY - midY) > 26 && (
+        <text
+          x={x0 + w + 13}
+          y={tensY + (tensionAtBottom ? -6 : 9)}
+          fontSize={8.5}
+          dominantBaseline="middle"
+          className="fill-ink-3"
+        >
+          tension steel
+        </text>
+      )}
+
+      {/* width dimension b under the section */}
+      <line x1={x0} y1={204} x2={x0 + w} y2={204} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0} y1={200} x2={x0} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={x0 + w} y1={200} x2={x0 + w} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
+      <text x={cx} y={218} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
+        b = {fmtN(b, 0)}
       </text>
 
-      {/* ---------------- elevation ---------------- */}
-      <text x={ex} y={16} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
-        SHEAR REINFORCEMENT
+      {/* ---------------- member elevation ---------------- */}
+      <text x={ex} y={18} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
+        LINKS
       </text>
-      <text x={ex} y={ey - 6} fontSize={8.5} className="fill-ink-3">
-        member elevation · links at the provided spacing
-      </text>
-      <line x1={ex - 6} y1={ey} x2={412} y2={ey} className="stroke-edge-strong" strokeWidth={1.1} />
-      <line x1={ex - 6} y1={ey + eh} x2={412} y2={ey + eh} className="stroke-edge-strong" strokeWidth={1.1} />
-      {links.map((x, i) => (
+      <line x1={ex} y1={eyTop} x2={exR} y2={eyTop} className="stroke-edge-strong" strokeWidth={1.1} />
+      <line x1={ex} y1={eyBot} x2={exR} y2={eyBot} className="stroke-edge-strong" strokeWidth={1.1} />
+      {linkXs.map((x, i) => (
         <g key={i}>
-          <line x1={x} y1={ey + 3} x2={x} y2={ey + eh - 3} className="stroke-capacity" strokeWidth={1.6} />
-          <line x1={x + 3.2} y1={ey + 3} x2={x + 3.2} y2={ey + eh - 3} className="stroke-capacity" strokeWidth={1.6} />
+          <line x1={x} y1={eyTop + 4} x2={x} y2={eyBot - 4} className="stroke-capacity" strokeWidth={1.6} />
+          <line x1={x + 2.8} y1={eyTop + 4} x2={x + 2.8} y2={eyBot - 4} className="stroke-capacity" strokeWidth={1.6} />
         </g>
       ))}
-      <line x1={links[0] + 1.6} y1={ey + eh + 12} x2={links[1] + 1.6} y2={ey + eh + 12} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={links[0] + 1.6} y1={ey + eh + 8} x2={links[0] + 1.6} y2={ey + eh + 16} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={links[1] + 1.6} y1={ey + eh + 8} x2={links[1] + 1.6} y2={ey + eh + 16} className="stroke-ink-3" strokeWidth={0.9} />
-      <text x={links[0] + 1.6} y={ey + eh + 30} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
-        sv = {fmtN(spacing, 0)} mm
+      {/* spacing dimension between the first two links */}
+      <line x1={linkXs[0] + 1.4} y1={204} x2={linkXs[1] + 1.4} y2={204} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={linkXs[0] + 1.4} y1={200} x2={linkXs[0] + 1.4} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={linkXs[1] + 1.4} y1={200} x2={linkXs[1] + 1.4} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
+      <text x={(linkXs[0] + linkXs[1]) / 2 + 1.4} y={218} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
+        sv = {fmtN(spacing, 0)}
       </text>
-      <text x={ex} y={ey + 44} fontSize={9.5} className="fill-ink-2">
-        ⌀{fmtN(settings.linkDia, 0)} @ {fmtN(spacing, 0)} c/c · {legs} legs
-      </text>
-      <text x={ex} y={ey + 59} fontSize={9.5} className="fill-ink-2">
-        Asv/sv = {fmtN((legs * barArea(settings.linkDia)) / spacing, 3)} mm²/mm
-      </text>
-      {result && (
-        <>
-          <text x={ex} y={ey + 82} fontSize={9.5} className="fill-ink-2">
-            required = {fmtN(result.asvPerSReq, 3)} mm²/mm
-          </text>
-          <text x={ex} y={ey + 97} fontSize={9.5} className="fill-ink-2">
-            sv,max = {fmtN(result.spaceMax, 0)} mm · sv,req = {Number.isFinite(result.spaceReq) ? fmtN(result.spaceReq, 0) : '—'} mm
-          </text>
-          <text x={ex} y={ey + 120} fontSize={9.5} className="fill-ink-2">
-            VRd = {fmtN(result.VRd / 1e3, 0)} kN · VEd = {fmtN(result.VEd / 1e3, 0)} kN
-          </text>
-          <text x={ex} y={ey + 135} fontSize={9.5} className="fill-ink-3">
-            {result.ok ? 'provided ≥ required — check passes' : 'provided < required — check fails'}
-          </text>
-        </>
-      )}
-    </svg>
+
+      {/* data captions under each panel — the elevation is not to scale */}
+      {leftLines.map((line, i) => (
+        <text key={i} x={14} y={242 + i * 14} fontSize={9.5} className="fill-ink-2">
+          {line}
+        </text>
+      ))}
+      {rightLines.map((line, i) => (
+        <text key={i} x={ex} y={242 + i * 14} fontSize={9.5} className="fill-ink-2">
+          {line}
+        </text>
+      ))}
+    </ZoomableSvg>
   )
 }
 

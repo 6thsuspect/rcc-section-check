@@ -2,10 +2,11 @@
 
 ## 10.0 Figure controls
 
-Every figure (section preview, P–M diagram, Mx–My contour) carries:
+Every figure (section preview, P–M diagram, Mx–My contour and the shear link diagram) carries:
 
 - **Zoom in / zoom out / fit-to-view** buttons plus drag-to-pan, implemented through the
-  SVG viewBox so hover readouts stay correct at any zoom level;
+  SVG viewBox so hover readouts stay correct at any zoom level — the same control strip on
+  every figure, including the shear link cross-section / link-elevation diagram;
 - a **label toolbar** on the section preview: labels on/off, font size (A−/A+), and
   label colour (preset swatches + free colour picker). Labels shown: bar numbers and the
   centroid marker G(x̄, ȳ);

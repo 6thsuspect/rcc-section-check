@@ -101,6 +101,19 @@ describe('shear panels render hygiene', () => {
     expect(msgs).toEqual([])
   })
 
+  it('gives the shear diagram the shared figure controls (zoom in / out / fit)', () => {
+    const { section, results } = fixture('IS456')
+    const html = renderToStaticMarkup(
+      <ShearSummaryPanel code="IS456" summary={shearSummary(results)} settings={fixture('IS456').s.shear} section={section} figureId="fig-shear" />,
+    )
+    // same control strip as every other figure in the app
+    expect(html).toContain('aria-label="Zoom in"')
+    expect(html).toContain('aria-label="Zoom out"')
+    expect(html).toContain('aria-label="Fit to view"')
+    expect(html).toContain('id="fig-shear"')
+    expect(msgs).toEqual([])
+  })
+
   it('prints the provided-vs-required comparison and the spacing requirement', () => {
     const { section, results } = fixture('IS456')
     const html = renderToStaticMarkup(

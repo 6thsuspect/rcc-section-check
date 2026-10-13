@@ -483,7 +483,7 @@ export default function App() {
         section: grab('fig-section', '0 0 460 340'),
         pm: grab('fig-pm', '0 0 520 400'),
         contour: grab('fig-contour', '0 0 460 420'),
-        shear: grab('fig-shear', '0 0 460 250'),
+        shear: grab('fig-shear', '0 0 460 300'),
       },
     })
   }
