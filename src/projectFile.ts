@@ -4,6 +4,16 @@ import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
 import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
 import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
+import {
+  DEFAULT_SHEAR,
+  MAX_COT_THETA,
+  MIN_COT_THETA,
+  tensionFaceOptions,
+  type ShearAxis,
+  type ShearLoadCase,
+  type ShearMember,
+  type ShearSettings,
+} from './engine/shear'
 
 export interface ProjectFile {
   version: string
@@ -17,7 +27,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.3',
+    version: '1.4',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -65,6 +75,14 @@ export function parseProjectFile(jsonText: string): AppState {
     Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
   })
 
+  /** Coerce one persisted shear case row into a sanitized ShearLoadCase. */
+  const mapShearCase = (c: any, id: string, name: string): ShearLoadCase => ({
+    id,
+    name,
+    Vu: Number.isFinite(c?.Vu) ? Number(c.Vu) : 0,
+    Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
+  })
+
   if (!rawState.geometry || typeof rawState.geometry !== 'object' || !Array.isArray(rawState.geometry.boundary)) {
     throw new Error('Invalid project file: missing or invalid geometry boundary.')
   }
@@ -101,6 +119,41 @@ export function parseProjectFile(jsonText: string): AppState {
     : slsCases.map((c, idx) =>
         mapCase(c, `cwc-fallback-${idx + 1}-${Date.now()}`, c.name),
       )
+
+  // v1.4 adds the shear design tab. Older files have no shear cases: seed one
+  // case per ULS combination (Vu = 0, same axial load and name) so the tab opens
+  // on the file's own load set and the user only has to enter the shear forces.
+  const shearCases: ShearLoadCase[] = Array.isArray(rawState.shearCases)
+    ? rawState.shearCases.map((c: any, idx: number) =>
+        mapShearCase(c, typeof c?.id === 'string' ? c.id : `sc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SC${idx + 1}`),
+      )
+    : rawState.cases.map((c: any, idx: number) =>
+        mapShearCase(
+          { Vu: 0, Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0 },
+          `sc-fallback-${idx + 1}-${Date.now()}`,
+          typeof c?.name === 'string' ? c.name : `SC${idx + 1}`,
+        ),
+      )
+
+  const rawShear = rawState.shear && typeof rawState.shear === 'object' ? rawState.shear : {}
+  const shearAxis: ShearAxis = rawShear.axis === 'x' ? 'x' : 'y'
+  const faceOptions = tensionFaceOptions(shearAxis)
+  const shear: ShearSettings = {
+    axis: shearAxis,
+    tensionFace: faceOptions.includes(rawShear.tensionFace) ? rawShear.tensionFace : faceOptions[0],
+    member: (rawShear.member === 'beam' || rawShear.member === 'column' ? rawShear.member : DEFAULT_SHEAR.member) as ShearMember,
+    linkDia: Number.isFinite(rawShear.linkDia) && rawShear.linkDia > 0 ? Number(rawShear.linkDia) : DEFAULT_SHEAR.linkDia,
+    linkLegs: Number.isInteger(rawShear.linkLegs) && rawShear.linkLegs >= 2 ? Number(rawShear.linkLegs) : DEFAULT_SHEAR.linkLegs,
+    linkSpacing: Number.isFinite(rawShear.linkSpacing) && rawShear.linkSpacing > 0 ? Number(rawShear.linkSpacing) : DEFAULT_SHEAR.linkSpacing,
+    bOverride: Number.isFinite(rawShear.bOverride) && rawShear.bOverride > 0 ? Number(rawShear.bOverride) : null,
+    dOverride: Number.isFinite(rawShear.dOverride) && rawShear.dOverride > 0 ? Number(rawShear.dOverride) : null,
+    aslOverride: Number.isFinite(rawShear.aslOverride) && rawShear.aslOverride > 0 ? Number(rawShear.aslOverride) : null,
+    criticalDistance: Number.isFinite(rawShear.criticalDistance) && rawShear.criticalDistance > 0 ? Number(rawShear.criticalDistance) : 0,
+    enhance: rawShear.enhance === true,
+    cotTheta: Number.isFinite(rawShear.cotTheta)
+      ? Math.min(MAX_COT_THETA, Math.max(MIN_COT_THETA, Number(rawShear.cotTheta)))
+      : DEFAULT_SHEAR.cotTheta,
+  }
 
   const sanitized: AppState = {
     code,
@@ -163,6 +216,9 @@ export function parseProjectFile(jsonText: string): AppState {
       exposure: exposureOk ? rawCw.exposure : DEFAULT_EXPOSURE[code],
       longTerm: rawCw.longTerm === true,
     },
+    shearCases,
+    // v1.4 shear inputs; older files open with the code-neutral defaults.
+    shear,
     mesh:
       rawState.mesh && typeof rawState.mesh === 'object'
         ? {

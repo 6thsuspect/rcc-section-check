@@ -14,14 +14,40 @@ interaction surface by strain-compatibility analysis of the actual geometry, dra
 P–M diagram and the Mx–My capacity contour with every load case overlaid, and reports a
 utilisation ratio plus the selected code's clause checks.
 
-Two top-bar modules share the same section, materials and reinforcement: the **ULS Check**
-(ultimate P–Mx–My interaction and capacity) and the **SLS Check** (serviceability limits — the
+Three top-bar modules share the same section, materials and reinforcement: the **ULS Check**
+(ultimate P–Mx–My interaction and capacity), the **SLS Check** (serviceability limits — the
 IS 456:2000 Annex C working-stress method for concrete σcbc and reinforcement σst / σsc against
 the cracked transformed-section stresses, **plus a crack-width check** by the method of the
-selected code, each with PASS/FAIL per case). **Load cases are entered separately for each
-check** — the ULS panel holds factored actions, the SLS panel holds characteristic (service)
-actions for the stress check, and the crack-width check has its own service load-case list; the
-three lists edit independently and switching tabs changes none of them.
+selected code) and the **Shear Check** (shear capacity, link design, minimum/maximum limits and
+spacing per the selected code). Each check keeps its own PASS/FAIL verdict. **Load cases are
+entered separately for each check** — the ULS panel holds factored actions, the SLS panel holds
+characteristic (service) actions for the stress check, the crack-width check has its own service
+list, and the shear check has its own factored `Vu`/`Pu` list; the four lists edit independently
+and switching tabs changes none of them.
+
+### Shear design check (Shear tab)
+The shear tab runs the shear method of the selected code, independently of the ULS and SLS
+modules, on its own factored load-case list of (`Vu`, `Pu`) pairs:
+- **IS 456:2000** — nominal shear stress τv = `Vu/(b·d)` (Cl 40.1) against the design shear
+  strength of concrete τc from **Table 19** (Cl 40.2.1), with the axial-compression multiplier
+  δ = 1 + 3Pu/(Ag·fck) ≤ 1.5 (Cl 40.2.2) and the near-support enhancement 2d/av (Cl 40.3);
+  stirrups carry `Vus = Vu − τc·b·d` (Cl 40.4); τc,max from **Table 20** (Cl 40.2.3);
+  minimum stirrups `Asv/(b·sv) ≥ 0.4/(0.87·fy)` (Cl 26.5.1.6); spacing ≤ min(0.75·d, 300 mm)
+  (Cl 26.5.1.5).
+- **IRC:112-2020** — members without links: `VRd,c = [0.12·K·(100·ρl·fck)^(1/3) + 0.15·σcp]·bw·d`,
+  K = 1 + √(200/d) ≤ 2 (Cl 10.3.2); variable strut inclination θ (cot θ = 1.0…2.5, user-set):
+  `VRd,s = (Asw/s)·z·fywd·cot θ` and `VRd,max = αcw·bw·z·ν1·fcd/(cot θ + tan θ)` (Cl 10.3.3.2);
+  minimum shear reinforcement ρw = 0.072·√fck/fyk (Cl 10.3.3.5 / 16.5.2); spacing ≤ 0.75·d
+  (Cl 16.5.2).
+- **IRS Concrete Bridge Code 1997** — shear stress `v = V/(b·d)` against the ultimate shear
+  stress in concrete βs·vc (Table 15 × Table 16 depth factor βs = (500/d)^(1/4) ≥ 0.70), links
+  per Table 14 (`Asv ≥ 0.4·b·sv/(0.87·fyv)` when v ≤ βs·vc, else
+  `Asv ≥ b·sv·(v + 0.4 − βs·vc)/(0.87·fyv)`, fyv ≤ 415 N/mm²), v ≤ min(0.75·√fck, 4.75 N/mm²)
+  (Cl 15.4.3.1), columns enhanced by (1 + 0.05·P/Ac) (Cl 15.6.6), spacing ≤ 0.75·d.
+
+b, d and Asl come from the section and bar table (with manual overrides), the tension face is
+selectable, and every result is shown as a step-by-step calculation with clause references plus
+a per-case PASS/FAIL verdict and a provided-vs-required reinforcement comparison.
 
 ### Crack-width check (SLS tab)
 The crack-width check reuses the cracked-section tension-steel stress σs, neutral-axis depth and
@@ -66,12 +92,14 @@ src/engine/               Code-agnostic analysis kernel
   checks.ts               Clause compliance checks per code
   sls.ts                  SLS working-stress check (σcbc / σst, transformed section)
   crackWidth.ts           SLS crack-width check per code (IS 456 Annex F / IRC:112 / IRS CBC)
+  shear.ts                Shear design check per code (capacity, links, limits, spacing)
   __tests__/              Golden regression tests (docs/11 worked example)
 src/components/           Editors, section preview, charts, results panels
   CoverPanel.tsx          Per-face cover inputs, schematic and layout actions
   SLSResults.tsx          SLS stress table, summary and calculation panels
   CrackWidth.tsx          SLS crack-width inputs, per-case results and calculation panels
-src/App.tsx               State + analysis pipeline wiring (ULS + SLS modules)
+  Shear.tsx               Shear inputs, load cases, diagram, results and calculation panels
+src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear modules)
 ```
 
 ## Engineering notes

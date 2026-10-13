@@ -74,7 +74,8 @@ plateau 0.87·fy and the compression cap fyc.
 | Puz | eq 17 | **Puz = 0.45·fck·Ac + fyc·Asc** |
 | Other section shapes | 15.6.4 (final sentence) | design per 15.6.3.2 first principles — **the tool's fiber surface is itself the code-compliant check**; eq 16 is reported only for symmetric rect/circular sections |
 | Slender columns | 15.6.5.2–15.6.5.4 (eqs 18–22) | additional moments, e.g. biaxial: Mtx = Mix + (P·hy/1750)(lex/hy)²(1 − 0.0035·lex/hy) — applied upstream; the tool flags le/h ≥ 12 |
-| Shear / cracking | 15.6.6 / 15.6.7 | out of scope; flagged in report |
+| Shear (columns) | 15.6.6 | **Implemented in the shear tab** — βs·vc multiplied by **(1 + 0.05·P/Ac)**; single-axis shear only (the biaxial rule Vx/Vux + Vy/Vuy ≤ 1.0 is flagged, not automated) |
+| Cracking | 15.6.7 | out of scope; covered by the SLS crack-width check (Cl 15.9.8.2) |
 
 ## 8.4 Reinforcement limits & detailing
 
@@ -110,3 +111,23 @@ Fe 600 is **not** offered under IRS CBC.
 Characteristic loads per IRS Bridge Rules (Cl 11.1); ULS combinations 1–4 with γfL per
 Table 12 (e.g. DL 1.25, SIDL 2.00, LL 1.75/1.40, EP 1.70). The user enters already-
 factored `Pu, Mux, Muy`; the tool checks section strength only.
+## 8.7 Shear design check (Cl 15.4.3)
+
+Single-axis shear at the critical section, on its own factored (`Vu`, `Pu`) load-case list — the
+BS 5400-4 lineage method of the code:
+
+| Step | Clause | Expression |
+|---|---|---|
+| Shear stress | 15.4.3.1 | v = **V/(b·d)**, b = net web width at mid-depth |
+| Max shear stress | 15.4.3.1 | v ≤ **0.75·√fck** or **4.75 N/mm²**, whichever is the lesser |
+| Concrete stress | 15.4.3.2, Table 15 | vc as a function of 100·As/(b·d) and the grade column (M20…M40 and above) |
+| Depth factor | 15.4.3.2, Table 16 | βs = **(500/d)^(1/4), ≥ 0.70** |
+| Links | 15.4.3.3, Table 14 | v ≤ βs·vc: **Asv ≥ 0.4·b·sv/(0.87·fyv)**; v > βs·vc: **Asv ≥ b·sv·(v + 0.4 − βs·vc)/(0.87·fyv)**, fyv ≤ **415 N/mm²** |
+| Spacing | 15.4.3.4 | links ≤ **0.75·d** (legs in both directions) |
+| Columns | 15.6.6 | βs·vc multiplied by **(1 + 0.05·P/Ac)** |
+
+**Table 15 provenance.** The engine evaluates the BS 5400-4 closed form
+`vc = 0.79·(100·As/bd)^(1/3)·(fck/25)^(1/3)/1.25` (M40-or-more column; grades above M40 use that
+column) and rounds to two decimals, which reproduces the printed Table 15 values at the tabulated
+percentages [verify against the printed table before release]. There is **no near-support
+enhancement** in this lineage — enter VEd at the critical section.

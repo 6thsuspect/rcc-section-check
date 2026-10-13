@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import type { CaseResult } from './engine/types'
+import type { CaseResult, InteractionSurface } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
 import { generateSection } from './engine/sections'
@@ -10,7 +10,7 @@ import { auditCovers, radialCover } from './engine/cover'
 import { isAutomaticBar, repositionAutomaticBars, validateOuterCoverFit } from './engine/reinforcement'
 import { exportReport } from './report'
 import { exportProjectFile, parseProjectFile } from './projectFile'
-import { initialState, type AppState } from './state'
+import { fmtN, initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo, type StressOverlay } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
@@ -19,6 +19,14 @@ import { CircularRebarPanel, isCircularSection } from './components/CircularReba
 import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
 import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './components/SLSResults'
 import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
+import {
+  ShearCasesPanel,
+  ShearDiagram,
+  ShearInputsPanel,
+  ShearResultsTable,
+  ShearStepPanel,
+  ShearSummaryPanel,
+} from './components/Shear'
 import { neutralAxisAnalysis, type NeutralAxisResult } from './engine/flexure'
 import {
   buildSlsModel,
@@ -34,6 +42,15 @@ import {
   type CrackWidthSettings,
 } from './engine/crackWidth'
 import { spacingReport } from './engine/barSpacing'
+import {
+  SHEAR_CODE_INFO,
+  shearCheck,
+  shearSectionData,
+  shearSummary,
+  type ShearCaseResult,
+  type ShearSectionData,
+  type ShearSettings,
+} from './engine/shear'
 import {
   Banner,
   Card,
@@ -55,9 +72,13 @@ export default function App() {
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
   const [slsSelCase, setSlsSelCase] = useState<string | null>(state.slsCases[0]?.id ?? null)
   const [crackSelCase, setCrackSelCase] = useState<string | null>(state.crackCases[0]?.id ?? null)
+  const [shearSelCase, setShearSelCase] = useState<string | null>(state.shearCases[0]?.id ?? null)
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
-  /** Which top-bar module is open: the ULS interaction check or the SLS stress check. */
-  const [view, setView] = useState<'uls' | 'sls'>('uls')
+  /**
+   * Which top-bar module is open: the ULS interaction check, the SLS stress
+   * check, or the shear design check. Switching tabs never mutates inputs.
+   */
+  const [view, setView] = useState<'uls' | 'sls' | 'shear'>('uls')
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -150,6 +171,9 @@ export default function App() {
         }
         if (newAppState.crackCases.length > 0) {
           setCrackSelCase(newAppState.crackCases[0].id)
+        }
+        if (newAppState.shearCases.length > 0) {
+          setShearSelCase(newAppState.shearCases[0].id)
         }
         setImportError(null)
         setImportSuccess(`Successfully imported project from "${file.name}"`)
@@ -321,6 +345,29 @@ export default function App() {
   }, [surface, selected, selResult, selNA])
 
   /* ------------------------------------------------------------------ *
+   * Shear design check (IS 456 Cl 40 / IRC 112 Cl 10.3 / IRS CBC Cl 15.4)
+   * — a self-contained module on its own load-case list. Nothing here is
+   * read by (or writes to) the ULS and SLS results above.
+   * ------------------------------------------------------------------ */
+  const shearSection = useMemo(
+    () => shearSectionData(state.geometry, state.bars, state.cover, state.shear),
+    [state.geometry, state.bars, state.cover, state.shear],
+  )
+
+  const shearResults: ShearCaseResult[] = useMemo(() => {
+    if (!valid) return []
+    return state.shearCases.map((lc) =>
+      shearCheck(state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, state.shear, lc),
+    )
+  }, [valid, state.shearCases, state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, state.shear])
+
+  const shearSum = useMemo(() => shearSummary(shearResults), [shearResults])
+
+  const shearSelected = state.shearCases.find((c) => c.id === shearSelCase) ?? state.shearCases[0] ?? null
+  const shearSelResult = shearResults.find((r) => r.loadCase.id === shearSelected?.id) ?? null
+  const shearAnyFail = shearResults.length > 0 && shearSum.anyFail
+
+  /* ------------------------------------------------------------------ *
    * SLS stress check (working-stress method) — shares the same section,
    * materials, reinforcement and load cases as the ULS module; nothing
    * here mutates state, so switching tabs never alters the inputs.
@@ -404,8 +451,13 @@ export default function App() {
 
   const exportPdf = () => {
     if (!surface || !props || results.length === 0) return
+    /**
+     * Capture a figure for the print report: the live element when the current
+     * tab shows it, otherwise the off-screen copy kept mounted for the report
+     * (see `PrintFigures`) so an export from any tab carries every figure.
+     */
     const grab = (id: string, base: string) => {
-      const el = document.getElementById(id)
+      const el = document.getElementById(id) ?? document.getElementById(`print-${id}`)
       return el ? el.outerHTML.replace(/viewBox="[^"]*"/, `viewBox="${base}"`) : '<p><i>figure unavailable</i></p>'
     }
     exportReport({
@@ -421,10 +473,17 @@ export default function App() {
       xuMaxLabel: spec.xuMaxLabel,
       spacing,
       selectedName: selected?.name ?? '',
+      shear: {
+        section: shearSection,
+        settings: state.shear,
+        results: shearResults,
+        summary: shearSum,
+      },
       svgs: {
         section: grab('fig-section', '0 0 460 340'),
         pm: grab('fig-pm', '0 0 520 400'),
         contour: grab('fig-contour', '0 0 460 420'),
+        shear: grab('fig-shear', '0 0 460 250'),
       },
     })
   }
@@ -461,6 +520,10 @@ export default function App() {
               <Icon name="shield" size={13} />
               SLS Check
             </SegButton>
+            <SegButton active={view === 'shear'} onClick={() => setView('shear')} title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
+              <Icon name="link" size={13} />
+              Shear Check
+            </SegButton>
           </SegGroup>
 
           <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
@@ -494,6 +557,31 @@ export default function App() {
                     <Icon name={anyFail ? 'alert' : 'check'} size={10} />
                   </span>
                   {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+                </span>
+              </div>
+            )}
+
+            {view === 'shear' && shearResults.length > 0 && shearSum.governing && (
+              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
+                <span title="Largest design shear force among the shear cases">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Vu gov</span>
+                  {fmtN(shearSum.governing.loadCase.Vu, 0)} kN
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span title="Shear resistance of the section with the provided links at the governing case">
+                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">VRd</span>
+                  {fmtN(shearSum.governing.VRd / 1e3, 0)} kN
+                </span>
+                <span className="h-3.5 w-px bg-edge" />
+                <span
+                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
+                    shearAnyFail ? 'text-bad' : 'text-ok'
+                  }`}
+                >
+                  <span className={`grid h-[15px] w-[15px] place-items-center rounded-full ${shearAnyFail ? 'bg-bad/12' : 'bg-ok/12'}`}>
+                    <Icon name={shearAnyFail ? 'alert' : 'check'} size={10} />
+                  </span>
+                  {shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
                 </span>
               </div>
             )}
@@ -549,6 +637,18 @@ export default function App() {
               </span>
             )}
 
+            {view === 'shear' && shearResults.length > 0 && (
+              <span
+                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
+                  shearAnyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
+                }`}
+                title="Shear design verdict across all shear cases"
+              >
+                <Icon name={shearAnyFail ? 'alert' : 'check'} size={10} />
+                {shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
+              </span>
+            )}
+
             <button
               type="button"
               onClick={handleImportClick}
@@ -571,8 +671,8 @@ export default function App() {
               type="button"
               className={btnPrimaryCls}
               onClick={exportPdf}
-              disabled={!surface || !props}
-              title="Open the full calculation report in a print window — use 'Save as PDF'"
+              disabled={!surface || !props || results.length === 0}
+              title="Open the full calculation report (ULS, SLS and shear) in a print window — use 'Save as PDF'"
             >
               <Icon name="report" size={13} />
               <span className="hidden sm:inline">PDF report</span>
@@ -644,13 +744,25 @@ export default function App() {
             customizeBarDiameter={customizeBarDiameter}
             update={(bars) => update({ bars, predefined: state.predefined })}
           />
-          <LoadCasesPanel
-            cases={view === 'uls' ? state.cases : state.slsCases}
-            selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
-            update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
-            select={view === 'uls' ? setSelCase : setSlsSelCase}
-            subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
-          />
+          {view === 'shear' ? (
+            <>
+              <ShearInputsPanel state={state} update={update} section={shearSection} />
+              <ShearCasesPanel
+                cases={state.shearCases}
+                selected={shearSelected?.id ?? null}
+                update={(shearCases) => update({ shearCases })}
+                select={setShearSelCase}
+              />
+            </>
+          ) : (
+            <LoadCasesPanel
+              cases={view === 'uls' ? state.cases : state.slsCases}
+              selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
+              update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
+              select={view === 'uls' ? setSelCase : setSlsSelCase}
+              subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
+            />
+          )}
           {view === 'sls' && (
             <>
               <LoadCasesPanel
@@ -752,6 +864,80 @@ export default function App() {
         </div>
         )}
 
+        {view === 'shear' && (
+          <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
+            {issues.length > 0 && (
+              <Banner tone="error">
+                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {issues.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+            {coverFitIssues.length > 0 && (
+              <Banner tone="warn">
+                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {coverFitIssues.map((issue) => (
+                    <li key={issue.axis}>
+                      {issue.message} Reduce the face covers, use a smaller bar, or increase the section size.
+                    </li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+
+            <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
+              <Card title="Section" subtitle="shared with the ULS and SLS modules">
+                <SectionPreview
+                  geometry={state.geometry}
+                  bars={state.bars}
+                  props={props}
+                  cover={state.cover}
+                  audit={coverAudit}
+                  radialCoverOnly={state.shapeClass === 'circ'}
+                  overlapping={spacing.overlapping}
+                  activeFace={activeFace}
+                  onHoverFace={setActiveFace}
+                  onSelectFace={setActiveFace}
+                />
+              </Card>
+              <ShearSummaryPanel
+                code={state.code}
+                summary={shearSum}
+                settings={state.shear}
+                section={shearSection}
+                figureId="fig-shear"
+              />
+            </div>
+
+            <ShearResultsTable
+              code={state.code}
+              results={shearResults}
+              selected={shearSelected?.id ?? null}
+              select={setShearSelCase}
+              section={shearSection}
+            />
+            <ShearStepPanel code={state.code} lc={shearSelected} result={shearSelResult} section={shearSection} />
+
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+              <p className="max-w-[92ch]">
+                Shear design follows the clauses of the selected code independently of the ULS interaction and SLS
+                stress checks: the concrete shear strength, the design of the links, the minimum and maximum
+                reinforcement limits and the spacing rules are those of <b>{spec.name}</b>. b, d and A
+                <sub>sl</sub> are taken from the section and reinforcement entered on the left; enter them as
+                overrides only when the shear plane differs from the bending plane. The shear load cases are
+                entered separately — they are Vu / Pu pairs, not the ULS P–Mx–My set.
+              </p>
+              <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                Shear design · {SHEAR_CODE_INFO[state.code].references[0]?.split(' ')[0] ?? ''}
+              </span>
+            </footer>
+          </div>
+        )}
+
         {view === 'sls' && (
           <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
             {issues.length > 0 && (
@@ -842,6 +1028,64 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/*
+        Figures for the print report that the current tab does not show, kept
+        mounted off-screen so `exportReport` can capture every figure — the
+        section, P–M diagram, capacity contour and shear diagram — from any tab.
+      */}
+      <PrintFigures
+        show={`${view === 'uls' ? '' : 'pm contour '}${view === 'shear' ? '' : 'shear'}`.trim()}
+        surface={surface}
+        cases={state.cases}
+        selected={selected}
+        result={selResult}
+        shearSection={shearSection}
+        shearSettings={state.shear}
+        shearResult={shearSum.governing}
+      />
+    </div>
+  )
+}
+
+/** Off-screen copies of the report figures the current tab does not render. */
+function PrintFigures({
+  show,
+  surface,
+  cases,
+  selected,
+  result,
+  shearSection,
+  shearSettings,
+  shearResult,
+}: {
+  /** Space-separated figure keys to mount: `pm`, `contour`, `shear`. */
+  show: string
+  surface: InteractionSurface | null
+  cases: AppState['cases']
+  selected: AppState['cases'][number] | null
+  result: CaseResult | null
+  shearSection: ShearSectionData
+  shearSettings: ShearSettings
+  shearResult: ShearCaseResult | null
+}) {
+  const keys = new Set(show.split(/\s+/).filter(Boolean))
+  if (keys.size === 0) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed left-[-9999px] top-0 h-px w-px overflow-hidden">
+      {keys.has('pm') && surface && (
+        <div id="print-fig-pm">
+          <PMChart surface={surface} cases={cases} selected={selected} />
+        </div>
+      )}
+      {keys.has('contour') && surface && (
+        <div id="print-fig-contour">
+          <ContourChart surface={surface} result={result} />
+        </div>
+      )}
+      {keys.has('shear') && (
+        <ShearDiagram id="print-fig-shear" section={shearSection} settings={shearSettings} result={shearResult} />
+      )}
     </div>
   )
 }

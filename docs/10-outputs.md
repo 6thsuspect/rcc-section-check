@@ -28,6 +28,12 @@ Every figure (section preview, P–M diagram, Mx–My contour) carries:
   number, computed value, limit, and status.
 - **Section dashboard**: `Ag`, centroid, `Ixx`, `Iyy`, `Ixy`, `Asc`, p%, bar count,
   `Puz`.
+- **Shear tab**: per shear case the design shear force, nominal shear stress, the concrete
+  shear strength used, the web-crushing limit, the concrete resistance, the required and
+  provided Asv/sv, the maximum spacing and the VEd/VRd utilisation with a PASS/FAIL verdict;
+  a summary strip with the governing case, the provided-vs-required comparison and the link
+  diagram; the full step-by-step calculation of the selected case (clause, expression,
+  substituted value) and the shear clause-compliance table.
 
 ## 10.2 Report
 
@@ -56,4 +62,8 @@ follow the check without the software:
 9. Clause-compliance table with computed value, limit, clause reference and status —
    including checks that passed, so the reviewer sees what was covered, not only what
    failed.
-10. Method statement and disclaimer.
+10. **Shear design check**: the shear inputs used (direction, tension face, section b/d/Asl,
+    provided links), the worst required Asv/sv and web-crushing utilisation, the per-case shear
+    table, the link diagram and the step-by-step calculation with its compliance table for the
+    governing case.
+11. Method statement and disclaimer.
