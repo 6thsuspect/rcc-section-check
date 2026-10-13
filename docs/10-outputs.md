@@ -14,6 +14,15 @@ Every figure (section preview, P–M diagram, Mx–My contour) carries:
   drawn as a dash-dot line with the compression zone shaded; the caption reports the NA
   angle.
 
+### Branding
+
+The application logo — the bar/section lattice of the header mark on the ink tile — is the
+browser-tab favicon: `public/favicon.svg` (with a dark-tab variant via `prefers-color-scheme`),
+`public/favicon-32.png` for browsers without SVG favicons, and `public/apple-touch-icon.png` for
+home-screen pinning. `npm run icons` regenerates the PNGs from the same geometry after any change
+to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header mark in
+`src/App.tsx` are kept in step).
+
 ## 10.1 On-screen results
 
 - **Interaction diagrams**, each with every load case overlaid as a point:

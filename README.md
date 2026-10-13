@@ -63,6 +63,14 @@ list, and the load cases together with the exposure-class and load-duration inpu
 ULS list and the SLS stress list. The result, permissible width, utilisation and clause update
 automatically.
 
+## Branding
+
+The application logo is the bar/section lattice of the header mark on the ink tile: SVG at
+`public/favicon.svg` (browser tab, with `prefers-color-scheme` inversion for dark tab strips),
+`public/favicon-32.png` fallback and `public/apple-touch-icon.png` for home-screen pinning.
+Regenerate the PNGs after any change to the mark with `npm run icons` (dependency-free — the
+geometry in `scripts/make-favicons.mjs` mirrors the SVG).
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest
@@ -74,12 +82,15 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # engine regression suite (verified worked-example values)
 npm run build      # type-check + production build
+npm run icons      # regenerate favicon PNGs from the logo geometry
 ```
 
 ## Layout
 
 ```
 docs/                     Full specification (12 chapters, clause-verified)
+public/                   Application logo: favicon.svg + generated PNG fallbacks
+scripts/                  make-favicons.mjs — renders the logo PNGs (npm run icons)
 src/engine/               Code-agnostic analysis kernel
   types.ts                Shared types (units: N, mm internally)
   geometry.ts             Shoelace properties, polygon validity, scanline chords

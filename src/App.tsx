@@ -493,6 +493,8 @@ export default function App() {
       <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
         <div className={`${shell} flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5`}>
           <div className="flex min-w-0 items-center gap-2.5">
+            {/* Application mark — mirrored as the browser-tab favicon
+                (public/favicon.svg, same "bars" lattice on the ink tile). */}
             <span
               aria-hidden="true"
               className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] bg-ink text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]"

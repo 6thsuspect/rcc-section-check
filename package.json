@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "icons": "node scripts/make-favicons.mjs",
     "test": "vitest run",
     "preview": "vite preview"
   },
