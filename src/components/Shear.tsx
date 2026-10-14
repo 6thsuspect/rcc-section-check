@@ -195,39 +195,48 @@ export function ShearInputsPanel({
           <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Provided links (stirrups)
           </span>
-          <div className="flex flex-wrap items-end gap-1.5">
+          {/* ⌀ and the effective leg count share a row: one grid so the two
+              labels and their boxes always sit at the same level, whatever the
+              hints below them do, and neither field can wrap away from the
+              other. Both cells are fluid and therefore the same width. */}
+          <div className="grid min-w-0 grid-cols-2 gap-x-2 gap-y-2">
             <NumField
+              id="shear-link-dia"
               label="Link ⌀"
               unit="mm"
-              w="w-[92px]"
               value={s.linkDia}
               step={2}
               min={6}
               onChange={(v) => setShear({ linkDia: v })}
             />
             <NumField
+              id="shear-link-legs"
               label="Legs"
-              w="w-[78px]"
               value={layout.effectiveLegs}
               disabled
               onChange={() => {}}
               hint="in the detailing editor"
               title="Legs of the closed link plus the intermediate legs crossing the shear plane — set them in the detailing editor below."
             />
-            <NumField
-              label="Spacing"
-              unit="mm"
-              w="min-w-[132px] flex-1"
-              value={s.linkSpacing}
-              min={25}
-              step={10}
-              onChange={(v) => setShear({ linkSpacing: v })}
-              hint={
-                section && s.linkSpacing > 0.75 * Math.max(section.d, 1) + 1e-9
-                  ? `above 0.75 d = ${fmtN(0.75 * Math.max(section.d, 1), 0)} mm — see the code limit`
-                  : undefined
-              }
-            />
+            {/* the spacing takes the full width of the row above it, so four
+                digits and the unit are never clipped */}
+            <div className="col-span-2 min-w-0">
+              <NumField
+                id="shear-link-spacing"
+                label="Spacing"
+                unit="mm"
+                w="min-w-[132px]"
+                value={s.linkSpacing}
+                min={25}
+                step={10}
+                onChange={(v) => setShear({ linkSpacing: v })}
+                hint={
+                  section && s.linkSpacing > 0.75 * Math.max(section.d, 1) + 1e-9
+                    ? `above 0.75 d = ${fmtN(0.75 * Math.max(section.d, 1), 0)} mm — see the code limit`
+                    : undefined
+                }
+              />
+            </div>
           </div>
           <span className="text-[9.5px] leading-tight text-ink-3">
             A<sub>sv</sub> = {layout.effectiveLegs} × ⌀{fmtN(s.linkDia, 0)} = {fmtN(layout.totalLegArea, 1)} mm² per set of legs ·

@@ -124,6 +124,44 @@ describe('shear panels render hygiene', () => {
     expect(msgs).toEqual([])
   })
 
+  it('puts the link diameter and the leg count on one row of a shared grid', () => {
+    const f = fixture('IS456')
+    const html = renderToStaticMarkup(
+      <ShearInputsPanel state={f.s} update={() => {}} section={f.section} layout={f.layout} />,
+    )
+    // the Provided links block, up to the Asv caption that closes it
+    const from = html.indexOf('Provided links (stirrups)')
+    const to = html.indexOf('A<sub>sv</sub>', from)
+    expect(from).toBeGreaterThan(-1)
+    expect(to).toBeGreaterThan(from)
+    const block = html.slice(from, to)
+
+    // ⌀ and Legs are the two cells of a two-column grid — one row, and neither
+    // field can wrap away from the other however narrow the panel gets
+    const gridAt = block.indexOf('grid min-w-0 grid-cols-2')
+    const spacingAt = block.indexOf('col-span-2')
+    expect(gridAt).toBeGreaterThan(-1)
+    expect(spacingAt).toBeGreaterThan(gridAt)
+    const pair = block.slice(gridAt, spacingAt)
+    expect([...pair.matchAll(/<label/g)]).toHaveLength(2)
+    expect(pair.indexOf('shear-link-dia')).toBeLessThan(pair.indexOf('shear-link-legs'))
+    // both labels and both values are rendered in full, and the cells are fluid
+    // (the same width) rather than a fixed px pair that could overflow
+    expect(pair).toContain('Link ⌀')
+    expect(pair).toContain('Legs')
+    expect(pair).toContain('value="8"')
+    expect(pair).toContain(`value="${f.layout.effectiveLegs}"`)
+    expect(pair).not.toContain('w-[92px]')
+    expect(pair).not.toContain('w-[78px]')
+    // the spacing field takes the full width of the row below, so four digits
+    // and the unit stay visible, and the hint column does not disturb the pair
+    const spacing = block.slice(spacingAt)
+    expect(spacing).toContain('shear-link-spacing')
+    expect(spacing).toContain('min-w-[132px]')
+    expect(block).toContain('in the detailing editor')
+    expect(msgs).toEqual([])
+  })
+
   it('renders the empty states without cases', () => {
     const { section } = fixture('IS456')
     const summary = shearSummary([])
