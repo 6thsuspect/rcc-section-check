@@ -82,7 +82,11 @@ The shear tab carries its own reinforcement diagram and stirrup editor, next to 
   arrangement is re-derived whenever the section, the cover or the bars change;
 - the **editor** adds, removes, repositions (in mm) and mirrors legs and cross-ties, switches a
   member between the two orientations, distributes positions evenly, shows the clear spacing
-  between members and the resulting `Asv`, `Asv/sv` and code minimum; and
+  between members and the resulting `Asv`, `Asv/sv` and code minimum. A position is adjustable
+  by typing it or by **scrolling the wheel over the field** — one notch moves the member by the
+  field's own 10 mm step (the leg count by one leg), the drawing and the checks follow the notch
+  immediately, and the page is held still while the wheel is over the field; the field's own
+  limits and validation are the ones that apply, and keyboard entry is untouched; and
 - every arrangement is **validated, never silently changed**: positions outside the section, a
   leg or tie that does not cross the ring, a member duplicating one of the ring's own legs, too
   small a clear gap, a ring that does not fit inside the section with the entered cover, and any

@@ -73,6 +73,14 @@ to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header ma
   adds a member that would double one of the ring's own runs or sit closer than the minimum
   clear spacing, so it always passes the detailing validation it is checked against.
 
+  Every numeric field in the editor — each member position and the leg count — is editable
+  with the **mouse wheel** as well as the keyboard: one notch steps the value by the field's own
+  step (10 mm for a member position, one leg for the leg count), the step is taken from the
+  value on screen so no notch can be rounded away, the field's own limits and validation are
+  the ones that apply, the diagram and the check results follow the notch immediately, and the
+  page is held still while the wheel is over the field (elsewhere it scrolls as usual, and
+  keyboard typing is untouched).
+
   The drawing is a detailing view: it never by itself certifies compliance. The values shown
   (Asv, Asv/sv, sv,max, VEd/VRd) all come from the selected code's check run on the same
   inputs — the caption reports the components of the provided Asv as drawn (⌀, area per leg,

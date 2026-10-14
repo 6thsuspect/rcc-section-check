@@ -275,6 +275,22 @@ describe('stirrup detailing editor', () => {
     expect(msgs).toEqual([])
   })
 
+  it('makes every member position field wheel-editable, on the fields own step', () => {
+    const { html, layout } = detailing()
+    expect(layout.members).toHaveLength(2) // the fixture's two internal legs
+    // one wheel notch moves a member by the step its spinner arrows use, and the
+    // field says so — the value, the drawing and the checks follow the notch
+    const memberFields = [...html.matchAll(/<input[^>]*type="number"[^>]*step="10"[^>]*aria-label="(Leg|Cross-tie) position[^"]*"/g)]
+    expect(memberFields).toHaveLength(layout.members.length)
+    expect(html).toContain('scroll the wheel over the field to step it by 10 mm')
+    expect(html).toContain('click it and use the arrow keys')
+    // the section heading explains the convention next to the positions
+    expect(html).toContain('the diagram and the checks follow every notch')
+    // the leg count is wheel-editable too, with its own step of one leg
+    expect(html).toContain('Scroll the wheel over the field to step it by 1.')
+    expect(msgs).toEqual([])
+  })
+
   it('reports an invalid manual arrangement with its reason and keeps every entered position', () => {
     const { html, layout, validation } = detailing({
       linkLayout: 'manual',

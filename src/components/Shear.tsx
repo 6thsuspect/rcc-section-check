@@ -53,6 +53,7 @@ import {
   tblCls,
   tdCls,
   thCls,
+  useWheelStep,
 } from './ui'
 
 /** Normalised positions are kept to the entered precision. */
@@ -1291,7 +1292,15 @@ export function ShearDiagram({
 /* Detailing editor                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Compact inline millimetre field for the member rows. */
+/** One wheel notch on a member position — the step its spinner arrows use. */
+const MEMBER_STEP_MM = 10
+
+/**
+ * Compact inline millimetre field for the member rows. Editable with the wheel
+ * as well as the keyboard: a notch moves the member by `MEMBER_STEP_MM`, the
+ * diagram and the validation follow immediately, and the entered value is never
+ * clamped — an arrangement that cannot be built is reported below it.
+ */
 function MmField({
   value,
   onChange,
@@ -1303,11 +1312,20 @@ function MmField({
   title: string
   w?: string
 }) {
+  const wheelRef = useWheelStep<HTMLInputElement>({
+    value,
+    onChange,
+    step: MEMBER_STEP_MM,
+  })
   return (
-    <span className={`${fieldBoxCls} ${w}`} title={title}>
+    <span
+      className={`${fieldBoxCls} ${w}`}
+      title={`${title} — scroll the wheel over the field to step it by ${MEMBER_STEP_MM} mm, or click it and use the arrow keys.`}
+    >
       <input
+        ref={wheelRef}
         type="number"
-        step={10}
+        step={MEMBER_STEP_MM}
         className={fieldCls}
         value={Number.isFinite(value) ? Math.round(value * 10) / 10 : ''}
         onChange={(e) => onChange(parseFloat(e.target.value))}
@@ -1590,6 +1608,7 @@ export function ShearDetailingCard({
               value={manual ? 2 + legs.length : layout.effectiveLegs}
               min={2}
               step={1}
+              wheel
               onChange={setLegCount}
               title="Total legs crossing the shear plane: the 2 legs of the closed link plus the intermediate legs. In manual mode this adds or removes intermediate legs."
             />
@@ -1632,7 +1651,9 @@ export function ShearDetailingCard({
                       <b>columns of the longitudinal bars</b>, so a leg runs from the bottom reinforcement to the top
                       reinforcement and a cross-tie is hooked around bars on its level. Positions are section
                       coordinates in mm along the axis the member cuts: legs across the width, cross-ties across the
-                      depth.
+                      depth. Type a position, or scroll the wheel over the field to step it by {MEMBER_STEP_MM} mm —
+                      the diagram and the checks follow every notch, and a position that cannot be built is reported
+                      rather than corrected.
                       {legColumns.length > 0 && (
                         <>
                           {' '}
