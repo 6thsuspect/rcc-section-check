@@ -49,6 +49,38 @@ b, d and Asl come from the section and bar table (with manual overrides), the te
 selectable, and every result is shown as a step-by-step calculation with clause references plus
 a per-case PASS/FAIL verdict and a provided-vs-required reinforcement comparison.
 
+#### Link detailing & the shear reinforcement diagram
+The shear tab carries its own reinforcement diagram and stirrup editor, next to the results:
+
+- the figure **replicates the main cross-section** — outline, voids, every longitudinal bar at
+  its own coordinate and diameter, the clear cover of each face — and adds the resolved link
+  ring, the intermediate legs and the cross-ties, with a member elevation showing the provided
+  link spacing (`fig-shear`, same drawing framework, zoom controls and print capture as the
+  other figures);
+- line styles are shared by drawing, legend and editor: solid blue = closed outer link (2 legs
+  in Asv), dashed blue = intermediate leg (in Asv), dash-dot ink = cross-tie (restrains a bar,
+  not counted in Asv), filled black = tension bars, hollow = other bars, dotted = the shear
+  plane at the effective depth d;
+- the **link type** (auto / rectangular / circular), **arrangement** (automatic from the bar
+  layout, or manual) and the ⌀, effective leg count and spacing are inputs; the effective legs
+  and `Asv = n·⌀²π/4` feed the resistance check, and changing them changes the results — no
+  design equation is modified for the drawing;
+- the **automatic arrangement** reads the bar layout: a bar counts as restrained when a link
+  bend, an intermediate leg or a cross-tie lies within 150 mm of it. A column the ring cannot
+  reach gets an **intermediate leg** (a leg restrains the whole column and is link steel counted
+  in Asv, which is how a wide section is detailed); a bar a leg cannot cover — a side-face bar
+  beside one of the ring's own legs, or a column too close to another leg — gets a **cross-tie**.
+  The arrangement never violates the rules it is validated against, and it is re-derived
+  whenever the section, the cover or the bars change;
+- the **editor** adds, removes, repositions (in mm) and mirrors legs and cross-ties, switches a
+  member between the two orientations, distributes positions evenly, shows the clear spacing
+  between members and the resulting `Asv`, `Asv/sv` and code minimum; and
+- every arrangement is **validated, never silently changed**: positions outside the section, a
+  leg or tie that does not cross the ring, a member duplicating one of the ring's own legs, too
+  small a clear gap, a ring that does not fit inside the section with the entered cover, and any
+  bar left unrestrained are each reported with their reason. The drawing is a detailing view —
+  compliance always comes from the code check on the same inputs.
+
 ### Crack-width check (SLS tab)
 The crack-width check reuses the cracked-section tension-steel stress σs, neutral-axis depth and
 effective depth from the SLS stress solve, and applies the method of the selected code:
@@ -104,12 +136,14 @@ src/engine/               Code-agnostic analysis kernel
   sls.ts                  SLS working-stress check (σcbc / σst, transformed section)
   crackWidth.ts           SLS crack-width check per code (IS 456 Annex F / IRC:112 / IRS CBC)
   shear.ts                Shear design check per code (capacity, links, limits, spacing)
+  stirrups.ts             Link ring, automatic leg/tie arrangement, resolution + validation
   __tests__/              Golden regression tests (docs/11 worked example)
 src/components/           Editors, section preview, charts, results panels
   CoverPanel.tsx          Per-face cover inputs, schematic and layout actions
   SLSResults.tsx          SLS stress table, summary and calculation panels
   CrackWidth.tsx          SLS crack-width inputs, per-case results and calculation panels
-  Shear.tsx               Shear inputs, load cases, diagram, results and calculation panels
+  Shear.tsx               Shear inputs, load cases, reinforcement diagram + stirrup editor,
+                          results and calculation panels
 src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear modules)
 ```
 
@@ -119,6 +153,10 @@ src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear mo
   constant Pu) governs the verdict; the code's simplified power-law interaction
   (IS 456 Cl 39.6 / IRC 112 Cl 8.3.2 / IRS CBC Cl 15.6.4 eq 16) is computed and
   reported alongside for traceability.
+- The shear diagram and the stirrup editor share one resolved link layout (`engine/stirrups.ts`)
+  with the shear check, so the drawn legs, the effective `Asv` and the reported numbers can
+  never disagree; entered member positions are kept exactly as typed and reported with their
+  reason when they cannot be built.
 - Cover is a **per-face** driving datum measured to the outside of the links: an automatic
   bar sits `cover(face) + ⌀tie + ⌀bar/2` from its associated face, a bar lining an internal
   void uses that void's own cover (blank = inherit the matching outer face), and circular

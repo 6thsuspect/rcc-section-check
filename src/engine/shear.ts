@@ -87,6 +87,23 @@ export interface ShearSettings {
   enhance: boolean
   /** IRC 112 strut inclination cot θ (1.0 … 2.5). */
   cotTheta: number
+  /**
+   * Shear-reinforcement type — the shape of the closed link. `auto` follows the
+   * section (circular for circular/hollow-circular sections, a perimeter link
+   * for everything else); the explicit values force that shape and are flagged
+   * when the section cannot take it.
+   */
+  linkShape: 'auto' | 'rectangular' | 'circular'
+  /**
+   * Where the leg / cross-tie arrangement comes from. `auto` derives it from the
+   * longitudinal cage on every render (so it follows bar and geometry edits);
+   * `manual` keeps the entered positions.
+   */
+  linkLayout: 'auto' | 'manual'
+  /** Intermediate leg positions, manual mode, 0…1 across the shear-plane width. */
+  legPositions: number[]
+  /** Cross-tie positions, manual mode, 0…1 across the shear-plane depth. */
+  tiePositions: number[]
 }
 
 export const DEFAULT_SHEAR: ShearSettings = {
@@ -102,6 +119,10 @@ export const DEFAULT_SHEAR: ShearSettings = {
   criticalDistance: 0,
   enhance: false,
   cotTheta: 1.0,
+  linkShape: 'auto',
+  linkLayout: 'auto',
+  legPositions: [],
+  tiePositions: [],
 }
 
 export const MIN_COT_THETA = 1.0

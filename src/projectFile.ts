@@ -27,7 +27,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.4',
+    version: '1.5',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -136,6 +136,22 @@ export function parseProjectFile(jsonText: string): AppState {
       )
 
   const rawShear = rawState.shear && typeof rawState.shear === 'object' ? rawState.shear : {}
+  /** Normalised 0…1 member positions, deduped and sorted. */
+  const sanitiserPositions = (v: any): number[] => {
+    if (!Array.isArray(v)) return []
+    const out: number[] = []
+    for (const raw of v) {
+      // only numbers (or numeric strings) count — null / booleans are not positions
+      if (typeof raw !== 'number' && typeof raw !== 'string') continue
+      const n = Number(raw)
+      if (!Number.isFinite(n)) continue
+      // keep slightly out-of-range entries: the editor reports them instead of
+      // quietly moving the user's link layout
+      const u = Math.min(Math.max(n, -1), 2)
+      if (out.every((x) => Math.abs(x - u) > 1e-6)) out.push(u)
+    }
+    return out.sort((a, b) => a - b)
+  }
   const shearAxis: ShearAxis = rawShear.axis === 'x' ? 'x' : 'y'
   const faceOptions = tensionFaceOptions(shearAxis)
   const shear: ShearSettings = {
@@ -153,6 +169,12 @@ export function parseProjectFile(jsonText: string): AppState {
     cotTheta: Number.isFinite(rawShear.cotTheta)
       ? Math.min(MAX_COT_THETA, Math.max(MIN_COT_THETA, Number(rawShear.cotTheta)))
       : DEFAULT_SHEAR.cotTheta,
+    // v1.5 link detailing: shape, arrangement source and manual leg / tie lists.
+    linkShape:
+      rawShear.linkShape === 'rectangular' || rawShear.linkShape === 'circular' ? rawShear.linkShape : DEFAULT_SHEAR.linkShape,
+    linkLayout: rawShear.linkLayout === 'manual' ? 'manual' : DEFAULT_SHEAR.linkLayout,
+    legPositions: sanitiserPositions(rawShear.legPositions),
+    tiePositions: sanitiserPositions(rawShear.tiePositions),
   }
 
   const sanitized: AppState = {

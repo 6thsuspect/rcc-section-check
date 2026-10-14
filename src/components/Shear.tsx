@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import type { DesignCodeId, RebarFace } from '../engine/types'
+import { useState, type ReactNode } from 'react'
+import type { DesignCodeId, Rebar, RebarFace, SectionGeometry } from '../engine/types'
 import { CODES } from '../engine/codes'
-import { barArea } from '../engine/geometry'
+import { centroid } from '../engine/geometry'
 import {
   MAX_COT_THETA,
   MIN_COT_THETA,
@@ -14,11 +14,25 @@ import {
   type ShearStep,
   type ShearSummary,
 } from '../engine/shear'
+import {
+  RESTRAINT_LIMIT,
+  autoLinkMembers,
+  hookPath,
+  memberCoordinate,
+  normalisedPosition,
+  suggestMemberPosition,
+  type LinkLayout,
+  type LinkMemberKind,
+  type LinkValidation,
+  type ResolvedLinkMember,
+} from '../engine/stirrups'
 import { fmtN, newShearCaseId, type AppState } from '../state'
 import {
   Card,
   Check,
   Chip,
+  Banner,
+  EmptyState,
   Icon,
   InfoTooltip,
   NumField,
@@ -30,12 +44,28 @@ import {
   btnMiniCls,
   cellCls,
   codeChipCls,
+  fieldBoxCls,
+  fieldCls,
   noteCls,
   noteSmCls,
+  rowDelCls,
   tblCls,
   tdCls,
   thCls,
 } from './ui'
+
+/** Normalised positions are kept to the entered precision. */
+const round3 = (v: number) => Math.round(v * 1000) / 1000
+
+/** Sorted, de-duplicated normalised position list. */
+function tidyPositions(list: number[]): number[] {
+  const out: number[] = []
+  for (const v of [...list].sort((a, b) => a - b)) {
+    if (!Number.isFinite(v)) continue
+    if (!out.some((x) => Math.abs(x - v) < 1e-6)) out.push(round3(v))
+  }
+  return out
+}
 
 const FACE_LABEL: Record<RebarFace, string> = { bottom: 'Bottom', right: 'Right', top: 'Top', left: 'Left' }
 
@@ -63,10 +93,13 @@ export function ShearInputsPanel({
   state,
   update,
   section,
+  layout,
 }: {
   state: AppState
   update: (patch: Partial<AppState>) => void
   section: ShearSectionData
+  /** Resolved link layout — supplies the effective leg count actually used. */
+  layout: LinkLayout
 }) {
   const s = state.shear
   const setShear = (patch: Partial<ShearSettings>) => update({ shear: { ...s, ...patch } })
@@ -160,21 +193,45 @@ export function ShearInputsPanel({
           <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Provided links (stirrups)
           </span>
-          <div className="grid grid-cols-3 items-end gap-1.5">
-            <NumField label="Link ⌀" unit="mm" value={s.linkDia} step={2} min={6} onChange={(v) => setShear({ linkDia: v })} />
+          <div className="flex flex-wrap items-end gap-1.5">
+            <NumField
+              label="Link ⌀"
+              unit="mm"
+              w="w-[92px]"
+              value={s.linkDia}
+              step={2}
+              min={6}
+              onChange={(v) => setShear({ linkDia: v })}
+            />
             <NumField
               label="Legs"
-              value={s.linkLegs}
-              min={2}
-              step={1}
-              onChange={(v) => setShear({ linkLegs: Math.max(2, Math.round(v)) })}
-              title="Number of vertical legs of a closed link crossing the shear plane."
+              w="w-[78px]"
+              value={layout.effectiveLegs}
+              disabled
+              onChange={() => {}}
+              hint="in the detailing editor"
+              title="Legs of the closed link plus the intermediate legs crossing the shear plane — set them in the detailing editor below."
             />
-            <NumField label="Spacing" unit="mm" value={s.linkSpacing} min={25} step={10} onChange={(v) => setShear({ linkSpacing: v })} />
+            <NumField
+              label="Spacing"
+              unit="mm"
+              w="min-w-[132px] flex-1"
+              value={s.linkSpacing}
+              min={25}
+              step={10}
+              onChange={(v) => setShear({ linkSpacing: v })}
+              hint={
+                section && s.linkSpacing > 0.75 * Math.max(section.d, 1) + 1e-9
+                  ? `above 0.75 d = ${fmtN(0.75 * Math.max(section.d, 1), 0)} mm — see the code limit`
+                  : undefined
+              }
+            />
           </div>
           <span className="text-[9.5px] leading-tight text-ink-3">
-            A<sub>sv</sub> = {s.linkLegs} × ⌀{fmtN(s.linkDia, 0)} = {fmtN(s.linkLegs * barArea(s.linkDia), 1)} mm² per link ·
-            A<sub>sv</sub>/s<sub>v</sub> = {fmtN((s.linkLegs * barArea(s.linkDia)) / Math.max(s.linkSpacing, 1), 3)} mm²/mm
+            A<sub>sv</sub> = {layout.effectiveLegs} × ⌀{fmtN(s.linkDia, 0)} = {fmtN(layout.totalLegArea, 1)} mm² per set of legs ·
+            A<sub>sv</sub>/s<sub>v</sub> = {fmtN(layout.asvPerS, 3)} mm²/mm — {layout.intermediate.length} intermediate leg
+            {layout.intermediate.length === 1 ? '' : 's'}
+            {layout.ties.length > 0 ? ` · ${layout.ties.length} cross-tie${layout.ties.length === 1 ? '' : 's'}` : ''}
           </span>
         </div>
       </div>
@@ -584,20 +641,7 @@ export function ShearResultsTable({
  * Verdict strip plus the governing case's numbers: the shear diagram, the
  * governing capacity and the utilisation of the provided reinforcement.
  */
-export function ShearSummaryPanel({
-  code,
-  summary,
-  settings,
-  section,
-  figureId,
-}: {
-  code: DesignCodeId
-  summary: ShearSummary
-  settings: ShearSettings
-  section: ShearSectionData
-  /** DOM id for the diagram so the print report can capture it (fig-shear). */
-  figureId?: string
-}) {
+export function ShearSummaryPanel({ code, summary }: { code: DesignCodeId; summary: ShearSummary }) {
   const info = SHEAR_CODE_INFO[code]
   const g = summary.governing
   return (
@@ -649,10 +693,6 @@ export function ShearSummaryPanel({
             />
           </div>
 
-          <div className="mt-3">
-            <ShearDiagram id={figureId} section={section} settings={settings} result={g} />
-          </div>
-
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <SubCard title="Maximum shear stress">
               <p className={`${noteSmCls} tnum`}>{info.maxStress}</p>
@@ -682,211 +722,990 @@ export function ShearSummaryPanel({
 /* Diagram                                                             */
 /* ------------------------------------------------------------------ */
 
+/** Figure viewBox — the print report captures exactly this box. */
+const DIAG_W = 460
+const DIAG_H = 340
+/** Section panel: outline box, plus the margin reserved for dimension lines. */
+const SEC_X0 = 12
+const SEC_X1 = 266
+const SEC_Y0 = 48
+const SEC_Y1 = 236
+const SEC_MARGIN = { left: 54, right: 46, top: 8, bottom: 34 }
+/** Member elevation (link schedule) at the top of the right column. */
+const ELEV_X0 = 272
+const ELEV_X1 = 452
+const ELEV_Y0 = 48
+const ELEV_Y1 = 126
+/** Legend rows under the elevation. */
+const LEGEND_Y0 = 174
+const LEGEND_DY = 15
+
+/** Line style per link member kind — the drawing, the legend and the editor share it. */
+const MEMBER_STYLE: Record<
+  LinkMemberKind,
+  { cls: string; dot: string; dash?: string; width: number; label: string }
+> = {
+  leg: { cls: 'stroke-capacity', dot: 'fill-capacity', dash: '4 2', width: 1.5, label: 'Internal leg' },
+  // dash-dot and neutral ink: a cross-tie restrains a bar but is not link steel
+  // in Asv, so it must read differently from the blue legs at a glance
+  tie: { cls: 'stroke-ink-2', dot: 'fill-ink-2', dash: '3 1.6 0.9 1.6', width: 1.2, label: 'Cross-tie' },
+}
+
 /**
- * Shear diagram: the link (stirrup) cross-section with its legs on the left and
- * a member elevation with the provided link spacing on the right, annotated
- * with the shear force and the effective depth. Pure SVG so it can be captured
- * into the print report exactly like the other figures.
+ * Shear reinforcement diagram: the *actual* main cross-section (same geometry,
+ * same clear cover and the same longitudinal bar coordinates as the section
+ * preview), set out with the resolved link ring, the intermediate legs and the
+ * cross-ties, next to a member elevation carrying the provided link spacing.
+ *
+ * Pure SVG so the print report captures the figure exactly like the others. The
+ * drawing reports the geometry that the code check is run on — it is a detailing
+ * view, never a compliance statement in itself.
  */
 export function ShearDiagram({
+  geometry,
+  bars,
   section,
   settings,
+  layout,
+  validation,
   result,
+  selected = null,
+  onSelect,
   id,
 }: {
+  geometry: SectionGeometry
+  bars: Rebar[]
   section: ShearSectionData
   settings: ShearSettings
+  /** Ring, legs and cross-ties resolved once by the engine (single source of truth). */
+  layout: LinkLayout
+  /** Detailing validation of the same layout. */
+  validation?: LinkValidation | null
   result: ShearCaseResult | null
+  /** Selected member id (the editor highlighting). */
+  selected?: string | null
+  onSelect?: (id: string | null) => void
   /** DOM id so the print report can capture the figure (fig-shear). */
   id?: string
 }) {
-  const b = Math.max(section.b, 1)
-  const h = Math.max(section.h, 1)
-  const d = Math.min(Math.max(section.d, 1), h)
-  const legs = Math.max(Math.round(settings.linkLegs), 2)
+  const xs = geometry.boundary.map((p) => p.x)
+  const ys = geometry.boundary.map((p) => p.y)
+  if (xs.length < 3)
+    return (
+      <EmptyState
+        icon="ruler"
+        title="Enter at least 3 boundary vertices."
+        note="The link ring, the legs and the cross-ties are set out from the section outline and the longitudinal bars."
+      />
+    )
+
+  const xmin = Math.min(...xs)
+  const xmax = Math.max(...xs)
+  const ymin = Math.min(...ys)
+  const ymax = Math.max(...ys)
+  const spanX = Math.max(xmax - xmin, 1)
+  const spanY = Math.max(ymax - ymin, 1)
+  const availW = Math.max(SEC_X1 - SEC_X0 - SEC_MARGIN.left - SEC_MARGIN.right, 40)
+  const availH = Math.max(SEC_Y1 - SEC_Y0 - SEC_MARGIN.top - SEC_MARGIN.bottom, 40)
+  const sc = Math.max(Math.min(availW / spanX, availH / spanY), 1e-6)
+  const ox = SEC_X0 + SEC_MARGIN.left + (availW - spanX * sc) / 2
+  const oy = SEC_Y0 + SEC_MARGIN.top + (availH - spanY * sc) / 2
+  const X = (x: number) => ox + (x - xmin) * sc
+  const Y = (y: number) => oy + (ymax - y) * sc
+  const toPath = (poly: { x: number; y: number }[]) =>
+    poly.map((p, i) => `${i === 0 ? 'M' : 'L'}${X(p.x).toFixed(2)} ${Y(p.y).toFixed(2)}`).join(' ') + ' Z'
+
+  const xL = X(xmin)
+  const xR = X(xmax)
+  const yT = Y(ymax)
+  const yB = Y(ymin)
+  const midX = (xL + xR) / 2
+  const midY = (yT + yB) / 2
+
+  /* ---- shear plane, compression fibre and effective depth ---- */
+  const byY = section.axis === 'y'
+  const tensionAtMax = section.tensionFace === 'bottom' || section.tensionFace === 'right'
+  const dEff = Math.max(Math.min(section.d, byY ? spanY : spanX), 1)
+  // depth direction on the page: +1 when the depth grows towards larger model coordinates
+  const depthDir = byY !== tensionAtMax ? 1 : -1
+  const compFibre = byY ? (tensionAtMax ? ymax : ymin) : tensionAtMax ? xmin : xmax
+  const tensionLevel = compFibre + depthDir * dEff
+  const tensionToBottom = (byY && section.tensionFace === 'bottom') || (!byY && section.tensionFace === 'right')
+
+  /* ---- longitudinal bars ---- */
+  const facesOf = (b: Rebar) => (b.faces?.length ? b.faces : b.face ? [b.face] : [])
+  const vOf = (p: { x: number; y: number }) => (byY ? p.y : p.x)
+  const vMid = (ymin + ymax) / 2
+  const isTensionBar = (b: Rebar) => {
+    if (!section.tensionByHalfDepth) return facesOf(b).includes(section.tensionFace)
+    return tensionAtMax ? vOf(b) >= vMid : vOf(b) <= vMid
+  }
+  const barR = (dia: number) => Math.max(2.2, (dia / 2) * sc)
+
+  /* ---- links ---- */
+  const linkDia = Math.max(settings.linkDia, 1)
   const spacing = Math.max(settings.linkSpacing, 1)
-  const cover = section.coverTension
-  const axisName = section.axis === 'y' ? 'y' : 'x'
+  const hookLen = Math.min(6 * linkDia, 6 / sc)
+  const centre = centroid(geometry.boundary)
+  /** Position of a member in section millimetres, for tooltips and labels. */
+  const memberPos = (m: ResolvedLinkMember) =>
+    m.kind === 'leg' ? { axis: 'x' as const, value: byY ? m.a.x : m.a.y } : { axis: 'y' as const, value: byY ? m.a.y : m.a.x }
 
-  /* ---- left panel: the section in the shear/bending plane (scale drawing) ---- */
-  const boxX = 66 // leaves room for the d dimension on the left of a wide section
-  const boxY = 56
-  const boxW = 118
-  const boxH = 136
-  const sc = Math.min(boxW / b, boxH / h)
-  const w = b * sc
-  const hh = h * sc
-  const x0 = boxX + (boxW - w) / 2
-  const y0 = boxY + (boxH - hh) / 2
-  const cx = x0 + w / 2
-  const midY = y0 + hh / 2
-  const tensionAtBottom = section.tensionFace === 'bottom' || section.tensionFace === 'right'
-  const compY = tensionAtBottom ? y0 : y0 + hh
-  const tensY = tensionAtBottom ? y0 + hh : y0
-  const dEnd = compY + (tensionAtBottom ? 1 : -1) * d * sc
-  const barInset = Math.max(Math.min(cover * sc, 11), 3.5)
-  const linkInset = Math.max(Math.min((cover + settings.linkDia) * sc, Math.min(w, hh) / 3), barInset)
-  const lx = x0 + linkInset
-  const ly = y0 + linkInset
-  const lw = Math.max(w - 2 * linkInset, 2)
-  const lh = Math.max(hh - 2 * linkInset, 2)
-  const step = (w - 2 * barInset) / 3
-  const barXs = [0, 1, 2, 3].map((i) => x0 + barInset + i * step)
-
-  /* ---- right panel: member elevation with links at the provided spacing ---- */
-  const ex = 252
-  const exR = 446
-  const eyTop = 64
-  const eh = 126
-  const eyBot = eyTop + eh
-  // Links are drawn at a legible pitch and the dimension between them carries the
-  // real spacing value, so the elevation is deliberately not to scale.
-  const pitch = Math.min(46, Math.max(24, (exR - ex) / 4))
-  const nLinks = Math.max(2, Math.floor((exR - ex - 12) / pitch) + 1)
-  const linkXs = Array.from({ length: nLinks }, (_, i) => ex + 6 + i * pitch)
-
-  const provided = result ? result.asvPerSProvided : (legs * barArea(settings.linkDia)) / spacing
+  /* ---- captions (kept short; the panels carry the rest) ---- */
   const leftLines = [
-    `b = ${fmtN(b, 0)} mm net (mid-depth) · h = ${fmtN(h, 0)} mm`,
-    `depth along ${axisName} · d = ${fmtN(d, 0)} mm`,
-    `tension face: ${FACE_LABEL[section.tensionFace].toLowerCase()} · Asl = ${fmtN(section.Asl, 0)} mm²`,
-    `${section.tensionBarCount} tension bars · clear cover ${fmtN(cover, 0)} mm`,
+    `b = ${fmtN(section.b, 0)} · h = ${fmtN(section.h, 0)} mm net (mid-depth)`,
+    `depth along ${section.axis} · d = ${fmtN(dEff, 0)} mm effective`,
+    `tension steel: ${FACE_LABEL[section.tensionFace].toLowerCase()} face · Asl = ${fmtN(section.Asl, 0)} mm²`,
+    `${section.tensionBarCount} tension bars · cover ${fmtN(section.coverTension, 0)} mm to the link`,
   ]
   const rightLines = [
-    `⌀${fmtN(settings.linkDia, 0)} @ ${fmtN(spacing, 0)} c/c · ${legs} legs · Asv/sv = ${fmtN(provided, 3)}`,
-    result
-      ? `required ${fmtN(result.asvPerSReq, 3)} mm²/mm · ${result.asvPerSProvided + 1e-9 >= result.asvPerSReq ? 'passes' : 'fails'}`
-      : 'required — (no case selected)',
-    `sv,max = ${fmtN(result ? result.spaceMax : 0.75 * d, 0)} mm · sv,req = ${
+    `⌀${fmtN(linkDia, 0)} @ ${fmtN(spacing, 0)} c/c · ${layout.effectiveLegs} legs in Asv`,
+    `Asv/sv = ${fmtN(layout.asvPerS, 3)} · req ${result ? fmtN(result.asvPerSReq, 3) : '—'} mm²/mm`,
+    `sv,max = ${result ? `${fmtN(result.spaceMax, 0)} mm` : '—'} · sv,req = ${
       result && Number.isFinite(result.spaceReq) ? `${fmtN(result.spaceReq, 0)} mm` : '—'
     }`,
-    `VRd = ${fmtN(result ? result.VRd / 1e3 : 0, 0)} kN · VEd = ${fmtN(result ? result.VEd / 1e3 : 0, 0)} kN`,
+    `VRd = ${result ? `${fmtN(result.VRd / 1e3, 0)} kN` : '—'} vs VEd = ${result ? `${fmtN(result.VEd / 1e3, 0)} kN` : '—'}`,
+  ]
+
+  const status = validation?.status ?? 'ok'
+  /** First sentence of a message — the figure has room for one line. */
+  const firstIssue = (list: string[] | undefined) => {
+    const text = list?.[0] ?? ''
+    const cut = text.search(/ — |; |\. /)
+    return (cut > 8 ? text.slice(0, cut) : text).trim()
+  }
+  const statusText =
+    status === 'ok'
+      ? 'Detailing: no exceptions raised for this arrangement.'
+      : status === 'warn'
+        ? `Detailing: ${validation?.warnings.length ?? 0} item(s) to verify by calculation — ${firstIssue(validation?.warnings)}`
+        : `Detailing: ${validation?.errors.length ?? 0} correction(s) required — ${firstIssue(validation?.errors)}`
+  const arrangementText =
+    `Ring: ${layout.ring.shape} ⌀${fmtN(linkDia, 0)} ${settings.linkShape === 'auto' ? 'auto' : 'forced'}` +
+    ` · arrangement ${layout.mode} · ${layout.effectiveLegs} legs (2 outer + ${layout.intermediate.length} intermediate)` +
+    (layout.ties.length > 0 ? ` · ${layout.ties.length} tie${layout.ties.length === 1 ? '' : 's'}` : '')
+
+  /* ---- member elevation: link schedule at a fixed pitch (not to scale) ---- */
+  const pitch = Math.min(30, Math.max(18, (ELEV_X1 - ELEV_X0 - 18) / 6))
+  const nLinks = Math.max(2, Math.floor((ELEV_X1 - ELEV_X0 - 18) / pitch) + 1)
+  const linkXs = Array.from({ length: nLinks }, (_, i) => ELEV_X0 + 9 + i * pitch)
+  const barLineTop = ELEV_Y0 + 9
+  const barLineBot = ELEV_Y1 - 9
+  // the elevation can only show a tension face when the depth runs vertically
+  const tensionBarTop = byY ? !tensionToBottom : null
+
+  const legendRows: { text: string; swatch: ReactNode }[] = [
+    {
+      text: 'Bar — tension filled, other hollow',
+      swatch: (
+        <g>
+          <circle cx={ELEV_X0 + 4} cy={LEGEND_Y0 + 1} r={3} className="fill-ink" />
+          <circle cx={ELEV_X0 + 13} cy={LEGEND_Y0 + 1} r={3} className="fill-paper stroke-ink-2" strokeWidth={1} />
+        </g>
+      ),
+    },
+    {
+      text: 'Outer link — 2 legs in Asv',
+      swatch: (
+        <line x1={ELEV_X0} y1={LEGEND_Y0 + 1} x2={ELEV_X0 + 17} y2={LEGEND_Y0 + 1} className="stroke-capacity" strokeWidth={1.7} />
+      ),
+    },
+    {
+      text: `Internal leg — in Asv (${layout.intermediate.length})`,
+      swatch: (
+        <line
+          x1={ELEV_X0}
+          y1={LEGEND_Y0 + 1}
+          x2={ELEV_X0 + 17}
+          y2={LEGEND_Y0 + 1}
+          className="stroke-capacity"
+          strokeWidth={1.5}
+          strokeDasharray="4 2"
+        />
+      ),
+    },
+    {
+      text: `Cross-tie — not in Asv (${layout.ties.length})`,
+      swatch: (
+        <line
+          x1={ELEV_X0}
+          y1={LEGEND_Y0 + 1}
+          x2={ELEV_X0 + 17}
+          y2={LEGEND_Y0 + 1}
+          className="stroke-ink-2"
+          strokeWidth={1.2}
+          strokeDasharray="3 1.6 0.9 1.6"
+        />
+      ),
+    },
+    {
+      text: `Shear plane at d = ${fmtN(dEff, 0)} mm`,
+      swatch: (
+        <line x1={ELEV_X0} y1={LEGEND_Y0 + 1} x2={ELEV_X0 + 17} y2={LEGEND_Y0 + 1} className="stroke-ink-3" strokeWidth={0.9} strokeDasharray="1.5 3" />
+      ),
+    },
   ]
 
   return (
     <ZoomableSvg
-      W={460}
-      H={300}
+      W={DIAG_W}
+      H={DIAG_H}
       id={id}
-      ariaLabel="Shear reinforcement diagram: link cross-section in the shear plane and a member elevation with the provided link spacing"
+      ariaLabel="Shear reinforcement diagram: the main cross-section with its longitudinal bars, link ring, intermediate legs and cross-ties, and a member elevation with the provided link spacing"
     >
-      {/* ---------------- link cross-section ---------------- */}
-      <text x={14} y={18} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
-        LINK CROSS-SECTION
+      {/* ---------------- section panel ---------------- */}
+      <text x={SEC_X0} y={16} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
+        LINK CROSS-SECTION — SHEAR PLANE
       </text>
 
-      {/* shear force arrow, pointing towards the face in tension */}
-      <text x={cx} y={32} fontSize={9.5} textAnchor="middle" className="fill-demand">
+      {/* shear force, acting towards the flexural tension face */}
+      <text x={midX} y={31} fontSize={9.5} textAnchor="middle" className="fill-demand">
         {result ? `Vu = ${fmtN(result.loadCase.Vu, 0)} kN` : 'Vu'}
       </text>
-      <line x1={cx} y1={38} x2={cx} y2={52} className="stroke-demand" strokeWidth={2} />
-      <path
-        d={
-          tensionAtBottom
-            ? `M ${cx - 4} 45 L ${cx} 52 L ${cx + 4} 45`
-            : `M ${cx - 4} 45 L ${cx} 38 L ${cx + 4} 45`
-        }
-        fill="none"
-        className="stroke-demand"
-        strokeWidth={2}
-      />
-
-      {/* section, links and longitudinal bars */}
-      <rect x={x0} y={y0} width={w} height={hh} rx={1.5} className="fill-concrete stroke-ink" strokeWidth={1.3} />
-      <rect x={lx} y={ly} width={lw} height={lh} rx={3} fill="none" className="stroke-capacity" strokeWidth={1.5} />
-      {Array.from({ length: legs }, (_, i) => {
-        const x = lx + ((i + 0.5) / legs) * lw
-        return <line key={i} x1={x} y1={ly} x2={x} y2={ly + lh} className="stroke-capacity" strokeWidth={1.3} />
-      })}
-      {barXs.map((x, i) => (
-        <circle key={`t${i}`} cx={x} cy={tensY + (tensionAtBottom ? -barInset : barInset)} r={2.6} className="fill-ink" />
-      ))}
-      {barXs.slice(1, 3).map((x, i) => (
-        <circle
-          key={`c${i}`}
-          cx={x}
-          cy={compY + (tensionAtBottom ? barInset : -barInset)}
-          r={2.4}
-          fill="none"
-          className="stroke-ink-2"
-          strokeWidth={1}
-        />
-      ))}
-
-      {/* effective depth d, measured from the compression fibre */}
-      <line x1={x0 - 12} y1={compY} x2={x0 - 12} y2={dEnd} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 - 16} y1={compY} x2={x0 - 8} y2={compY} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 - 16} y1={dEnd} x2={x0 - 8} y2={dEnd} className="stroke-ink-3" strokeWidth={0.9} />
-      <text
-        x={x0 - 18}
-        y={compY + (tensionAtBottom ? 1 : -1) * ((d * sc) / 2)}
-        fontSize={9.5}
-        textAnchor="end"
-        dominantBaseline="middle"
-        className="fill-ink-2"
-      >
-        d = {fmtN(d, 0)}
-      </text>
-
-      {/* overall depth and the tension-steel tag (right of the section) */}
-      <line x1={x0 + w + 6} y1={y0} x2={x0 + w + 6} y2={y0 + hh} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 + w + 2} y1={y0} x2={x0 + w + 10} y2={y0} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 + w + 2} y1={y0 + hh} x2={x0 + w + 10} y2={y0 + hh} className="stroke-ink-3" strokeWidth={0.9} />
-      <text x={x0 + w + 13} y={midY} fontSize={9.5} dominantBaseline="middle" className="fill-ink-2">
-        h = {fmtN(h, 0)}
-      </text>
-      {Math.abs(tensY - midY) > 26 && (
-        <text
-          x={x0 + w + 13}
-          y={tensY + (tensionAtBottom ? -6 : 9)}
-          fontSize={8.5}
-          dominantBaseline="middle"
-          className="fill-ink-3"
-        >
-          tension steel
-        </text>
+      {byY ? (
+        <>
+          <line x1={midX} y1={38} x2={midX} y2={44} className="stroke-demand" strokeWidth={2} />
+          <path
+            d={tensionToBottom ? `M ${midX - 4} 40 L ${midX} 46 L ${midX + 4} 40` : `M ${midX - 4} 44 L ${midX} 38 L ${midX + 4} 44`}
+            fill="none"
+            className="stroke-demand"
+            strokeWidth={2}
+          />
+        </>
+      ) : (
+        <>
+          <line x1={midX - 22} y1={40} x2={midX + 22} y2={40} className="stroke-demand" strokeWidth={2} />
+          <path
+            d={
+              section.tensionFace === 'right'
+                ? `M ${midX + 18} 36 L ${midX + 24} 40 L ${midX + 18} 44`
+                : `M ${midX - 18} 36 L ${midX - 24} 40 L ${midX - 18} 44`
+            }
+            fill="none"
+            className="stroke-demand"
+            strokeWidth={2}
+          />
+        </>
       )}
 
-      {/* width dimension b under the section */}
-      <line x1={x0} y1={204} x2={x0 + w} y2={204} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0} y1={200} x2={x0} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={x0 + w} y1={200} x2={x0 + w} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
-      <text x={cx} y={218} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
-        b = {fmtN(b, 0)}
-      </text>
+      {/* concrete outline and voids — the section exactly as designed */}
+      <path d={toPath(geometry.boundary)} className="fill-concrete stroke-ink" strokeWidth={1.3} />
+      {geometry.voids.map((vd, i) => (
+        <path key={i} d={toPath(vd)} className="fill-paper stroke-ink" strokeWidth={1.1} />
+      ))}
 
-      {/* ---------------- member elevation ---------------- */}
-      <text x={ex} y={18} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
-        LINKS
+      {/* link ring */}
+      {layout.ring.circle ? (
+        <circle
+          cx={X(layout.ring.circle.cx)}
+          cy={Y(layout.ring.circle.cy)}
+          r={Math.max(layout.ring.circle.r * sc, 0.5)}
+          fill="none"
+          className="stroke-capacity"
+          strokeWidth={1.7}
+        >
+          <title>{`Outer link — ⌀${fmtN(linkDia, 0)} circular hoop, 2 legs counted in Asv`}</title>
+        </circle>
+      ) : (
+        <path d={toPath(layout.ring.path)} fill="none" className="stroke-capacity" strokeWidth={1.7}>
+          <title>{`Outer link — ⌀${fmtN(linkDia, 0)} closed ${layout.ring.shape} link, 2 legs counted in Asv`}</title>
+        </path>
+      )}
+
+      {/* shear plane at the tension steel centroid */}
+      {byY ? (
+        <line x1={xL} y1={Y(tensionLevel)} x2={xR} y2={Y(tensionLevel)} className="stroke-ink-3" strokeWidth={0.9} strokeDasharray="1.5 3" />
+      ) : (
+        <line x1={X(tensionLevel)} y1={yB} x2={X(tensionLevel)} y2={yT} className="stroke-ink-3" strokeWidth={0.9} strokeDasharray="1.5 3" />
+      )}
+
+      {/* longitudinal bars, at their real coordinates and diameters */}
+      {bars.map((b, i) => {
+        const r = barR(b.dia)
+        const tension = isTensionBar(b)
+        return (
+          <circle
+            key={i}
+            cx={X(b.x)}
+            cy={Y(b.y)}
+            r={r}
+            className={tension ? 'fill-ink' : 'fill-paper stroke-ink-2'}
+            strokeWidth={tension ? 0 : 1}
+          >
+            <title>{`Bar ${i + 1} — (${fmtN(b.x, 0)}, ${fmtN(b.y, 0)}) ⌀${fmtN(b.dia, 0)}${
+              tension ? ' · tension face, in Asl' : ''
+            }${b.surface === 'inner' ? ' · void face' : ''}`}</title>
+          </circle>
+        )
+      })}
+
+      {/* intermediate legs and cross-ties */}
+      {layout.members.map((m) => {
+        const p1 = { x: X(m.a.x), y: Y(m.a.y) }
+        const p2 = { x: X(m.b.x), y: Y(m.b.y) }
+        const st = MEMBER_STYLE[m.kind]
+        const isSel = selected === m.id
+        const pos = memberPos(m)
+        const hooks =
+          m.length > 4 * linkDia
+            ? [
+                hookPath(m.a, m.b, hookLen, { x: centre.x - m.a.x, y: centre.y - m.a.y }),
+                hookPath(m.b, m.a, hookLen, { x: centre.x - m.b.x, y: centre.y - m.b.y }),
+              ]
+            : []
+        const label = m.kind === 'leg' ? 'Leg' : 'Cross-tie'
+        return (
+          <g
+            key={m.id}
+            onClick={onSelect ? () => onSelect(isSel ? null : m.id) : undefined}
+            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+          >
+            <title>
+              {`${label} — ${pos.axis} = ${fmtN(pos.value, 0)} mm · ${fmtN(m.length, 0)} mm long · nearest bar ${
+                m.nearestBar === null ? '—' : `${fmtN(m.nearestBar, 0)} mm`
+              } · ${m.kind === 'leg' ? `counted in Asv (legs now ${layout.effectiveLegs})` : 'runs across the width, not counted in Asv'}${
+                m.manual ? ' · manual position' : ' · automatic position'
+              }`}
+            </title>
+            {/* larger invisible hit area so the member stays clickable when zoomed out */}
+            <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth={9} />
+            {isSel && <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} className="stroke-accent" strokeWidth={6} opacity={0.2} />}
+            <line
+              x1={p1.x}
+              y1={p1.y}
+              x2={p2.x}
+              y2={p2.y}
+              className={st.cls}
+              strokeWidth={isSel ? st.width + 0.5 : st.width}
+              strokeDasharray={st.dash}
+              strokeLinecap="round"
+            />
+            {hooks.map((h, hi) => (
+              <path
+                key={hi}
+                d={h.map((q, qi) => `${qi === 0 ? 'M' : 'L'}${X(q.x).toFixed(2)} ${Y(q.y).toFixed(2)}`).join(' ')}
+                fill="none"
+                className={st.cls}
+                strokeWidth={st.width}
+                strokeLinecap="round"
+              />
+            ))}
+            <circle cx={p1.x} cy={p1.y} r={1.7} className={st.dot} />
+            <circle cx={p2.x} cy={p2.y} r={1.7} className={st.dot} />
+          </g>
+        )
+      })}
+
+      {/* width b */}
+      {byY ? (
+        <>
+          <line x1={xL} y1={yB + 16} x2={xR} y2={yB + 16} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xL} y1={yB + 12} x2={xL} y2={yB + 20} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xR} y1={yB + 12} x2={xR} y2={yB + 20} className="stroke-ink-3" strokeWidth={0.9} />
+          <text x={midX} y={yB + 30} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
+            b = {fmtN(section.b, 0)}
+          </text>
+        </>
+      ) : (
+        <>
+          <line x1={xR + 14} y1={yB} x2={xR + 14} y2={yT} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xR + 10} y1={yB} x2={xR + 18} y2={yB} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xR + 10} y1={yT} x2={xR + 18} y2={yT} className="stroke-ink-3" strokeWidth={0.9} />
+          <text
+            x={xR + 27}
+            y={midY}
+            fontSize={9.5}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            transform={`rotate(-90 ${xR + 27} ${midY})`}
+            className="fill-ink-2"
+          >
+            b = {fmtN(section.b, 0)}
+          </text>
+        </>
+      )}
+
+      {/* effective depth d, from the compression fibre to the shear plane */}
+      {byY ? (
+        <>
+          <line x1={xL - 14} y1={Y(compFibre)} x2={xL - 14} y2={Y(tensionLevel)} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xL - 18} y1={Y(compFibre)} x2={xL - 10} y2={Y(compFibre)} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={xL - 18} y1={Y(tensionLevel)} x2={xL - 10} y2={Y(tensionLevel)} className="stroke-ink-3" strokeWidth={0.9} />
+          <text
+            x={xL - 21}
+            y={(Y(compFibre) + Y(tensionLevel)) / 2}
+            fontSize={9.5}
+            textAnchor="end"
+            dominantBaseline="middle"
+            className="fill-ink-2"
+          >
+            d = {fmtN(dEff, 0)}
+          </text>
+        </>
+      ) : (
+        <>
+          <line x1={X(compFibre)} y1={yB + 16} x2={X(tensionLevel)} y2={yB + 16} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={X(compFibre)} y1={yB + 12} x2={X(compFibre)} y2={yB + 20} className="stroke-ink-3" strokeWidth={0.9} />
+          <line x1={X(tensionLevel)} y1={yB + 12} x2={X(tensionLevel)} y2={yB + 20} className="stroke-ink-3" strokeWidth={0.9} />
+          <text x={(X(compFibre) + X(tensionLevel)) / 2} y={yB + 30} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
+            d = {fmtN(dEff, 0)}
+          </text>
+        </>
+      )}
+
+      {/* ---------------- member elevation: the provided link spacing ---------------- */}
+      <text x={ELEV_X0} y={16} fontSize={10} className="fill-ink-3" fontFamily={FONT} fontWeight={700} letterSpacing="0.06em">
+        LINKS ALONG THE MEMBER
       </text>
-      <line x1={ex} y1={eyTop} x2={exR} y2={eyTop} className="stroke-edge-strong" strokeWidth={1.1} />
-      <line x1={ex} y1={eyBot} x2={exR} y2={eyBot} className="stroke-edge-strong" strokeWidth={1.1} />
+      <rect x={ELEV_X0} y={ELEV_Y0} width={ELEV_X1 - ELEV_X0} height={ELEV_Y1 - ELEV_Y0} className="fill-paper stroke-edge-strong" strokeWidth={1.1} />
+      <line
+        x1={ELEV_X0 + 2}
+        y1={barLineTop}
+        x2={ELEV_X1 - 2}
+        y2={barLineTop}
+        className={tensionBarTop === null ? 'stroke-ink-3' : tensionBarTop ? 'stroke-ink' : 'stroke-ink-3'}
+        strokeWidth={tensionBarTop === true ? 1.8 : 1.2}
+      />
+      <line
+        x1={ELEV_X0 + 2}
+        y1={barLineBot}
+        x2={ELEV_X1 - 2}
+        y2={barLineBot}
+        className={tensionBarTop === null ? 'stroke-ink-3' : tensionBarTop ? 'stroke-ink-3' : 'stroke-ink'}
+        strokeWidth={tensionBarTop === false ? 1.8 : 1.2}
+      />
       {linkXs.map((x, i) => (
         <g key={i}>
-          <line x1={x} y1={eyTop + 4} x2={x} y2={eyBot - 4} className="stroke-capacity" strokeWidth={1.6} />
-          <line x1={x + 2.8} y1={eyTop + 4} x2={x + 2.8} y2={eyBot - 4} className="stroke-capacity" strokeWidth={1.6} />
+          <line x1={x} y1={ELEV_Y0 + 4} x2={x} y2={ELEV_Y1 - 4} className="stroke-capacity" strokeWidth={1.4} />
+          <line x1={x + 2.6} y1={ELEV_Y0 + 4} x2={x + 2.6} y2={ELEV_Y1 - 4} className="stroke-capacity" strokeWidth={1.4} />
         </g>
       ))}
-      {/* spacing dimension between the first two links */}
-      <line x1={linkXs[0] + 1.4} y1={204} x2={linkXs[1] + 1.4} y2={204} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={linkXs[0] + 1.4} y1={200} x2={linkXs[0] + 1.4} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
-      <line x1={linkXs[1] + 1.4} y1={200} x2={linkXs[1] + 1.4} y2={208} className="stroke-ink-3" strokeWidth={0.9} />
-      <text x={(linkXs[0] + linkXs[1]) / 2 + 1.4} y={218} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
-        sv = {fmtN(spacing, 0)}
+      {/* spacing dimension between the first two links — the elevation is not to scale */}
+      <line x1={linkXs[0] + 1.3} y1={ELEV_Y1 + 16} x2={linkXs[1] + 1.3} y2={ELEV_Y1 + 16} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={linkXs[0] + 1.3} y1={ELEV_Y1 + 12} x2={linkXs[0] + 1.3} y2={ELEV_Y1 + 20} className="stroke-ink-3" strokeWidth={0.9} />
+      <line x1={linkXs[1] + 1.3} y1={ELEV_Y1 + 12} x2={linkXs[1] + 1.3} y2={ELEV_Y1 + 20} className="stroke-ink-3" strokeWidth={0.9} />
+      <text x={(linkXs[0] + linkXs[1]) / 2 + 1.3} y={ELEV_Y1 + 30} fontSize={9.5} textAnchor="middle" className="fill-ink-2">
+        sv = {fmtN(spacing, 0)} mm
       </text>
 
-      {/* data captions under each panel — the elevation is not to scale */}
+      {/* line-style legend: every member kind drawn above, repeated once */}
+      {legendRows.map((row, i) => (
+        <g key={row.text}>
+          {row.swatch}
+          <text x={ELEV_X0 + 22} y={LEGEND_Y0 + i * LEGEND_DY + 1} fontSize={8.5} dominantBaseline="middle" className="fill-ink-2">
+            {row.text}
+          </text>
+        </g>
+      ))}
+
+      {/* ---------------- captions ---------------- */}
       {leftLines.map((line, i) => (
-        <text key={i} x={14} y={242 + i * 14} fontSize={9.5} className="fill-ink-2">
+        <text key={`l${i}`} x={SEC_X0} y={258 + i * 14} fontSize={9.5} className="fill-ink-2">
           {line}
         </text>
       ))}
       {rightLines.map((line, i) => (
-        <text key={i} x={ex} y={242 + i * 14} fontSize={9.5} className="fill-ink-2">
+        <text key={`r${i}`} x={SEC_X1} y={258 + i * 14} fontSize={9.5} className="fill-ink-2">
           {line}
         </text>
       ))}
+      <text x={SEC_X0} y={316} fontSize={9} className={status === 'ok' ? 'fill-ok' : status === 'warn' ? 'fill-warn2' : 'fill-bad'}>
+        {/* 92 characters is what fits the figure width at 9 px — the editor below
+            carries the full wording of every error and warning */}
+        {statusText.length > 92 ? `${statusText.slice(0, 91)}…` : statusText}
+      </text>
+      <text x={SEC_X0} y={330} fontSize={9} className="fill-ink-3">
+        {arrangementText}
+      </text>
     </ZoomableSvg>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Detailing editor                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Compact inline millimetre field for the member rows. */
+function MmField({
+  value,
+  onChange,
+  title,
+  w = 'w-[92px]',
+}: {
+  value: number
+  onChange: (v: number) => void
+  title: string
+  w?: string
+}) {
+  return (
+    <span className={`${fieldBoxCls} ${w}`} title={title}>
+      <input
+        type="number"
+        step={10}
+        className={fieldCls}
+        value={Number.isFinite(value) ? Math.round(value * 10) / 10 : ''}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        aria-label={title}
+      />
+      <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+        mm
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Stirrup detailing: the link type, the automatic or manual arrangement of the
+ * intermediate legs and cross-ties, and the resulting Asv — shown next to the
+ * drawing it edits. Every edit is validated as entered and reported with its
+ * reason; nothing is silently moved or clamped, and the resistance equations in
+ * `engine/shear.ts` are never touched here.
+ */
+export function ShearDetailingCard({
+  state,
+  update,
+  geometry,
+  bars,
+  section,
+  layout,
+  validation,
+  result,
+  circular,
+  figureId,
+}: {
+  state: AppState
+  update: (patch: Partial<AppState>) => void
+  geometry: SectionGeometry
+  bars: Rebar[]
+  section: ShearSectionData
+  layout: LinkLayout
+  validation: LinkValidation
+  result: ShearCaseResult | null
+  /** Circular sections: the hoop stays concentric, internal members are straight. */
+  circular: boolean
+  figureId?: string
+}) {
+  const settings = state.shear
+  const [selected, setSelected] = useState<string | null>(null)
+  const [symmetry, setSymmetry] = useState(true)
+  const setShear = (patch: Partial<ShearSettings>) => update({ shear: { ...settings, ...patch } })
+
+  const legs = settings.legPositions
+  const ties = settings.tiePositions
+  const manual = settings.linkLayout === 'manual'
+  const auto = autoLinkMembers(layout.ring, geometry, bars, settings, circular)
+
+  // What is on the drawing now: the entered positions in manual mode, the
+  // derived ones in automatic mode. Editing any of them switches to manual with
+  // the drawn arrangement as the starting point, so nothing jumps.
+  const baseLegs = manual ? legs : layout.intermediate.map((m) => round3(m.u))
+  const baseTies = manual ? ties : layout.ties.map((m) => round3(m.u))
+
+  /** As drawn: switch to manual, seeded from the current layout. */
+  const startManual = (seed?: { legs?: number[]; ties?: number[] }) =>
+    setShear({
+      linkLayout: 'manual',
+      legPositions: tidyPositions(seed?.legs ?? baseLegs),
+      tiePositions: tidyPositions(seed?.ties ?? baseTies),
+    })
+
+  const mirror = (u: number) => round3(1 - u)
+
+  /** Every edit lands in one state update, always in manual mode. */
+  const write = (patch: { legs?: number[]; ties?: number[] }) =>
+    setShear({
+      linkLayout: 'manual',
+      legPositions: tidyPositions(patch.legs ?? baseLegs),
+      tiePositions: tidyPositions(patch.ties ?? baseTies),
+    })
+
+  const addMember = (kind: LinkMemberKind) => {
+    const list = kind === 'leg' ? baseLegs : baseTies
+    const u = suggestMemberPosition(kind, list, layout.ring, geometry, bars, settings, circular)
+    const next = tidyPositions(symmetry ? [...list, u, mirror(u)] : [...list, u])
+    write(kind === 'leg' ? { legs: next } : { ties: next })
+  }
+
+  const removeMember = (kind: LinkMemberKind, u: number) => {
+    const list = kind === 'leg' ? baseLegs : baseTies
+    const drop = symmetry ? [u, mirror(u)] : [u]
+    const next = list.filter((v) => !drop.some((d) => Math.abs(d - v) < 0.005))
+    write(kind === 'leg' ? { legs: next } : { ties: next })
+  }
+
+  const moveMember = (kind: LinkMemberKind, from: number, to: number) => {
+    if (!Number.isFinite(to)) return
+    const list = kind === 'leg' ? baseLegs : baseTies
+    const next = list.map((v) => (Math.abs(v - from) < 0.005 ? round3(to) : v))
+    if (symmetry) {
+      const mFrom = mirror(from)
+      const mTo = mirror(to)
+      for (let i = 0; i < next.length; i++) if (Math.abs(next[i] - mFrom) < 0.005) next[i] = mTo
+    }
+    write(kind === 'leg' ? { legs: next } : { ties: next })
+  }
+
+  const toggleKind = (u: number) => {
+    // the member keeps the coordinate it was entered at but swaps the axis it cuts
+    const isLeg = baseLegs.some((v) => Math.abs(v - u) < 0.005)
+    if (isLeg) write({ legs: baseLegs.filter((v) => Math.abs(v - u) >= 0.005), ties: [...baseTies, u] })
+    else write({ ties: baseTies.filter((v) => Math.abs(v - u) >= 0.005), legs: [...baseLegs, u] })
+  }
+
+  /** Even distribution between the outermost members of a kind. */
+  const distribute = (kind: LinkMemberKind) => {
+    const list = [...(kind === 'leg' ? baseLegs : baseTies)]
+    if (list.length < 3) return
+    const lo = list[0]
+    const hi = list[list.length - 1]
+    const next = list.map((_, i) => round3(lo + ((hi - lo) * i) / (list.length - 1)))
+    write(kind === 'leg' ? { legs: next } : { ties: next })
+  }
+
+  /** Leg count control: total legs crossing the shear plane (2 outer + intermediate). */
+  const setLegCount = (total: number) => {
+    const n = Math.max(0, Math.min(Math.round(total) - 2, 8))
+    if (n === 0) {
+      write({ legs: [] })
+      return
+    }
+    const cands = auto.legs
+    const lo = cands.length > 0 ? Math.min(...cands) : 0.1
+    const hi = cands.length > 0 ? Math.max(...cands) : 0.9
+    const next: number[] = []
+    for (let i = 0; i < n; i++) {
+      const even = lo + ((hi - lo) * (i + 1)) / (n + 1)
+      const snap = cands.reduce<number | null>((best, c) => {
+        if (best !== null && Math.abs(c - even) >= Math.abs(best - even)) return best
+        return c
+      }, null)
+      const u = snap !== null && Math.abs(snap - even) <= 0.04 && !next.some((v) => Math.abs(v - snap) < 0.02) ? snap : round3(even)
+      next.push(u)
+    }
+    write({ legs: next })
+  }
+
+  /** Nearest-bar candidates, listed for the "place on a bar" hint. */
+  const barCandidates = [...auto.legs]
+
+  const rows: { kind: LinkMemberKind; u: number; member: ResolvedLinkMember | null }[] = []
+  for (const m of layout.members) rows.push({ kind: m.kind, u: m.u, member: m })
+  // manual positions that could not be drawn still get a row, so they can be fixed
+  for (const d of layout.dropped) rows.push({ kind: d.kind, u: d.u, member: null })
+  rows.sort((a, b) => (a.kind === b.kind ? a.u - b.u : a.kind === 'leg' ? -1 : 1))
+
+  const clearGap = (kind: LinkMemberKind) => {
+    const list = kind === 'leg' ? baseLegs : baseTies
+    if (list.length < 2) return null
+    let min = Infinity
+    for (let i = 1; i < list.length; i++) min = Math.min(min, (list[i] - list[i - 1]) * (kind === 'leg' ? section.b : section.h))
+    return Number.isFinite(min) ? min : null
+  }
+
+  const singleLeg = layout.singleLegArea
+  const provided = result ? result.asvPerSProvided : layout.asvPerS
+  const required = result ? result.asvPerSReq : null
+  const minOk = required === null || provided + 1e-9 >= required
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-1.5">
+          <Icon name="link" size={13} className="text-ink-3" />
+          <span>Stirrup detailing</span>
+        </span>
+      }
+      subtitle="links, intermediate legs and cross-ties — drawn on the section they are checked on"
+      action={<Chip status={validation.status === 'ok' ? 'pass' : validation.status === 'warn' ? 'warn' : 'fail'} />}
+    >
+      <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
+        <div className="min-w-0">
+          <ShearDiagram
+            id={figureId}
+            geometry={geometry}
+            bars={bars}
+            section={section}
+            settings={settings}
+            layout={layout}
+            validation={validation}
+            result={result}
+            selected={selected}
+            onSelect={setSelected}
+          />
+          <p className={`mt-2 ${noteSmCls}`}>
+            The drawing is a detailing view of the entered arrangement — it is not evidence of compliance. The
+            resistance check uses ⌀{fmtN(settings.linkDia, 0)}, the {layout.effectiveLegs} legs counted in A
+            <sub>sv</sub> and s<sub>v</sub> = {fmtN(settings.linkSpacing, 0)} mm from the same settings.
+            {layout.mode === 'manual' ? ' Positions entered here are used exactly as entered.' : ' Positions are derived from the longitudinal bars.'}
+          </p>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-[3px]">
+            <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+              Link type
+              <InfoTooltip
+                content={
+                  <>
+                    The default follows the section: a closed rectangular link in a rectangular section, a concentric
+                    hoop in a circular one. A forced type is honoured when it fits — an arrangement that cannot be
+                    built from this section and cover is reported below rather than changed for you.
+                  </>
+                }
+              />
+            </span>
+            <SegGroup>
+              {(['auto', 'rectangular', 'circular'] as const).map((shape) => (
+                <SegButton
+                  key={shape}
+                  active={settings.linkShape === shape}
+                  onClick={() => setShear({ linkShape: shape })}
+                  title={
+                    shape === 'auto'
+                      ? 'Follow the section shape (rectangular link / concentric hoop).'
+                      : `Force a ${shape} link — the arrangement is validated, not adjusted.`
+                  }
+                >
+                  {shape === 'auto' ? 'Auto' : shape === 'rectangular' ? 'Rect.' : 'Circular'}
+                </SegButton>
+              ))}
+            </SegGroup>
+            <span className="text-[9.5px] leading-tight text-ink-3">
+              Drawn as {layout.ring.shape}
+              {layout.ring.auto ? ' (from the section)' : ' (entered)'}; ring inset {fmtN(layout.ring.inset, 0)} mm to
+              the ⌀{fmtN(settings.linkDia, 0)} centreline.
+            </span>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-[3px]">
+            <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+              Arrangement
+            </span>
+            <SegGroup>
+              <SegButton
+                active={!manual}
+                onClick={() => setShear({ linkLayout: 'auto' })}
+                title="Place intermediate legs on the outermost bar rows and cross-ties on the side-face bar columns; re-derived whenever the bars or the section change."
+              >
+                Automatic
+              </SegButton>
+              <SegButton
+                active={manual}
+                onClick={() =>
+                  manual
+                    ? undefined
+                    : startManual()
+                }
+                title="Enter every leg and cross-tie position yourself. Nothing is moved for you; anything that cannot be built is reported."
+              >
+                Manual
+              </SegButton>
+              <Check
+                checked={symmetry}
+                onChange={setSymmetry}
+                label="Symmetry"
+                title="Mirror every edit about the section centreline: adding a member adds its twin, moving one moves its twin."
+                className="px-1"
+              />
+            </SegGroup>
+            <span className="text-[9.5px] leading-tight text-ink-3">
+              {manual
+                ? `${legs.length} entered intermediate leg${legs.length === 1 ? '' : 's'} and ${ties.length} cross-tie${ties.length === 1 ? '' : 's'}. Restoring automatic keeps them until the lists are cleared.`
+                : layout.intermediate.length === 0
+                  ? 'No intermediate legs are needed by the bar layout; the closed link supplies 2 legs.'
+                  : `${layout.intermediate.length} intermediate leg${layout.intermediate.length === 1 ? '' : 's'} placed on the bar layout${layout.ties.length > 0 ? `, ${layout.ties.length} cross-tie${layout.ties.length === 1 ? '' : 's'}` : ''} — re-derived on every change to the bars or the section.`}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-1.5">
+            <NumField
+              label="Legs in Asv"
+              w="w-[92px]"
+              value={manual ? 2 + legs.length : layout.effectiveLegs}
+              min={2}
+              step={1}
+              onChange={setLegCount}
+              title="Total legs crossing the shear plane: the 2 legs of the closed link plus the intermediate legs. In manual mode this adds or removes intermediate legs."
+            />
+            <span className="inline-flex items-end gap-1">
+              <button type="button" className={btnMiniCls} onClick={() => addMember('leg')} title="Add an intermediate leg, on the nearest unrestrained bar where one is available.">
+                <Icon name="plus" size={11} /> Leg
+              </button>
+              <button type="button" className={btnMiniCls} onClick={() => addMember('tie')} title="Add a cross-tie across the width to restrain a side-face bar (not counted in Asv).">
+                <Icon name="plus" size={11} /> Tie
+              </button>
+            </span>
+            {manual && (
+              <button
+                type="button"
+                className={btnMiniCls}
+                onClick={() => setShear({ linkLayout: 'auto' })}
+                title="Return to the arrangement derived from the longitudinal bars (the manual positions are kept in case you switch back)."
+              >
+                <Icon name="refresh" size={11} /> Restore automatic
+              </button>
+            )}
+          </div>
+
+          {rows.length === 0 && (
+            <p className={noteSmCls}>
+              Two legs of the closed link cross the shear plane. Add intermediate legs to credit more; the automatic
+              rule finds them on the bar layout.
+            </p>
+          )}
+
+          {rows.length > 0 && (
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                Members
+                <InfoTooltip
+                  content={
+                    <>
+                      A <b>leg</b> crosses the shear plane and is counted in A<sub>sv</sub>; a <b>cross-tie</b> runs
+                      across the width to restrain a bar and is <b>not</b> counted. Positions are section coordinates
+                      in mm along the axis the member cuts: legs across the width, cross-ties across the depth.
+                      {barCandidates.length > 0 && (
+                        <>
+                          {' '}
+                          Bars of the outer rows sit at{' '}
+                          {barCandidates
+                            .map((u) => fmtN(memberCoordinate(geometry, 'leg', u, settings.axis), 0))
+                            .join(', ')}{' '}
+                          mm.
+                        </>
+                      )}
+                    </>
+                  }
+                />
+              </span>
+              {rows.map((r) => {
+                const st = MEMBER_STYLE[r.kind]
+                const isSel = selected !== null && r.member !== null && selected === r.member.id
+                const mm = memberCoordinate(geometry, r.kind, r.u, settings.axis)
+                const label = r.kind === 'leg' ? 'Leg' : 'Cross-tie'
+                return (
+                  <div
+                    key={`${r.kind}-${r.u}`}
+                    className={`flex min-w-0 items-center gap-1.5 rounded-field border px-1.5 py-1 ${
+                      isSel ? 'border-accent bg-accent-wash/60' : 'border-line bg-panel/40'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className={`${btnMiniCls} w-[54px] justify-center`}
+                      onClick={() => toggleKind(r.u)}
+                      title={`${label} — click to switch this member to the ${r.kind === 'leg' ? 'cross-tie' : 'leg'} orientation (it keeps the coordinate it was entered at).`}
+                    >
+                      {r.kind === 'leg' ? 'Leg' : 'Tie'}
+                    </button>
+                    <MmField
+                      value={mm}
+                      onChange={(v) => moveMember(r.kind, r.u, normalisedPosition(geometry, r.kind, v, settings.axis))}
+                      title={`${label} position — ${r.kind === 'leg' ? 'x' : 'y'} coordinate in mm`}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[9.5px] leading-tight text-ink-3">
+                      {r.member
+                        ? `${fmtN(r.member.length, 0)} mm long · nearest bar ${
+                            r.member.nearestBar === null ? '—' : `${fmtN(r.member.nearestBar, 0)} mm`
+                          }${r.member.restrains !== null ? ` (bar ${r.member.restrains + 1})` : ''}`
+                        : 'does not cross the ring'}
+                    </span>
+                    <span className={`h-3 w-4 shrink-0 rounded-sm border border-line ${st.cls.replace('stroke-', 'bg-')}`} />
+                    <button type="button" className={rowDelCls} onClick={() => removeMember(r.kind, r.u)} title="Remove this member (with its mirror when symmetry is on)." aria-label="Remove member">
+                      <Icon name="close" size={11} />
+                    </button>
+                  </div>
+                )
+              })}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {(['leg', 'tie'] as const).map((kind) => {
+                  const list = kind === 'leg' ? legs : ties
+                  if (list.length < 3) return null
+                  return (
+                    <button key={kind} type="button" className={btnMiniCls} onClick={() => distribute(kind)} title={`Spread the ${kind} positions evenly between the outermost two.`}>
+                      Even {kind === 'leg' ? 'legs' : 'ties'}
+                    </button>
+                  )
+                })}
+                <span className={noteSmCls}>
+                  spacing between legs:{' '}
+                  {clearGap('leg') === null ? '—' : `${fmtN(clearGap('leg')!, 0)} mm (≥ ${fmtN(Math.max(25, settings.linkDia), 0)} mm)`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            <Readout label="One leg" value={`${fmtN(singleLeg, 1)} mm²`} title={`Area of a ⌀${fmtN(settings.linkDia, 0)} leg`} />
+            <Readout
+              label="Legs in Asv"
+              value={`${layout.effectiveLegs} (2 + ${layout.intermediate.length})`}
+              title="Legs of the closed link plus the intermediate legs crossing the shear plane"
+            />
+            <Readout label="Asv" value={`${fmtN(layout.totalLegArea, 0)} mm²`} title="Effective legs × the area of one leg" />
+            <Readout
+              label="Provided Asv/sv"
+              value={`${fmtN(provided, 3)} mm²/mm`}
+              title={`${layout.effectiveLegs} legs × ${fmtN(singleLeg, 1)} mm² / ${fmtN(settings.linkSpacing, 0)} mm`}
+            />
+            <Readout
+              label="Required Asv/sv"
+              value={required === null ? '—' : `${fmtN(required, 3)} mm²/mm`}
+              title="Governing requirement of the selected code (shear requirement or minimum links)"
+            />
+            <Readout
+              label="Minimum links"
+              value={required === null ? '—' : minOk ? 'satisfied' : 'not satisfied'}
+              className={required === null ? '' : minOk ? 'text-ok' : 'text-bad'}
+              title="The provided legs must also meet the code's minimum shear reinforcement"
+            />
+          </div>
+
+          {validation.errors.length > 0 && (
+            <Banner tone="error">
+              <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+                {validation.errors.length} correction{validation.errors.length === 1 ? '' : 's'} required
+              </b>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {validation.errors.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </Banner>
+          )}
+          {validation.warnings.length > 0 && (
+            <Banner tone="warn">
+              <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+                {validation.warnings.length} item{validation.warnings.length === 1 ? '' : 's'} to verify
+              </b>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {validation.warnings.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </Banner>
+          )}
+          {validation.errors.length === 0 && validation.warnings.length === 0 && (
+            <Banner tone="ok">
+              Restraint, ring fit and member spacing are within the detailing limits of the selected code
+              {validation.unrestrained.length === 0 ? ' — every longitudinal bar is restrained.' : '.'}
+            </Banner>
+          )}
+
+          {layout.notes.length > 0 && (
+            <ul className={`flex flex-col gap-0.5 ${noteSmCls}`}>
+              {layout.notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+              <li>
+                Restraint limit {fmtN(RESTRAINT_LIMIT, 0)} mm, minimum clear spacing between members{' '}
+                {fmtN(Math.max(25, settings.linkDia), 0)} mm (selected code).
+              </li>
+            </ul>
+          )}
+        </div>
+      </div>
+    </Card>
   )
 }
 

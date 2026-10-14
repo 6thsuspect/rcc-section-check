@@ -6,7 +6,9 @@ Every figure (section preview, P–M diagram, Mx–My contour and the shear link
 
 - **Zoom in / zoom out / fit-to-view** buttons plus drag-to-pan, implemented through the
   SVG viewBox so hover readouts stay correct at any zoom level — the same control strip on
-  every figure, including the shear link cross-section / link-elevation diagram;
+  every figure, including the shear link cross-section / link-elevation diagram (the shear
+  figure includes the detailing legend and the detailing-status line, so the print copy and
+  the screen stay identical);
 - a **label toolbar** on the section preview: labels on/off, font size (A−/A+), and
   label colour (preset swatches + free colour picker). Labels shown: bar numbers and the
   centroid marker G(x̄, ȳ);
@@ -41,9 +43,33 @@ to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header ma
 - **Shear tab**: per shear case the design shear force, nominal shear stress, the concrete
   shear strength used, the web-crushing limit, the concrete resistance, the required and
   provided Asv/sv, the maximum spacing and the VEd/VRd utilisation with a PASS/FAIL verdict;
-  a summary strip with the governing case, the provided-vs-required comparison and the link
-  diagram; the full step-by-step calculation of the selected case (clause, expression,
-  substituted value) and the shear clause-compliance table.
+  a summary strip with the governing case and the provided-vs-required comparison; the full
+  step-by-step calculation of the selected case (clause, expression, substituted value) and
+  the shear clause-compliance table.
+- **Shear reinforcement diagram + stirrup detailing editor** (`fig-shear`, full width under
+  the shear inputs): the *same* cross-section as the section preview — outline, voids, every
+  longitudinal bar at its own coordinates and diameter, the clear cover of each face and the
+  resolved link ring — drawn with the intermediate legs and cross-ties of the current
+  arrangement, next to a member elevation carrying the provided link spacing. The editor
+  beside it sets the link type (auto / rectangular / circular), the arrangement (automatic
+  from the bars, or manual) and the ⌀, leg count and spacing that feed the resistance check,
+  lists every member with its section coordinate in mm, and reports each arrangement that
+  cannot be built with its reason — entered positions are never moved or clamped.
+
+  Line styles are shared by the drawing, the legend and the editor rows: solid blue = the
+  closed outer link (2 legs in Asv), dashed blue = an intermediate leg (counted in Asv),
+  dash-dot ink = a cross-tie (restrains a bar, not counted in Asv), filled black = tension
+  bars, hollow = other bars, light dotted = the shear plane at the effective depth d.
+
+  The automatic arrangement places the intermediate legs a wide bar layout needs and the
+  cross-ties that pick up the bars a leg cannot cover (side-face bars beside one of the ring's
+  own legs, a column too close to another leg). It never adds a member that would double one of
+  the ring's own runs or sit closer than the minimum clear spacing, so the arrangement it
+  derives always passes the detailing validation it is checked against.
+
+  The drawing is a detailing view: it never by itself certifies compliance. The values shown
+  (Asv, Asv/sv, sv,max, VEd/VRd) all come from the selected code's check run on the same
+  inputs, and the caption states the code request/limit that governs.
 
 ## 10.2 Report
 
@@ -73,7 +99,8 @@ follow the check without the software:
    including checks that passed, so the reviewer sees what was covered, not only what
    failed.
 10. **Shear design check**: the shear inputs used (direction, tension face, section b/d/Asl,
-    provided links), the worst required Asv/sv and web-crushing utilisation, the per-case shear
-    table, the link diagram and the step-by-step calculation with its compliance table for the
-    governing case.
+    provided links), the link type and arrangement (automatic or manual, with every
+    intermediate leg and cross-tie position), the effective leg count and Asv, the worst
+    required Asv/sv and web-crushing utilisation, the per-case shear table, the link diagram
+    and the step-by-step calculation with its compliance table for the governing case.
 11. Method statement and disclaimer.

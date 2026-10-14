@@ -33,6 +33,14 @@ Full clause-by-clause requirements: [§6](06-is456.md), [§7](07-irc112.md),
 [§6.4](06-is456.md#64-shear-design-check-shear-tab), [§7.8](07-irc112.md#78-shear-design-check-shear-tab)
 and [§8.7](08-irs-cbc.md#87-shear-design-check-cl-1543).
 
+The same tab carries the shear reinforcement diagram and the stirrup detailing editor: the
+link ring is set out from the section outline and the clear cover of each face, the
+longitudinal bars and the links are drawn together on the shared section geometry, and the
+effective legs (2 legs of the closed link + intermediate legs) with the entered spacing are
+what the code check above consumes. The detailing rules are applied **on top of** the selected
+code's clauses — they never change a design equation — and an arrangement that cannot be built
+is reported with its reason ([§10.1](10-outputs.md), [§9](09-validation.md) rule V14).
+
 ## 2.2 Scope boundaries
 
 - The module checks **ULS section strength** (axial + biaxial bending) and section-level
@@ -42,7 +50,8 @@ and [§8.7](08-irs-cbc.md#87-shear-design-check-cl-1543).
   factored `Vu`/`Pu` load-case list. It checks single-axis shear at the critical section:
   concrete shear resistance, the required shear reinforcement, the code's minimum and maximum
   reinforcement limits, the spacing rules and the web-crushing limit — for the code selected in
-  the shared material panel. Torsion, punching shear, fatigue and seismic shear detailing remain
+  the shared material panel. The link ring, the intermediate legs and the cross-ties are drawn
+  on the section and validated against the restraint/spacing rules of that code. Torsion, punching shear, fatigue and seismic shear detailing remain
   outside the scope of revision A.
 - Slenderness classification is reported when member geometry is supplied; second-order
   moment amplification is the caller's responsibility

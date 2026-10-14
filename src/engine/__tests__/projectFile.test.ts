@@ -192,11 +192,13 @@ describe('parseProjectFile', () => {
   it('round-trips the shear cases and shear inputs (v1.4)', () => {
     const st = initialState()
     st.shearCases = [{ id: 'sc1', name: 'SC1', Vu: 420, Pu: 1800 }]
-    st.shear = { ...st.shear, member: 'beam', axis: 'x', tensionFace: 'right', linkDia: 10, linkLegs: 4, linkSpacing: 125, cotTheta: 2, enhance: true, criticalDistance: 700 }
+    st.shear = { ...st.shear, member: 'beam', axis: 'x', tensionFace: 'right', linkDia: 10, linkLegs: 4, linkSpacing: 1500, cotTheta: 2, enhance: true, criticalDistance: 700 }
     const json = JSON.stringify({ version: '1.4', app: 'RCC Section Check', exportedAt: '', state: st })
     const parsed = parseProjectFile(json)
     expect(parsed.shearCases).toEqual([{ id: 'sc1', name: 'SC1', Vu: 420, Pu: 1800 }])
     expect(parsed.shear).toEqual(st.shear)
+    // a four-digit spacing survives the round trip
+    expect(parsed.shear.linkSpacing).toBe(1500)
     // the shear list is independent of the ULS/SLS/crack-width lists
     expect(parsed.cases).toEqual(st.cases)
     expect(parsed.slsCases).toEqual(st.slsCases)
@@ -228,6 +230,44 @@ describe('parseProjectFile', () => {
     expect(parsed.shear.linkSpacing).toBeGreaterThan(0)
     expect(parsed.shear.linkLegs).toBeGreaterThanOrEqual(2)
     expect(parsed.shear.cotTheta).toBeLessThanOrEqual(2.5)
+  })
+
+  it('round-trips the link detailing of v1.5 and sanitises a hand-edited layout', () => {
+    const st = initialState()
+    st.shear = {
+      ...st.shear,
+      linkShape: 'circular',
+      linkLayout: 'manual',
+      legPositions: [0.25, 0.75],
+      tiePositions: [0.5],
+    }
+    const parsed = parseProjectFile(JSON.stringify({ version: '1.5', app: 'RCC Section Check', exportedAt: '', state: st }))
+    expect(parsed.shear.linkShape).toBe('circular')
+    expect(parsed.shear.linkLayout).toBe('manual')
+    expect(parsed.shear.legPositions).toEqual([0.25, 0.75])
+    expect(parsed.shear.tiePositions).toEqual([0.5])
+
+    const messy = JSON.stringify({
+      version: '1.5',
+      state: {
+        geometry: { boundary: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 600 }, { x: 0, y: 600 }], voids: [] },
+        bars: [{ x: 50, y: 50, dia: 25 }],
+        cases: [{ id: 'c1', name: 'LC1', Pu: 1000, Mux: 100, Muy: 0 }],
+        shear: {
+          linkShape: 'square',
+          linkLayout: 'automatic',
+          legPositions: [0.6, 0.4, 0.4, 'x', null, 3.5],
+          tiePositions: 'nope',
+        },
+      },
+    })
+    const safe = parseProjectFile(messy)
+    // unknown shape and mode fall back; positions are de-duped, sorted and kept
+    // slightly out of range so the editor can report them
+    expect(safe.shear.linkShape).toBe('auto')
+    expect(safe.shear.linkLayout).toBe('auto')
+    expect(safe.shear.legPositions).toEqual([0.4, 0.6, 2])
+    expect(safe.shear.tiePositions).toEqual([])
   })
 
   it('throws error for invalid JSON or missing geometry', () => {

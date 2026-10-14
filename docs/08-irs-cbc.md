@@ -131,3 +131,17 @@ BS 5400-4 lineage method of the code:
 column) and rounds to two decimals, which reproduces the printed Table 15 values at the tabulated
 percentages [verify against the printed table before release]. There is **no near-support
 enhancement** in this lineage — enter VEd at the critical section.
+
+### Link detailing (the drawing beside the check)
+
+The link ring is set out from the section outline and the **clear cover of each face** (radial
+cover for circular sections) — the same geometry, bars and cover as the section preview.
+`Asv = n × ⌀²π/4` is taken from the **effective legs crossing the shear plane** (the 2 legs of
+the closed link plus the intermediate legs) and, with the entered `sv`, is what the Cl 15.4.3
+check uses; the drawing never certifies compliance by itself. The Cl 15.4.3.4 spacing limits
+(`0.75·d`, legs in both directions), the fyv ≤ 415 N/mm² cap and the minimum-link expression
+of Table 14 are reported with the verdict. Detailing is validated on the rule that no
+longitudinal bar may be farther than **150 mm** from a link bend, intermediate leg or
+cross-tie, with a minimum clear spacing of `max(25 mm, ⌀link)`. The automatic arrangement
+derives the members from the bar layout by the same rule; manual members that cannot be built
+are reported with their reason and are never moved or clamped.

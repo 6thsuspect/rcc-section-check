@@ -9,12 +9,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   ShearCasesPanel,
+  ShearDetailingCard,
   ShearInputsPanel,
   ShearResultsTable,
   ShearStepPanel,
   ShearSummaryPanel,
 } from '../../components/Shear'
-import { shearCheck, shearSectionData, shearSummary, type ShearCaseResult } from '../../engine/shear'
+import {
+  shearCheck,
+  shearSectionData,
+  shearSummary,
+  type ShearCaseResult,
+  type ShearSettings,
+} from '../../engine/shear'
+import { resolveLinkLayout, validateLinkLayout, withResolvedLegs } from '../../engine/stirrups'
+import { generateSection } from '../../engine/sections'
+import { uniformCover } from '../../engine/cover'
 import { initialState } from '../../state'
 import type { DesignCodeId } from '../../engine/types'
 
@@ -30,21 +40,35 @@ function fixture(code: DesignCodeId) {
   const s = initialState()
   s.code = code
   const fy = 500
-  const section = shearSectionData(s.geometry, s.bars, s.cover, s.shear)
+  const circular = s.shapeClass === 'circ'
+  const layout = resolveLinkLayout(s.geometry, s.bars, s.cover, s.shear, circular)
+  const validation = validateLinkLayout(layout, s.geometry, s.bars, s.shear)
+  const settings = withResolvedLegs(s.shear, layout)
+  const section = shearSectionData(s.geometry, s.bars, s.cover, settings)
   const results: ShearCaseResult[] = s.shearCases.map((lc) =>
-    shearCheck(code, s.fck, fy, s.geometry, s.bars, s.cover, s.shear, lc),
+    shearCheck(code, s.fck, fy, s.geometry, s.bars, s.cover, settings, lc),
   )
-  return { s, fy, section, results, summary: shearSummary(results), selected: s.shearCases[0] }
+  return {
+    s,
+    fy,
+    section,
+    layout,
+    validation,
+    settings,
+    results,
+    summary: shearSummary(results),
+    selected: s.shearCases[0],
+  }
 }
 
 describe('shear panels render hygiene', () => {
   for (const code of ['IS456', 'IRC112', 'IRSCBC'] as const) {
     it(`renders every shear panel for ${code}`, () => {
-      const { s, section, results, summary, selected } = fixture(code)
+      const { s, section, layout, validation, results, summary, selected } = fixture(code)
       const update = () => {}
       const html = renderToStaticMarkup(
         <div>
-          <ShearInputsPanel state={s} update={update} section={section} />
+          <ShearInputsPanel state={s} update={update} section={section} layout={layout} />
           <ShearCasesPanel
             cases={s.shearCases}
             selected={selected.id}
@@ -58,8 +82,20 @@ describe('shear panels render hygiene', () => {
             select={update}
             section={section}
           />
-          <ShearSummaryPanel code={code} summary={summary} settings={s.shear} section={section} figureId="fig-shear" />
+          <ShearSummaryPanel code={code} summary={summary} />
           <ShearStepPanel code={code} lc={selected} result={results[0]} section={section} />
+          <ShearDetailingCard
+            state={s}
+            update={update}
+            geometry={s.geometry}
+            bars={s.bars}
+            section={section}
+            layout={layout}
+            validation={validation}
+            result={results[0]}
+            circular={false}
+            figureId="fig-shear"
+          />
         </div>,
       )
       expect(msgs).toEqual([])
@@ -77,9 +113,11 @@ describe('shear panels render hygiene', () => {
     const is456 = fixture('IS456')
     const irc = fixture('IRC112')
     const is456Html = renderToStaticMarkup(
-      <ShearInputsPanel state={is456.s} update={() => {}} section={is456.section} />,
+      <ShearInputsPanel state={is456.s} update={() => {}} section={is456.section} layout={is456.layout} />,
     )
-    const ircHtml = renderToStaticMarkup(<ShearInputsPanel state={irc.s} update={() => {}} section={irc.section} />)
+    const ircHtml = renderToStaticMarkup(
+      <ShearInputsPanel state={irc.s} update={() => {}} section={irc.section} layout={irc.layout} />,
+    )
     expect(is456Html).not.toContain('Strut inclination')
     expect(ircHtml).toContain('Strut inclination')
     expect(ircHtml).toContain('cot θ')
@@ -87,12 +125,12 @@ describe('shear panels render hygiene', () => {
   })
 
   it('renders the empty states without cases', () => {
-    const { s, section } = fixture('IS456')
+    const { section } = fixture('IS456')
     const summary = shearSummary([])
     const html = renderToStaticMarkup(
       <div>
         <ShearResultsTable code="IS456" results={[]} selected={null} select={() => {}} section={section} />
-        <ShearSummaryPanel code="IS456" summary={summary} settings={s.shear} section={section} />
+        <ShearSummaryPanel code="IS456" summary={summary} />
         <ShearStepPanel code="IS456" lc={null} result={null} section={section} />
       </div>,
     )
@@ -102,9 +140,20 @@ describe('shear panels render hygiene', () => {
   })
 
   it('gives the shear diagram the shared figure controls (zoom in / out / fit)', () => {
-    const { section, results } = fixture('IS456')
+    const { s, section, layout, validation, results } = fixture('IS456')
     const html = renderToStaticMarkup(
-      <ShearSummaryPanel code="IS456" summary={shearSummary(results)} settings={fixture('IS456').s.shear} section={section} figureId="fig-shear" />,
+      <ShearDetailingCard
+        state={s}
+        update={() => {}}
+        geometry={s.geometry}
+        bars={s.bars}
+        section={section}
+        layout={layout}
+        validation={validation}
+        result={results[0]}
+        circular={false}
+        figureId="fig-shear"
+      />,
     )
     // same control strip as every other figure in the app
     expect(html).toContain('aria-label="Zoom in"')
@@ -122,6 +171,165 @@ describe('shear panels render hygiene', () => {
     expect(html).toContain('Asv/s req')
     expect(html).toContain('Asv/s prov')
     expect(html).toContain('sv max')
+    expect(msgs).toEqual([])
+  })
+})
+
+describe('stirrup detailing editor', () => {
+  /** The detailing card for a fixture, with an optional settings patch. */
+  const detailing = (patch: Partial<ShearSettings> = {}, code: DesignCodeId = 'IS456') => {
+    const f = fixture(code)
+    f.s.shear = { ...f.s.shear, ...patch }
+    const layout = resolveLinkLayout(f.s.geometry, f.s.bars, f.s.cover, f.s.shear, false)
+    const validation = validateLinkLayout(layout, f.s.geometry, f.s.bars, f.s.shear)
+    const settings = withResolvedLegs(f.s.shear, layout)
+    const section = shearSectionData(f.s.geometry, f.s.bars, f.s.cover, settings)
+    const results = f.s.shearCases.map((lc) =>
+      shearCheck(code, f.s.fck, f.fy, f.s.geometry, f.s.bars, f.s.cover, settings, lc),
+    )
+    const html = renderToStaticMarkup(
+      <ShearDetailingCard
+        state={f.s}
+        update={() => {}}
+        geometry={f.s.geometry}
+        bars={f.s.bars}
+        section={section}
+        layout={layout}
+        validation={validation}
+        result={shearSummary(results).governing}
+        circular={false}
+      />,
+    )
+    return { html, layout, validation }
+  }
+
+  it('shows a four-digit link spacing with its unit, without truncating the field', () => {
+    const f = fixture('IS456')
+    f.s.shear = { ...f.s.shear, linkSpacing: 1500 }
+    const layout = resolveLinkLayout(f.s.geometry, f.s.bars, f.s.cover, f.s.shear, false)
+    const settings = withResolvedLegs(f.s.shear, layout)
+    const section = shearSectionData(f.s.geometry, f.s.bars, f.s.cover, settings)
+    const html = renderToStaticMarkup(
+      <div>
+        <ShearInputsPanel state={f.s} update={() => {}} section={section} layout={layout} />
+        {detailing({ linkSpacing: 1500 }).html}
+      </div>,
+    )
+    // the input keeps at least 132 px so four digits + the unit never clip
+    expect(html).toContain('min-w-[132px]')
+    expect(html).toContain('value="1500"')
+    expect(html).toContain('>mm</span>')
+    // and the value shown is the one the check ran on
+    expect(html).toContain('sv = 1,500 mm')
+    expect(html).toContain('⌀8 @ 1,500 c/c')
+    // the automatic arrangement of the fixture section is 2 legs plus 2 cross-ties
+    expect(html).toContain('Cross-tie — not in Asv (2)')
+    expect(html).toContain('2 legs in Asv')
+    expect(msgs).toEqual([])
+  })
+
+  it('reports an invalid manual arrangement with its reason and keeps every entered position', () => {
+    const { html, layout, validation } = detailing({
+      linkLayout: 'manual',
+      legPositions: [0.35, 1.4],
+      tiePositions: [0.5],
+    })
+    expect(layout.effectiveLegs).toBe(3) // 2 ring legs + 1 leg that fits
+    expect(layout.dropped).toEqual([{ kind: 'leg', u: 1.4 }])
+    expect(validation.status).toBe('error')
+    expect(html).toContain('lies outside the section outline')
+    // the entered millimetre positions are shown as entered — nothing is clamped
+    expect(html).toContain('value="157.5"')
+    expect(html).toContain('value="630"')
+    expect(html).toContain('value="300"')
+    expect(msgs).toEqual([])
+  })
+
+  it('credits the effective legs and keeps Asv in step with them', () => {
+    const two = detailing({ linkLayout: 'manual', legPositions: [], tiePositions: [0.4, 0.6] })
+    const four = detailing({ linkLayout: 'manual', legPositions: [0.3, 0.7], tiePositions: [] })
+    expect(two.layout.effectiveLegs).toBe(2)
+    expect(four.layout.effectiveLegs).toBe(4)
+    expect(two.html).toContain('2 (2 + 0)')
+    expect(four.html).toContain('4 (2 + 2)')
+    expect(two.html).toContain('101 mm²') // 2 × 50.27
+    expect(four.html).toContain('201 mm²') // 4 × 50.27
+    // the provided Asv/sv the check uses follows the same leg count
+    expect(two.html).toContain('0.670 mm²/mm')
+    expect(four.html).toContain('1.340 mm²/mm')
+    expect(msgs).toEqual([])
+  })
+
+  it('draws the automatic arrangement of a wide section from its bars', () => {
+    const f = fixture('IS456')
+    f.s.geometry = generateSection(
+      { kind: 'rect', B: 900, D: 1200, nx: 6, ny: 6 },
+      { cover: uniformCover(40), tieDia: 8, barDia: 25 },
+    ).geometry
+    f.s.bars = generateSection(
+      { kind: 'rect', B: 900, D: 1200, nx: 6, ny: 6 },
+      { cover: uniformCover(40), tieDia: 8, barDia: 25 },
+    ).bars
+    const layout = resolveLinkLayout(f.s.geometry, f.s.bars, f.s.cover, f.s.shear, false)
+    expect(layout.intermediate.length).toBeGreaterThan(0)
+    // the legs alone restrain every bar of this wide section, so no tie is added
+    expect(layout.ties.length).toBe(0)
+    const validation = validateLinkLayout(layout, f.s.geometry, f.s.bars, f.s.shear)
+    expect(validation.unrestrained).toEqual([])
+    const html = renderToStaticMarkup(
+      <ShearDetailingCard
+        state={f.s}
+        update={() => {}}
+        geometry={f.s.geometry}
+        bars={f.s.bars}
+        section={sheetSection(f)}
+        layout={layout}
+        validation={validation}
+        result={null}
+        circular={false}
+        figureId="fig-shear"
+      />,
+    )
+    expect(html).toContain('Internal leg — in Asv (4)')
+    // a wide section is detailed with legs; the cross-tie legend still reports its own count
+    expect(html).toContain('Cross-tie — not in Asv (0)')
+    expect(html).toContain('every longitudinal bar is restrained')
+    expect(msgs).toEqual([])
+    function sheetSection(fx: ReturnType<typeof fixture>) {
+      const settings = withResolvedLegs(fx.s.shear, fx.layout)
+      return shearSectionData(fx.s.geometry, fx.s.bars, fx.s.cover, settings)
+    }
+  })
+
+  it('renders a circular section with its hoop note and no automatic straight members', () => {
+    const s = initialState()
+    const g = generateSection({ kind: 'circle', D: 800, nBars: 16 }, { cover: uniformCover(40), tieDia: 10, barDia: 25 })
+    s.geometry = g.geometry
+    s.bars = g.bars
+    s.shapeClass = 'circ'
+    s.shear = { ...s.shear, linkDia: 10 }
+    const layout = resolveLinkLayout(s.geometry, s.bars, s.cover, s.shear, true)
+    expect(layout.ring.shape).toBe('circular')
+    expect(layout.members).toEqual([])
+    const validation = validateLinkLayout(layout, s.geometry, s.bars, s.shear)
+    const settings = withResolvedLegs(s.shear, layout)
+    const html = renderToStaticMarkup(
+      <ShearDetailingCard
+        state={s}
+        update={() => {}}
+        geometry={s.geometry}
+        bars={s.bars}
+        section={shearSectionData(s.geometry, s.bars, s.cover, settings)}
+        layout={layout}
+        validation={validation}
+        result={null}
+        circular
+        figureId="fig-shear"
+      />,
+    )
+    expect(html).toContain('Circular hoop')
+    expect(html).toContain('Drawn as circular')
+    expect(html).toContain('<circle')
     expect(msgs).toEqual([])
   })
 })

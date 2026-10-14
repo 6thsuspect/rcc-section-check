@@ -1,0 +1,472 @@
+/**
+ * Link detailing: the ring set out from the section and its cover, the automatic
+ * arrangement derived from the bar table, the restraint validation and the
+ * editors' coordinate helpers. The resistance check itself lives in
+ * `shear.test.ts` — these tests only touch the geometry and the detailing rules.
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  RESTRAINT_LIMIT,
+  autoLinkMembers,
+  barRestraintDistance,
+  buildLinkRing,
+  hookPath,
+  linkAreaBreakdown,
+  memberCoordinate,
+  normalisedPosition,
+  resolveLinkLayout,
+  suggestMemberPosition,
+  validateLinkLayout,
+  withResolvedLegs,
+} from '../stirrups'
+import { barArea, centroid } from '../geometry'
+import { uniformCover } from '../cover'
+import { generateSection } from '../sections'
+import { shearCheck, shearSectionData } from '../shear'
+import { DEFAULT_SHEAR } from '../shear'
+import type { Rebar, SectionGeometry } from '../types'
+
+const COVER = uniformCover(40)
+
+function rect(B: number, D: number, nx: number, ny: number, cover = 40, tieDia = 8, barDia = 25) {
+  const g = generateSection({ kind: 'rect', B, D, nx, ny }, { cover: uniformCover(cover), tieDia, barDia })
+  return { geometry: g.geometry as SectionGeometry, bars: g.bars as Rebar[] }
+}
+
+/** Default-like section: 450 × 600, four 25 mm bars per face. */
+function defaultSection() {
+  return rect(450, 600, 4, 4)
+}
+
+function members(layout: ReturnType<typeof resolveLinkLayout>) {
+  return layout.members.map((m) => ({ a: m.a, b: m.b }))
+}
+
+describe('link ring', () => {
+  it('offsets every face by cover + ⌀/2, following the section shape', () => {
+    const { geometry } = defaultSection()
+    const ring = buildLinkRing(geometry, COVER, { ...DEFAULT_SHEAR, linkDia: 8 }, false)
+    expect(ring.shape).toBe('rectangular')
+    expect(ring.auto).toBe(true)
+    expect(ring.inset).toBeCloseTo(44, 6)
+    expect(ring.min.x).toBeCloseTo(44, 6)
+    expect(ring.min.y).toBeCloseTo(44, 6)
+    expect(ring.max.x).toBeCloseTo(406, 6)
+    expect(ring.max.y).toBeCloseTo(556, 6)
+    expect(ring.path).toHaveLength(4)
+  })
+
+  it('honours the cover of each face separately', () => {
+    const { geometry } = defaultSection()
+    const perFace = { ...uniformCover(40), outer: { ...uniformCover(40).outer, bottom: 60, left: 30 } }
+    const ring = buildLinkRing(geometry, perFace, { ...DEFAULT_SHEAR, linkDia: 10 }, false)
+    // bottom 60 + 5, left 30 + 5
+    expect(ring.min.y).toBeCloseTo(65, 6)
+    expect(ring.min.x).toBeCloseTo(35, 6)
+    expect(ring.max.y).toBeCloseTo(600 - 45, 6)
+  })
+
+  it('builds a concentric hoop for a circular section and can force one in a rectangle', () => {
+    const circle = generateSection({ kind: 'circle', D: 800, nBars: 12 }, { cover: COVER, tieDia: 8, barDia: 25 })
+    const ring = buildLinkRing(circle.geometry as SectionGeometry, COVER, { ...DEFAULT_SHEAR, linkDia: 8 }, true)
+    expect(ring.shape).toBe('circular')
+    expect(ring.circle!.r).toBeCloseTo(400 - 44, 6)
+    // the generated circle is centred on the origin
+    expect(ring.circle!.cx).toBeCloseTo(0, 6)
+    expect(ring.circle!.cy).toBeCloseTo(0, 6)
+
+    const { geometry } = defaultSection()
+    const forced = buildLinkRing(geometry, COVER, { ...DEFAULT_SHEAR, linkShape: 'circular' }, false)
+    expect(forced.shape).toBe('circular')
+    expect(forced.circle!.r).toBeCloseTo(Math.hypot(225, 300) - 44, 6)
+  })
+
+  it('never collapses: a cover larger than the section still yields a drawable ring', () => {
+    const { geometry } = rect(200, 200, 2, 2, 140)
+    const ring = buildLinkRing(geometry, uniformCover(140), { ...DEFAULT_SHEAR, linkDia: 12 }, false)
+    expect(ring.path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+    expect(Math.abs(ring.path.reduce((s, p, i) => s + (p.x * ring.path[(i + 1) % ring.path.length].y - ring.path[(i + 1) % ring.path.length].x * p.y), 0) / 2)).toBeGreaterThan(0)
+  })
+})
+
+describe('automatic arrangement', () => {
+  it('adds only what the restraint rule asks for — the narrow default needs no extra legs', () => {
+    const { geometry, bars } = defaultSection()
+    const ring = buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false)
+    const auto = autoLinkMembers(ring, geometry, bars, DEFAULT_SHEAR, false)
+    // the mid-depth side-face bars sit beyond the limit of the ring's own bends,
+    // so they are tied rather than given extra legs
+    expect(bars.filter((b) => barRestraintDistance(b, ring, []) > RESTRAINT_LIMIT).length).toBe(4)
+    expect(auto.legs).toEqual([])
+    expect(auto.ties).toHaveLength(2)
+
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    expect(layout.effectiveLegs).toBe(2)
+    expect(layout.asvPerS).toBeCloseTo((2 * barArea(8)) / 150, 9)
+    expect(validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR).status).toBe('ok')
+  })
+
+  it('adds intermediate legs for a wide section and restrains every bar', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    // a 900 mm wide beam is detailed with intermediate legs; a leg restrains a whole
+    // column of bars and is link steel, so the legs are what the rule places first
+    expect(layout.intermediate.length).toBeGreaterThanOrEqual(2)
+    expect(layout.effectiveLegs).toBe(2 + layout.intermediate.length)
+    // legs span the depth (shear along y), cross-ties span the width
+    for (const m of layout.members) {
+      expect(m.length).toBeGreaterThan(0)
+      if (m.kind === 'leg') expect(Math.abs(m.a.x - m.b.x)).toBeLessThan(1e-6)
+      else expect(Math.abs(m.a.y - m.b.y)).toBeLessThan(1e-6)
+    }
+    const v = validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR)
+    expect(v.unrestrained).toEqual([])
+    expect(v.status).toBe('ok')
+  })
+
+  it('places each automatic member on a bar column or a bar level', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    for (const m of layout.members) {
+      expect(m.nearestBar).not.toBeNull()
+      expect(m.nearestBar!).toBeLessThanOrEqual(Math.max(25, 1.5 * 25))
+    }
+  })
+
+  it('restrains the side-face bars of a narrow deep section with cross-ties', () => {
+    // 200 mm wide: there is no room for extra legs beside the ring's own, so the
+    // bars at the interior depths are tied instead — and a tie is not in Asv
+    const { geometry, bars } = rect(200, 1500, 4, 10)
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    expect(layout.intermediate).toEqual([])
+    expect(layout.ties.length).toBeGreaterThan(2)
+    expect(layout.effectiveLegs).toBe(2)
+    const v = validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR)
+    expect(v.errors).toEqual([])
+    expect(v.unrestrained).toEqual([])
+  })
+
+  it('places an arrangement that always passes its own validation', () => {
+    const cases: { name: string; geometry: SectionGeometry; bars: Rebar[]; circular: boolean }[] = [
+      { name: 'rect', ...defaultSection(), circular: false },
+      { name: 'wide rect', ...rect(900, 1200, 6, 6), circular: false },
+      { name: 'narrow deep rect', ...rect(200, 1500, 4, 10), circular: false },
+      { name: 'box', ...boxLike(), circular: false },
+      { name: 'circle', ...circleLike(), circular: true },
+    ]
+    for (const c of cases) {
+      const layout = resolveLinkLayout(c.geometry, c.bars, COVER, DEFAULT_SHEAR, c.circular)
+      const v = validateLinkLayout(layout, c.geometry, c.bars, DEFAULT_SHEAR)
+      expect({ name: c.name, errors: v.errors }).toEqual({ name: c.name, errors: [] })
+      expect({ name: c.name, unrestrained: v.unrestrained }).toEqual({ name: c.name, unrestrained: [] })
+    }
+
+    function boxLike() {
+      const g = generateSection({ kind: 'box', B: 800, D: 1000, tw: 150, tf: 150, nx: 4, ny: 5 }, { cover: COVER, tieDia: 8, barDia: 25 })
+      return { geometry: g.geometry as SectionGeometry, bars: g.bars as Rebar[] }
+    }
+    function circleLike() {
+      const g = generateSection({ kind: 'circle', D: 800, nBars: 16 }, { cover: COVER, tieDia: 8, barDia: 25 })
+      return { geometry: g.geometry as SectionGeometry, bars: g.bars as Rebar[] }
+    }
+  })
+
+  it('never adds a member that would only double one of the ring legs', () => {
+    // a 400 x 600 section whose ring runs from 44 mm to 356 mm; one bar sits 4 mm
+    // inside the left leg of the ring, so a leg there would merely repeat it
+    const boundary = [
+      { x: 0, y: 0 },
+      { x: 400, y: 0 },
+      { x: 400, y: 600 },
+      { x: 0, y: 600 },
+    ]
+    const geometry: SectionGeometry = { boundary, voids: [] }
+    const bars: Rebar[] = [
+      { x: 58, y: 58, dia: 25 },
+      { x: 342, y: 58, dia: 25 },
+      { x: 58, y: 542, dia: 25 },
+      { x: 342, y: 542, dia: 25 },
+      { x: 48, y: 300, dia: 25 },
+    ]
+    const ring = buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false)
+    const auto = autoLinkMembers(ring, geometry, bars, DEFAULT_SHEAR, false)
+    // the leg the bar would ask for is skipped, and its level is tied instead
+    expect(auto.legs).toEqual([])
+    expect(auto.ties).toHaveLength(1)
+    expect(auto.ties[0]).toBeCloseTo(0.5, 3)
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    expect(layout.intermediate).toEqual([])
+    expect(validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR).unrestrained).toEqual([])
+  })
+
+  it('keeps the automatic arrangement symmetric for a symmetric bar table', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const auto = autoLinkMembers(buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false), geometry, bars, DEFAULT_SHEAR, false)
+    expect(auto.legs.length).toBeGreaterThan(0)
+    for (const u of auto.legs) {
+      const mirror = Math.round((1 - u) * 1e4) / 1e4
+      expect(auto.legs.some((v) => Math.abs(v - mirror) < 1e-3)).toBe(true)
+    }
+    // and the cross-ties of the narrow deep section pair up the same way
+    const narrow = rect(200, 1500, 4, 10)
+    const tied = autoLinkMembers(buildLinkRing(narrow.geometry, COVER, DEFAULT_SHEAR, false), narrow.geometry, narrow.bars, DEFAULT_SHEAR, false)
+    expect(tied.ties.length).toBeGreaterThan(0)
+    for (const u of tied.ties) {
+      const mirror = Math.round((1 - u) * 1e4) / 1e4
+      expect(tied.ties.some((v) => Math.abs(v - mirror) < 1e-3)).toBe(true)
+    }
+  })
+
+  it('leaves a circular hoop to the user and survives an empty bar table', () => {
+    const circle = generateSection({ kind: 'circle', D: 800, nBars: 12 }, { cover: COVER, tieDia: 8, barDia: 25 })
+    const geo = circle.geometry as SectionGeometry
+    const layout = resolveLinkLayout(geo, circle.bars as Rebar[], COVER, DEFAULT_SHEAR, true)
+    expect(layout.ring.shape).toBe('circular')
+    expect(layout.members).toEqual([])
+    expect(layout.effectiveLegs).toBe(2)
+    expect(layout.notes.join(' ')).toMatch(/Circular hoop/)
+
+    const empty = resolveLinkLayout(geo, [], COVER, DEFAULT_SHEAR, false)
+    expect(empty.members).toEqual([])
+  })
+
+  it('updates when the bars move — a new column of bars pulls in a leg', () => {
+    const { geometry, bars } = defaultSection()
+    const before = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    // drop the side-face bars and add an interior bar in the middle of the section
+    const moved = [...bars, { ...bars[0], x: 225, y: 300, faces: undefined, face: undefined } as Rebar]
+    const after = resolveLinkLayout(geometry, moved, COVER, DEFAULT_SHEAR, false)
+    expect(after.members.length).toBeGreaterThan(before.members.length)
+    expect(validateLinkLayout(after, geometry, moved, DEFAULT_SHEAR).unrestrained).toEqual([])
+  })
+
+  it('honours the shear direction: legs cut the force direction, ties run across the width', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const xAxis = { ...DEFAULT_SHEAR, axis: 'x' as const, tensionFace: 'right' as const }
+    const layout = resolveLinkLayout(geometry, bars, COVER, xAxis, false)
+    for (const m of layout.members) {
+      if (m.kind === 'leg') expect(Math.abs(m.a.y - m.b.y)).toBeLessThan(1e-6)
+      else expect(Math.abs(m.a.x - m.b.x)).toBeLessThan(1e-6)
+    }
+  })
+})
+
+describe('layout and the resistance check', () => {
+  it('reports the effective legs and Asv of the drawn arrangement', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const layout = resolveLinkLayout(geometry, bars, COVER, { ...DEFAULT_SHEAR, linkDia: 10, linkSpacing: 200 }, false)
+    const single = barArea(10)
+    expect(layout.singleLegArea).toBeCloseTo(single, 9)
+    expect(layout.totalLegArea).toBeCloseTo(layout.effectiveLegs * single, 9)
+    expect(layout.asvPerS).toBeCloseTo((layout.effectiveLegs * single) / 200, 9)
+    expect(layout.ties.every((t) => !t.effective)).toBe(true)
+    expect(linkAreaBreakdown(layout, { ...DEFAULT_SHEAR, linkDia: 10, linkSpacing: 200 })).toMatchObject({
+      ringLegs: 2,
+      intermediate: layout.intermediate.length,
+      effectiveLegs: layout.effectiveLegs,
+      ties: layout.ties.length,
+      spacing: 200,
+    })
+  })
+
+  it('feeds the effective leg count into the engine without touching the equations', () => {
+    const { geometry, bars } = defaultSection()
+    const twoLegs = { ...DEFAULT_SHEAR, linkLayout: 'manual' as const, legPositions: [], tiePositions: [] }
+    const fourLegs = { ...DEFAULT_SHEAR, linkLayout: 'manual' as const, legPositions: [0.3, 0.7], tiePositions: [] }
+    const l2 = resolveLinkLayout(geometry, bars, COVER, twoLegs, false)
+    const l4 = resolveLinkLayout(geometry, bars, COVER, fourLegs, false)
+    expect(l2.effectiveLegs).toBe(2)
+    expect(l4.effectiveLegs).toBe(4)
+
+    const lc = { id: 'c1', name: 'C1', Vu: 320, Pu: 0 }
+    const fy = 500
+    const r2 = shearCheck('IS456', 30, fy, geometry, bars, COVER, withResolvedLegs(twoLegs, l2), lc)
+    const r4 = shearCheck('IS456', 30, fy, geometry, bars, COVER, withResolvedLegs(fourLegs, l4), lc)
+    expect(r2.asvPerSProvided).toBeCloseTo((2 * barArea(8)) / 150, 6)
+    expect(r4.asvPerSProvided).toBeCloseTo((4 * barArea(8)) / 150, 6)
+    expect(r4.VRd).toBeGreaterThan(r2.VRd)
+    // same section and concrete, so the concrete contribution is unchanged
+    expect(r4.Vc).toBeCloseTo(r2.Vc, 6)
+    expect(shearSectionData(geometry, bars, COVER, withResolvedLegs(fourLegs, l4)).d).toBeCloseTo(
+      shearSectionData(geometry, bars, COVER, withResolvedLegs(twoLegs, l2)).d,
+      9,
+    )
+  })
+
+  it('keeps ties out of Asv', () => {
+    const { geometry, bars } = defaultSection()
+    const tiesOnly = { ...DEFAULT_SHEAR, linkLayout: 'manual' as const, legPositions: [], tiePositions: [0.4, 0.6] }
+    const layout = resolveLinkLayout(geometry, bars, COVER, tiesOnly, false)
+    expect(layout.ties).toHaveLength(2)
+    expect(layout.effectiveLegs).toBe(2)
+  })
+})
+
+describe('detailing validation', () => {
+  const caseOf = (settings: typeof DEFAULT_SHEAR, geo = defaultSection()) => {
+    const layout = resolveLinkLayout(geo.geometry, geo.bars, COVER, settings, false)
+    return { layout, v: validateLinkLayout(layout, geo.geometry, geo.bars, settings) }
+  }
+
+  it('reports a position outside the section without moving it', () => {
+    const { layout, v } = caseOf({ ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [1.4] })
+    expect(v.status).toBe('error')
+    expect(v.errors.join(' ')).toMatch(/lies outside the section outline/)
+    // the entered value is kept, not clamped
+    expect(layout.dropped).toContainEqual({ kind: 'leg', u: 1.4 })
+    expect(memberCoordinate(defaultSection().geometry, 'leg', 1.4, 'y')).toBeCloseTo(630, 6)
+  })
+
+  it('reports a member on the ring, a member too close to another and coincident ties', () => {
+    // the ring's own leg sits at mm 44, i.e. u = 44/450
+    const onRing = caseOf({ ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [44 / 450] })
+    expect(onRing.layout.dropped).toEqual([])
+    expect(onRing.v.errors.join(' ')).toMatch(/duplicates the ring's own leg/)
+    const tooClose = caseOf({ ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [0.4, 0.42] })
+    expect(tooClose.v.errors.join(' ')).toMatch(/apart — provide at least 25 mm clear/)
+    const dupTies = caseOf({ ...DEFAULT_SHEAR, linkLayout: 'manual', tiePositions: [0.5, 0.5] })
+    expect(dupTies.v.errors.length).toBeGreaterThan(0)
+  })
+
+  it('warns about an unrestrained bar and names it', () => {
+    const geo = rect(900, 1200, 6, 6)
+    // a bar in the middle of a void-free pocket, far from every link bend
+    const bars = [...geo.bars, { x: 450, y: 600, dia: 25, face: undefined, faces: undefined } as Rebar]
+    const settings = { ...DEFAULT_SHEAR, linkLayout: 'manual' as const, legPositions: [], tiePositions: [] }
+    const layout = resolveLinkLayout(geo.geometry, bars, COVER, settings, false)
+    const v = validateLinkLayout(layout, geo.geometry, bars, settings)
+    expect(v.unrestrained.length).toBeGreaterThan(0)
+    expect(v.warnings.join(' ')).toMatch(/is \d+ mm from the nearest leg, cross-tie or link corner/)
+    expect(v.status).toBe('warn')
+  })
+
+  it('flags a ring that cannot hold the entered cover, a forced shape, voids and circular ties', () => {
+    // 40 mm cover + 4 mm to the link centreline inside a 20 mm deep section
+    const thin = rect(300, 20, 2, 2, 40)
+    const collapsed = resolveLinkLayout(thin.geometry, thin.bars, uniformCover(40), DEFAULT_SHEAR, false)
+    const cv = validateLinkLayout(collapsed, thin.geometry, thin.bars, DEFAULT_SHEAR)
+    expect(collapsed.ring.reduced).toBe(true)
+    expect(cv.errors.join(' ')).toMatch(/does not fit inside the section with the entered cover/)
+    // the reduced ring stays drawable — the error explains it rather than the drawing
+    expect(collapsed.ring.path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+
+    const box = generateSection({ kind: 'box', B: 800, D: 900, tw: 100, tf: 100, nx: 4, ny: 4 }, { cover: uniformCover(40), tieDia: 8, barDia: 25 })
+    const bv = validateLinkLayout(
+      resolveLinkLayout(box.geometry as SectionGeometry, box.bars as Rebar[], COVER, DEFAULT_SHEAR, false),
+      box.geometry as SectionGeometry,
+      box.bars as Rebar[],
+      DEFAULT_SHEAR,
+    )
+    expect(bv.warnings.join(' ')).toMatch(/void-face links are outside this module/)
+
+    const circle = generateSection({ kind: 'circle', D: 800, nBars: 12 }, { cover: COVER, tieDia: 8, barDia: 25 })
+    const circ = { ...DEFAULT_SHEAR, linkLayout: 'manual' as const, tiePositions: [0.5] }
+    const chordTie = resolveLinkLayout(circle.geometry as SectionGeometry, circle.bars as Rebar[], COVER, circ, true)
+    const chv = validateLinkLayout(chordTie, circle.geometry as SectionGeometry, circle.bars as Rebar[], circ)
+    expect(chv.warnings.join(' ')).toMatch(/Straight cross-ties across a circular hoop/)
+  })
+})
+
+describe('editor helpers', () => {
+  it('draws a non-rectangular outline without errors and reports the link-shape caveat', () => {
+    // a tee: the perimeter link follows the outline, which a detailing drawing has
+    // to confirm — it is a warning, not a failure of the section
+    const tee = generateSection(
+      { kind: 'tee', bf: 900, tf: 150, bw: 300, D: 750, nFlange: 6, nWeb: 6 },
+      { cover: COVER, tieDia: 8, barDia: 25 },
+    )
+    const geometry = tee.geometry as SectionGeometry
+    const bars = tee.bars as Rebar[]
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    const v = validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR)
+    expect(layout.ring.shape).toBe('rectangular')
+    expect(v.errors).toEqual([])
+    expect(v.status).toBe('warn')
+    expect(v.warnings.join(' ')).toMatch(/non-rectangular section/)
+    expect(layout.ring.path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+
+    // a 200 mm circle with 140 mm cover: the hoop has no radius left at all
+    const small = generateSection({ kind: 'circle', D: 200, nBars: 6 }, { cover: uniformCover(140), tieDia: 8, barDia: 25 })
+    const smallGeometry = small.geometry as SectionGeometry
+    const smallLayout = resolveLinkLayout(smallGeometry, small.bars as Rebar[], uniformCover(140), DEFAULT_SHEAR, true)
+    expect(smallLayout.ring.circle!.r).toBe(0)
+    const smallValidation = validateLinkLayout(smallLayout, smallGeometry, small.bars as Rebar[], DEFAULT_SHEAR)
+    expect(smallValidation.status).toBe('error')
+    expect(smallValidation.errors.join(' ')).toMatch(/circular link does not fit/)
+  })
+
+  it('round-trips between normalised positions and millimetre coordinates, unclamped', () => {
+    const { geometry } = defaultSection()
+    for (const u of [0, 0.25, 0.5, 1, 1.3, -0.2]) {
+      const mm = memberCoordinate(geometry, 'leg', u, 'y')
+      expect(normalisedPosition(geometry, 'leg', mm, 'y')).toBeCloseTo(u, 9)
+    }
+    expect(memberCoordinate(geometry, 'leg', 0.5, 'y')).toBeCloseTo(225, 6)
+    expect(memberCoordinate(geometry, 'tie', 0.5, 'y')).toBeCloseTo(300, 6)
+    // axis x swaps the axes: a leg is measured across the y extent
+    expect(memberCoordinate(geometry, 'leg', 0.5, 'x')).toBeCloseTo(300, 6)
+  })
+
+  it('suggests a free position — on a bar when one is available, in the widest gap otherwise', () => {
+    const { geometry, bars } = defaultSection()
+    const ring = buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false)
+    const empty = suggestMemberPosition('leg', [], ring, geometry, bars, DEFAULT_SHEAR, false)
+    expect(empty).toBeGreaterThan(0)
+    expect(empty).toBeLessThan(1)
+    const again = suggestMemberPosition('tie', [empty], ring, geometry, bars, DEFAULT_SHEAR, false)
+    expect(Math.abs(again - empty)).toBeGreaterThan(0.03)
+
+    // with every candidate taken the suggestion lands in the widest free gap
+    const all = [0.2, 0.8]
+    const gap = suggestMemberPosition('leg', all, ring, geometry, bars, DEFAULT_SHEAR, false)
+    expect(gap).toBeCloseTo(0.5, 3)
+  })
+
+  it('bends hooks back at 135° and turns the tail into the section', () => {
+    const { geometry } = defaultSection()
+    const c = centroid(geometry.boundary)
+    // leg end at the top of the ring, travelling outwards (up the page in model y)
+    const end = { x: 225, y: 556 }
+    const other = { x: 225, y: 44 }
+    const inward = { x: c.x - end.x, y: c.y - end.y }
+    const hook = hookPath(end, other, 48, inward)
+    expect(hook).toHaveLength(2)
+    const [p0, p1] = hook
+    expect(p0).toEqual(end)
+    const d = { x: p1.x - p0.x, y: p1.y - p0.y }
+    expect(Math.hypot(d.x, d.y)).toBeCloseTo(48, 6)
+    // 135° between the bar's travel (0, +1) and the tail
+    const cos = d.y / 48
+    expect(-cos).toBeCloseTo(Math.SQRT1_2, 9)
+    // and it turns inside the ring
+    expect(d.y * inward.y).toBeGreaterThan(0)
+
+    // a cross-tie hook turns towards the depth the tie sits at
+    const tieHook = hookPath({ x: 44, y: 220 }, { x: 406, y: 220 }, 40, { x: 181, y: 80 })
+    const td = { x: tieHook[1].x - tieHook[0].x, y: tieHook[1].y - tieHook[0].y }
+    expect(Math.hypot(td.x, td.y)).toBeCloseTo(40, 6)
+    expect(td.x).toBeGreaterThan(0)
+    expect(td.y).toBeGreaterThan(0)
+  })
+
+  it('keeps member endpoints on the ring centreline', () => {
+    const { geometry, bars } = rect(900, 1200, 6, 6)
+    const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    const ring = layout.ring.path
+    for (const m of members(layout)) {
+      for (const p of [m.a, m.b]) {
+        const nearest = Math.min(
+          ...ring.map((q, i) => {
+            const r = ring[(i + 1) % ring.length]
+            const dx = r.x - q.x
+            const dy = r.y - q.y
+            const l2 = dx * dx + dy * dy
+            const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - q.x) * dx + (p.y - q.y) * dy) / l2)) : 0
+            return Math.hypot(p.x - (q.x + t * dx), p.y - (q.y + t * dy))
+          }),
+        )
+        expect(nearest).toBeLessThan(0.5)
+      }
+    }
+  })
+})

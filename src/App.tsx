@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import type { CaseResult, InteractionSurface } from './engine/types'
+import type { CaseResult, InteractionSurface, SectionGeometry } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
 import { generateSection } from './engine/sections'
@@ -21,6 +21,7 @@ import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './compone
 import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
 import {
   ShearCasesPanel,
+  ShearDetailingCard,
   ShearDiagram,
   ShearInputsPanel,
   ShearResultsTable,
@@ -42,6 +43,13 @@ import {
   type CrackWidthSettings,
 } from './engine/crackWidth'
 import { spacingReport } from './engine/barSpacing'
+import {
+  resolveLinkLayout,
+  validateLinkLayout,
+  withResolvedLegs,
+  type LinkLayout,
+  type LinkValidation,
+} from './engine/stirrups'
 import {
   SHEAR_CODE_INFO,
   shearCheck,
@@ -349,17 +357,32 @@ export default function App() {
    * — a self-contained module on its own load-case list. Nothing here is
    * read by (or writes to) the ULS and SLS results above.
    * ------------------------------------------------------------------ */
+  // Link ring, intermediate legs and cross-ties, resolved once from the section,
+  // the bar table and the entered cover — the drawing, the detailing editor and
+  // the resistance check all read this same layout.
+  const shearCircular = state.shapeClass === 'circ'
+  const shearLayout = useMemo(
+    () => resolveLinkLayout(state.geometry, state.bars, state.cover, state.shear, shearCircular),
+    [state.geometry, state.bars, state.cover, state.shear, shearCircular],
+  )
+  const shearValidation = useMemo(
+    () => validateLinkLayout(shearLayout, state.geometry, state.bars, state.shear),
+    [shearLayout, state.geometry, state.bars, state.shear],
+  )
+  /** The shear engine reads the effective leg count of the drawn arrangement. */
+  const shearSettings = useMemo(() => withResolvedLegs(state.shear, shearLayout), [state.shear, shearLayout])
+
   const shearSection = useMemo(
-    () => shearSectionData(state.geometry, state.bars, state.cover, state.shear),
-    [state.geometry, state.bars, state.cover, state.shear],
+    () => shearSectionData(state.geometry, state.bars, state.cover, shearSettings),
+    [state.geometry, state.bars, state.cover, shearSettings],
   )
 
   const shearResults: ShearCaseResult[] = useMemo(() => {
     if (!valid) return []
     return state.shearCases.map((lc) =>
-      shearCheck(state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, state.shear, lc),
+      shearCheck(state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, shearSettings, lc),
     )
-  }, [valid, state.shearCases, state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, state.shear])
+  }, [valid, state.shearCases, state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, shearSettings])
 
   const shearSum = useMemo(() => shearSummary(shearResults), [shearResults])
 
@@ -475,7 +498,7 @@ export default function App() {
       selectedName: selected?.name ?? '',
       shear: {
         section: shearSection,
-        settings: state.shear,
+        settings: shearSettings,
         results: shearResults,
         summary: shearSum,
       },
@@ -483,7 +506,7 @@ export default function App() {
         section: grab('fig-section', '0 0 460 340'),
         pm: grab('fig-pm', '0 0 520 400'),
         contour: grab('fig-contour', '0 0 460 420'),
-        shear: grab('fig-shear', '0 0 460 300'),
+        shear: grab('fig-shear', '0 0 460 340'),
       },
     })
   }
@@ -748,7 +771,7 @@ export default function App() {
           />
           {view === 'shear' ? (
             <>
-              <ShearInputsPanel state={state} update={update} section={shearSection} />
+              <ShearInputsPanel state={state} update={update} section={shearSection} layout={shearLayout} />
               <ShearCasesPanel
                 cases={state.shearCases}
                 selected={shearSelected?.id ?? null}
@@ -906,14 +929,21 @@ export default function App() {
                   onSelectFace={setActiveFace}
                 />
               </Card>
-              <ShearSummaryPanel
-                code={state.code}
-                summary={shearSum}
-                settings={state.shear}
-                section={shearSection}
-                figureId="fig-shear"
-              />
+              <ShearSummaryPanel code={state.code} summary={shearSum} />
             </div>
+
+            <ShearDetailingCard
+              state={state}
+              update={update}
+              geometry={state.geometry}
+              bars={state.bars}
+              section={shearSection}
+              layout={shearLayout}
+              validation={shearValidation}
+              result={shearSelResult ?? shearSum.governing}
+              circular={shearCircular}
+              figureId="fig-shear"
+            />
 
             <ShearResultsTable
               code={state.code}
@@ -1043,8 +1073,12 @@ export default function App() {
         selected={selected}
         result={selResult}
         shearSection={shearSection}
-        shearSettings={state.shear}
+        shearSettings={shearSettings}
         shearResult={shearSum.governing}
+        shearGeometry={state.geometry}
+        shearBars={state.bars}
+        shearLayout={shearLayout}
+        shearValidation={shearValidation}
       />
     </div>
   )
@@ -1060,6 +1094,10 @@ function PrintFigures({
   shearSection,
   shearSettings,
   shearResult,
+  shearGeometry,
+  shearBars,
+  shearLayout,
+  shearValidation,
 }: {
   /** Space-separated figure keys to mount: `pm`, `contour`, `shear`. */
   show: string
@@ -1070,6 +1108,10 @@ function PrintFigures({
   shearSection: ShearSectionData
   shearSettings: ShearSettings
   shearResult: ShearCaseResult | null
+  shearGeometry: SectionGeometry
+  shearBars: AppState['bars']
+  shearLayout: LinkLayout
+  shearValidation: LinkValidation
 }) {
   const keys = new Set(show.split(/\s+/).filter(Boolean))
   if (keys.size === 0) return null
@@ -1086,7 +1128,16 @@ function PrintFigures({
         </div>
       )}
       {keys.has('shear') && (
-        <ShearDiagram id="print-fig-shear" section={shearSection} settings={shearSettings} result={shearResult} />
+        <ShearDiagram
+          id="print-fig-shear"
+          geometry={shearGeometry}
+          bars={shearBars}
+          section={shearSection}
+          settings={shearSettings}
+          layout={shearLayout}
+          validation={shearValidation}
+          result={shearResult}
+        />
       )}
     </div>
   )

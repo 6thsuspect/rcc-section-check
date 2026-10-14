@@ -19,11 +19,16 @@ on screen and carried verbatim into the report's remarks section.
 | V11 | Grade availability | Dropdowns filtered per code (IS 456 M20–M80 with > M60 warning; IRC 112 M20–M90; IRS CBC M20–M60, steel ≤ Fe550). Switching codes re-validates current selections | §6–§8 | Error |
 | V12 | Geometry sanity | Predefined-shape parameter constraints (§4.1); overall dimension ≥ 100 mm; aspect-ratio > 4 flagged "wall — column detailing rules may not apply" (IRC 112 Cl 16.2.1 / IRS CBC Cl 15.6.1.1) | §4 | Error / Warning |
 | V13 | Load sanity | 1–100 cases; \|Pu\| ≤ 10⁶ kN; \|M\| ≤ 10⁶ kN·m; case names unique | — | Error |
+| V14 | Shear link detailing | Ring fitted inside the section with the entered cover (a ring that does not fit is drawn reduced and reported); no longitudinal bar farther than **150 mm** from a link bend, an intermediate leg or a cross-tie; member position inside the section outline; a member must cross the ring and must not duplicate the ring's own leg/side; clear spacing between members ≥ max(25 mm, ⌀link) | §6.4 / §7.8 / §8.7 | Error (an unrestrained bar is a Warning) |
 
 Implementation notes:
 
 - V1/V2/V5/V13 and the polygon checks are implemented in `src/engine/geometry.ts` and
   `src/App.tsx` (issues panel); V6–V10 in `src/engine/checks.ts` (compliance table).
+- V14 is computed by `validateLinkLayout` in `src/engine/stirrups.ts` and reported on the
+  stirrup detailing card and in the shear figure caption; the same restraint limit drives the
+  automatic arrangement (`autoLinkMembers`). Entered member positions are never clamped,
+  moved or dropped — an arrangement that cannot be built stays visible and is reported.
 - V3 is computed by `auditCovers` in `src/engine/cover.ts`: every bar is classified against
   the nearest face of the actual polygon (outer or void), then compared with that face's
   nominal cover. The result drives the compliance row "Nominal cover achieved — per face",
