@@ -61,15 +61,23 @@ to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header ma
   dash-dot ink = a cross-tie (restrains a bar, not counted in Asv), filled black = tension
   bars, hollow = other bars, light dotted = the shear plane at the effective depth d.
 
-  The automatic arrangement places the intermediate legs a wide bar layout needs and the
-  cross-ties that pick up the bars a leg cannot cover (side-face bars beside one of the ring's
-  own legs, a column too close to another leg). It never adds a member that would double one of
-  the ring's own runs or sit closer than the minimum clear spacing, so the arrangement it
-  derives always passes the detailing validation it is checked against.
+  Members are placed on the **coordinates of the main reinforcement**: the bar table is read as
+  columns of bars sharing a line, a column that carries a bar in the bottom layer and a bar in
+  the top layer takes an intermediate leg (so the leg connects the two reinforcement layers,
+  standing on that bar column, with its hooks turned towards the bars it engages), and the bars
+  a leg cannot cover — the side-face bars of a deep section — are covered by cross-ties. Each
+  member is drawn from one horizontal run of the link ring to the other with the longitudinal
+  bars drawn over it, so the connections read correctly; the editor lists, for every member, the
+  bars it is hooked around, and a member that lines up with none of them is reported (the
+  anchorage then depends on its hooks alone) rather than moved. The automatic arrangement never
+  adds a member that would double one of the ring's own runs or sit closer than the minimum
+  clear spacing, so it always passes the detailing validation it is checked against.
 
   The drawing is a detailing view: it never by itself certifies compliance. The values shown
   (Asv, Asv/sv, sv,max, VEd/VRd) all come from the selected code's check run on the same
-  inputs, and the caption states the code request/limit that governs.
+  inputs — the caption reports the components of the provided Asv as drawn (⌀, area per leg,
+  number of legs = 2 ring + internal, spacing) beside the required value, so the graphical
+  arrangement and the calculation parameters can be compared at a glance.
 
 ## 10.2 Report
 

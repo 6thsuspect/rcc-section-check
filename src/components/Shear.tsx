@@ -17,6 +17,7 @@ import {
 import {
   RESTRAINT_LIMIT,
   autoLinkMembers,
+  barColumns,
   hookPath,
   memberCoordinate,
   normalisedPosition,
@@ -737,8 +738,42 @@ const ELEV_X1 = 452
 const ELEV_Y0 = 48
 const ELEV_Y1 = 126
 /** Legend rows under the elevation. */
-const LEGEND_Y0 = 174
-const LEGEND_DY = 15
+const LEGEND_Y0 = 184
+const LEGEND_DY = 13
+
+/** Bars a member sits on, as 1-based labels ("2 and 8", "2, 5 and 9"). */
+function barLabels(indexes: number[]): string {
+  const l = indexes.map((i) => i + 1)
+  if (l.length <= 1) return l.join('')
+  if (l.length === 2) return `${l[0]} and ${l[1]}`
+  return `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}`
+}
+
+/**
+ * How a leg or cross-tie lines up with the longitudinal reinforcement: the bar
+ * each end is hooked around, which is what makes an internal leg connect the
+ * bottom reinforcement to the top (and a cross-tie the side-face bars).
+ */
+function memberAlignment(m: ResolvedLinkMember): { short: string; long: string } {
+  const { a, b } = m.ends
+  if (a !== null && b !== null) {
+    return {
+      short: `on bars ${a + 1} + ${b + 1}`,
+      long: `hooked around bars ${a + 1} and ${b + 1}`,
+    }
+  }
+  const one = a ?? b
+  if (one !== null) {
+    return {
+      short: `on bar ${one + 1} only — check anchorage`,
+      long: `hooked around bar ${one + 1} at one end only`,
+    }
+  }
+  return {
+    short: 'not aligned with a bar',
+    long: `lines up with no longitudinal bar (nearest ${m.nearestBar === null ? '—' : `${fmtN(m.nearestBar, 0)} mm`})`,
+  }
+}
 
 /** Line style per link member kind — the drawing, the legend and the editor share it. */
 const MEMBER_STYLE: Record<
@@ -858,8 +893,10 @@ export function ShearDiagram({
     `tension steel: ${FACE_LABEL[section.tensionFace].toLowerCase()} face · Asl = ${fmtN(section.Asl, 0)} mm²`,
     `${section.tensionBarCount} tension bars · cover ${fmtN(section.coverTension, 0)} mm to the link`,
   ]
+  // the components that make the provided Asv, read off the actual arrangement
+  const rigText = `${layout.effectiveLegs} legs in Asv: 2 ring + ${layout.intermediate.length} internal`
   const rightLines = [
-    `⌀${fmtN(linkDia, 0)} @ ${fmtN(spacing, 0)} c/c · ${layout.effectiveLegs} legs in Asv`,
+    `provided = ${fmtN(layout.effectiveLegs, 0)} × ${fmtN(layout.singleLegArea, 1)} mm² @ ${fmtN(spacing, 0)} c/c`,
     `Asv/sv = ${fmtN(layout.asvPerS, 3)} · req ${result ? fmtN(result.asvPerSReq, 3) : '—'} mm²/mm`,
     `sv,max = ${result ? `${fmtN(result.spaceMax, 0)} mm` : '—'} · sv,req = ${
       result && Number.isFinite(result.spaceReq) ? `${fmtN(result.spaceReq, 0)} mm` : '—'
@@ -874,16 +911,21 @@ export function ShearDiagram({
     const cut = text.search(/ — |; |\. /)
     return (cut > 8 ? text.slice(0, cut) : text).trim()
   }
+  const sep = (head: string, tail: string) => `${head}${tail ? ` · ${tail}` : ''}`
   const statusText =
     status === 'ok'
       ? 'Detailing: no exceptions raised for this arrangement.'
       : status === 'warn'
         ? `Detailing: ${validation?.warnings.length ?? 0} item(s) to verify by calculation — ${firstIssue(validation?.warnings)}`
         : `Detailing: ${validation?.errors.length ?? 0} correction(s) required — ${firstIssue(validation?.errors)}`
-  const arrangementText =
-    `Ring: ${layout.ring.shape} ⌀${fmtN(linkDia, 0)} ${settings.linkShape === 'auto' ? 'auto' : 'forced'}` +
-    ` · arrangement ${layout.mode} · ${layout.effectiveLegs} legs (2 outer + ${layout.intermediate.length} intermediate)` +
-    (layout.ties.length > 0 ? ` · ${layout.ties.length} tie${layout.ties.length === 1 ? '' : 's'}` : '')
+  // the editor below carries every message in full; the figure keeps one line
+  const fit = (text: string, room = 88) => (text.length > room ? `${text.slice(0, room - 1)}…` : text)
+  const arrangementText = sep(
+    `Ring ${layout.ring.shape} ⌀${fmtN(linkDia, 0)} ${settings.linkShape === 'auto' ? 'auto' : 'forced'} · ${
+      layout.mode
+    } arrangement`,
+    `${layout.effectiveLegs} legs = 2 ring + ${layout.intermediate.length} internal${layout.ties.length > 0 ? ` · ${layout.ties.length} cross-tie${layout.ties.length === 1 ? '' : 's'}` : ''}`,
+  )
 
   /* ---- member elevation: link schedule at a fixed pitch (not to scale) ---- */
   const pitch = Math.min(30, Math.max(18, (ELEV_X1 - ELEV_X0 - 18) / 6))
@@ -1019,26 +1061,6 @@ export function ShearDiagram({
         <line x1={X(tensionLevel)} y1={yB} x2={X(tensionLevel)} y2={yT} className="stroke-ink-3" strokeWidth={0.9} strokeDasharray="1.5 3" />
       )}
 
-      {/* longitudinal bars, at their real coordinates and diameters */}
-      {bars.map((b, i) => {
-        const r = barR(b.dia)
-        const tension = isTensionBar(b)
-        return (
-          <circle
-            key={i}
-            cx={X(b.x)}
-            cy={Y(b.y)}
-            r={r}
-            className={tension ? 'fill-ink' : 'fill-paper stroke-ink-2'}
-            strokeWidth={tension ? 0 : 1}
-          >
-            <title>{`Bar ${i + 1} — (${fmtN(b.x, 0)}, ${fmtN(b.y, 0)}) ⌀${fmtN(b.dia, 0)}${
-              tension ? ' · tension face, in Asl' : ''
-            }${b.surface === 'inner' ? ' · void face' : ''}`}</title>
-          </circle>
-        )
-      })}
-
       {/* intermediate legs and cross-ties */}
       {layout.members.map((m) => {
         const p1 = { x: X(m.a.x), y: Y(m.a.y) }
@@ -1046,14 +1068,31 @@ export function ShearDiagram({
         const st = MEMBER_STYLE[m.kind]
         const isSel = selected === m.id
         const pos = memberPos(m)
+        /* The tail of a hook turns towards the bar that end is anchored on (the
+           component of "towards the bar" across the member); with no bar there it
+           turns inboard towards the centroid, so no tail leaves the ring. */
+        const axis = { x: m.b.x - m.a.x, y: m.b.y - m.a.y }
+        const axisLen = Math.hypot(axis.x, axis.y) || 1
+        const ux = axis.x / axisLen
+        const uy = axis.y / axisLen
+        const inward = (p: { x: number; y: number }, index: number | null) => {
+          const centroidward = { x: centre.x - p.x, y: centre.y - p.y }
+          if (index === null || !bars[index]) return centroidward
+          const bar = bars[index]
+          const raw = { x: bar.x - p.x, y: bar.y - p.y }
+          const along = raw.x * ux + raw.y * uy
+          const across = { x: raw.x - along * ux, y: raw.y - along * uy }
+          return Math.hypot(across.x, across.y) > 1e-6 ? across : centroidward
+        }
         const hooks =
           m.length > 4 * linkDia
             ? [
-                hookPath(m.a, m.b, hookLen, { x: centre.x - m.a.x, y: centre.y - m.a.y }),
-                hookPath(m.b, m.a, hookLen, { x: centre.x - m.b.x, y: centre.y - m.b.y }),
+                hookPath(m.a, m.b, hookLen, inward(m.a, m.ends.a)),
+                hookPath(m.b, m.a, hookLen, inward(m.b, m.ends.b)),
               ]
             : []
         const label = m.kind === 'leg' ? 'Leg' : 'Cross-tie'
+        const align = memberAlignment(m)
         return (
           <g
             key={m.id}
@@ -1061,8 +1100,8 @@ export function ShearDiagram({
             style={{ cursor: onSelect ? 'pointer' : 'default' }}
           >
             <title>
-              {`${label} — ${pos.axis} = ${fmtN(pos.value, 0)} mm · ${fmtN(m.length, 0)} mm long · nearest bar ${
-                m.nearestBar === null ? '—' : `${fmtN(m.nearestBar, 0)} mm`
+              {`${label} — ${pos.axis} = ${fmtN(pos.value, 0)} mm · ${fmtN(m.length, 0)} mm long · ${align.long}${
+                m.bars.length > 0 ? ` · on the bar line of ${barLabels(m.bars)}` : ''
               } · ${m.kind === 'leg' ? `counted in Asv (legs now ${layout.effectiveLegs})` : 'runs across the width, not counted in Asv'}${
                 m.manual ? ' · manual position' : ' · automatic position'
               }`}
@@ -1093,6 +1132,28 @@ export function ShearDiagram({
             <circle cx={p1.x} cy={p1.y} r={1.7} className={st.dot} />
             <circle cx={p2.x} cy={p2.y} r={1.7} className={st.dot} />
           </g>
+        )
+      })}
+
+      {/* the longitudinal cage is drawn last, over the links: a leg or tie passes
+          behind the bar it is hooked around, so nothing reads as a crossing */}
+      {bars.map((b, i) => {
+        const r = barR(b.dia)
+        const tension = isTensionBar(b)
+        return (
+          <circle
+            key={i}
+            cx={X(b.x)}
+            cy={Y(b.y)}
+            r={r}
+            className={tension ? 'fill-ink' : 'fill-paper stroke-ink-2'}
+            strokeWidth={tension ? 0 : 1}
+            pointerEvents="none"
+          >
+            <title>{`Bar ${i + 1} — (${fmtN(b.x, 0)}, ${fmtN(b.y, 0)}) ⌀${fmtN(b.dia, 0)}${
+              tension ? ' · tension face, in Asl' : ''
+            }${b.surface === 'inner' ? ' · void face' : ''}`}</title>
+          </circle>
         )
       })}
 
@@ -1180,6 +1241,11 @@ export function ShearDiagram({
           <line x1={x + 2.6} y1={ELEV_Y0 + 4} x2={x + 2.6} y2={ELEV_Y1 - 4} className="stroke-capacity" strokeWidth={1.4} />
         </g>
       ))}
+      {/* the components of the provided Asv, as drawn */}
+      <text x={ELEV_X0 + 3} y={170} fontSize={9} className="fill-ink-2">
+        {rigText}
+      </text>
+
       {/* spacing dimension between the first two links — the elevation is not to scale */}
       <line x1={linkXs[0] + 1.3} y1={ELEV_Y1 + 16} x2={linkXs[1] + 1.3} y2={ELEV_Y1 + 16} className="stroke-ink-3" strokeWidth={0.9} />
       <line x1={linkXs[0] + 1.3} y1={ELEV_Y1 + 12} x2={linkXs[0] + 1.3} y2={ELEV_Y1 + 20} className="stroke-ink-3" strokeWidth={0.9} />
@@ -1201,21 +1267,20 @@ export function ShearDiagram({
       {/* ---------------- captions ---------------- */}
       {leftLines.map((line, i) => (
         <text key={`l${i}`} x={SEC_X0} y={258 + i * 14} fontSize={9.5} className="fill-ink-2">
-          {line}
+          {fit(line)}
         </text>
       ))}
       {rightLines.map((line, i) => (
         <text key={`r${i}`} x={SEC_X1} y={258 + i * 14} fontSize={9.5} className="fill-ink-2">
-          {line}
+          {fit(line)}
         </text>
       ))}
       <text x={SEC_X0} y={316} fontSize={9} className={status === 'ok' ? 'fill-ok' : status === 'warn' ? 'fill-warn2' : 'fill-bad'}>
-        {/* 92 characters is what fits the figure width at 9 px — the editor below
-            carries the full wording of every error and warning */}
-        {statusText.length > 92 ? `${statusText.slice(0, 91)}…` : statusText}
+        {/* the editor below carries the full wording of every error and warning */}
+        {fit(statusText, 92)}
       </text>
       <text x={SEC_X0} y={330} fontSize={9} className="fill-ink-3">
-        {arrangementText}
+        {fit(arrangementText, 92)}
       </text>
     </ZoomableSvg>
   )
@@ -1385,8 +1450,8 @@ export function ShearDetailingCard({
     write({ legs: next })
   }
 
-  /** Nearest-bar candidates, listed for the "place on a bar" hint. */
-  const barCandidates = [...auto.legs]
+  /** The longitudinal bar columns an internal leg can run along. */
+  const legColumns = barColumns(bars, 'leg', settings.axis)
 
   const rows: { kind: LinkMemberKind; u: number; member: ResolvedLinkMember | null }[] = []
   for (const m of layout.members) rows.push({ kind: m.kind, u: m.u, member: m })
@@ -1550,28 +1615,29 @@ export function ShearDetailingCard({
           {rows.length === 0 && (
             <p className={noteSmCls}>
               Two legs of the closed link cross the shear plane. Add intermediate legs to credit more; the automatic
-              rule finds them on the bar layout.
+              rule places them on the columns of the longitudinal bars.
             </p>
           )}
 
           {rows.length > 0 && (
             <div className="flex min-w-0 flex-col gap-1">
               <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
-                Members
+                Members on the bar columns
                 <InfoTooltip
                   content={
                     <>
                       A <b>leg</b> crosses the shear plane and is counted in A<sub>sv</sub>; a <b>cross-tie</b> runs
-                      across the width to restrain a bar and is <b>not</b> counted. Positions are section coordinates
-                      in mm along the axis the member cuts: legs across the width, cross-ties across the depth.
-                      {barCandidates.length > 0 && (
+                      across the width to restrain a bar and is <b>not</b> counted. Both are placed on the{' '}
+                      <b>columns of the longitudinal bars</b>, so a leg runs from the bottom reinforcement to the top
+                      reinforcement and a cross-tie is hooked around bars on its level. Positions are section
+                      coordinates in mm along the axis the member cuts: legs across the width, cross-ties across the
+                      depth.
+                      {legColumns.length > 0 && (
                         <>
                           {' '}
-                          Bars of the outer rows sit at{' '}
-                          {barCandidates
-                            .map((u) => fmtN(memberCoordinate(geometry, 'leg', u, settings.axis), 0))
-                            .join(', ')}{' '}
-                          mm.
+                          Legs can run on the bar columns at{' '}
+                          {legColumns.map((c) => `${fmtN(c.coord, 0)}${c.spans ? '' : '*'}`).join(', ')} mm
+                          {legColumns.some((c) => !c.spans) ? ' (* column without a bar at both ends)' : ''}.
                         </>
                       )}
                     </>
@@ -1603,11 +1669,18 @@ export function ShearDetailingCard({
                       onChange={(v) => moveMember(r.kind, r.u, normalisedPosition(geometry, r.kind, v, settings.axis))}
                       title={`${label} position — ${r.kind === 'leg' ? 'x' : 'y'} coordinate in mm`}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[9.5px] leading-tight text-ink-3">
+                    <span
+                      className="min-w-0 flex-1 truncate text-[9.5px] leading-tight text-ink-3"
+                      title={
+                        r.member
+                          ? `${fmtN(r.member.length, 0)} mm long, ${memberAlignment(r.member).long}${
+                              r.member.bars.length > 0 ? `; runs along the bar line of ${barLabels(r.member.bars)}` : ''
+                            }`
+                          : 'does not cross the ring'
+                      }
+                    >
                       {r.member
-                        ? `${fmtN(r.member.length, 0)} mm long · nearest bar ${
-                            r.member.nearestBar === null ? '—' : `${fmtN(r.member.nearestBar, 0)} mm`
-                          }${r.member.restrains !== null ? ` (bar ${r.member.restrains + 1})` : ''}`
+                        ? `${fmtN(r.member.length, 0)} mm long · ${memberAlignment(r.member).short}`
                         : 'does not cross the ring'}
                     </span>
                     <span className={`h-3 w-4 shrink-0 rounded-sm border border-line ${st.cls.replace('stroke-', 'bg-')}`} />

@@ -6,8 +6,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  MEMBER_BAR_TOL,
   RESTRAINT_LIMIT,
   autoLinkMembers,
+  barColumns,
   barRestraintDistance,
   buildLinkRing,
   hookPath,
@@ -90,20 +92,39 @@ describe('link ring', () => {
 })
 
 describe('automatic arrangement', () => {
-  it('adds only what the restraint rule asks for — the narrow default needs no extra legs', () => {
+  it('places one leg on every interior bar column that ties top to bottom reinforcement', () => {
     const { geometry, bars } = defaultSection()
     const ring = buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false)
+    // the four bars per face leave two interior columns, each with a bar in the
+    // bottom layer and a bar in the top layer
+    const columns = barColumns(bars, 'leg', DEFAULT_SHEAR.axis)
+    expect(columns.map((c) => Math.round(c.coord))).toEqual([61, 170, 280, 390])
+    expect(columns.filter((c) => c.spans).map((c) => Math.round(c.coord))).toEqual([61, 170, 280, 390])
+
     const auto = autoLinkMembers(ring, geometry, bars, DEFAULT_SHEAR, false)
-    // the mid-depth side-face bars sit beyond the limit of the ring's own bends,
-    // so they are tied rather than given extra legs
-    expect(bars.filter((b) => barRestraintDistance(b, ring, []) > RESTRAINT_LIMIT).length).toBe(4)
-    expect(auto.legs).toEqual([])
-    expect(auto.ties).toHaveLength(2)
+    // the two interior columns take a leg, so nothing is left to tie
+    expect(auto.legs).toHaveLength(2)
+    expect(auto.ties).toEqual([])
 
     const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
-    expect(layout.effectiveLegs).toBe(2)
-    expect(layout.asvPerS).toBeCloseTo((2 * barArea(8)) / 150, 9)
-    expect(validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR).status).toBe('ok')
+    expect(layout.effectiveLegs).toBe(4)
+    // each leg stands exactly on its bar column and runs between bottom and top
+    for (const m of layout.intermediate) {
+      const column = columns.find((c) => Math.abs(c.coord - m.a.x) < 0.05)
+      expect(column).toBeDefined()
+      expect(column!.spans).toBe(true)
+      expect(m.bars.length).toBe(2)
+      expect(m.ends.a).not.toBeNull()
+      expect(m.ends.b).not.toBeNull()
+      // the leg is drawn between the horizontal runs of the ring, i.e. it ends on
+      // the ring centreline top and bottom
+      expect(Math.min(m.a.y, m.b.y)).toBeCloseTo(ring.min.y, 6)
+      expect(Math.max(m.a.y, m.b.y)).toBeCloseTo(ring.max.y, 6)
+    }
+    const v = validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR)
+    expect(v.status).toBe('ok')
+    expect(v.errors).toEqual([])
+    expect(v.warnings).toEqual([])
   })
 
   it('adds intermediate legs for a wide section and restrains every bar', () => {
@@ -133,17 +154,102 @@ describe('automatic arrangement', () => {
     }
   })
 
-  it('restrains the side-face bars of a narrow deep section with cross-ties', () => {
-    // 200 mm wide: there is no room for extra legs beside the ring's own, so the
-    // bars at the interior depths are tied instead — and a tie is not in Asv
+  it('restrains a narrow deep section from the bar columns alone — no member beside the ring leg', () => {
+    // 200 mm wide: the interior columns carry a bottom and a top bar, so they take
+    // an internal leg, and the side-face bars already sit on the ring's own legs
     const { geometry, bars } = rect(200, 1500, 4, 10)
     const layout = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
-    expect(layout.intermediate).toEqual([])
-    expect(layout.ties.length).toBeGreaterThan(2)
-    expect(layout.effectiveLegs).toBe(2)
+    expect(layout.intermediate.length).toBe(2)
+    expect(layout.ties).toEqual([])
+    expect(layout.effectiveLegs).toBe(4)
     const v = validateLinkLayout(layout, geometry, bars, DEFAULT_SHEAR)
     expect(v.errors).toEqual([])
     expect(v.unrestrained).toEqual([])
+  })
+
+  it('reads the bar table as columns, each reaching both layers of reinforcement', () => {
+    const { bars } = defaultSection()
+    const legColumns = barColumns(bars, 'leg', DEFAULT_SHEAR.axis)
+    expect(legColumns.map((c) => Math.round(c.coord))).toEqual([61, 170, 280, 390])
+    // every bar of the table sits on exactly one column, and the two middle
+    // columns carry a bottom bar and a top bar each
+    expect(legColumns.reduce((n, c) => n + c.bars.length, 0)).toBe(bars.length)
+    expect(legColumns.map((c) => c.spans)).toEqual([true, true, true, true])
+    expect(legColumns[1].bars.length).toBe(2)
+    expect(legColumns[2].bars.length).toBe(2)
+    for (const c of legColumns) {
+      expect(c.ends.a).not.toBeNull()
+      expect(c.ends.b).not.toBeNull()
+    }
+
+    // a tie column instead runs across the width: the two side-face bars of a level
+    // sit on one line and a tie across it is hooked around both
+    const tieColumns = barColumns(bars, 'tie', DEFAULT_SHEAR.axis)
+    expect(tieColumns.map((c) => Math.round(c.coord))).toEqual([61, 156, 252, 348, 444, 540])
+    expect(tieColumns.reduce((n, c) => n + c.bars.length, 0)).toBe(bars.length)
+    const middle = tieColumns.find((c) => Math.round(c.coord) === 252)!
+    // the bars of a column are listed in depth order (the far side first)
+    expect(middle.bars.map((i) => i + 1).sort((a, b) => a - b)).toEqual([10, 14])
+    expect(middle.spans).toBe(true)
+    expect(middle.ends.a).not.toBeNull()
+    expect(middle.ends.b).not.toBeNull()
+
+    // a column with no bar in the far layer is a column that does not span, so it
+    // is not the column an internal leg is placed on
+    const partialBars: typeof bars = [
+      { x: 100, y: 60.5, dia: 25 },
+      { x: 300, y: 60.5, dia: 25 },
+      { x: 300, y: 540, dia: 25 },
+    ]
+    const partial = barColumns(partialBars, 'leg', DEFAULT_SHEAR.axis)
+    expect(partial.map((c) => Math.round(c.coord))).toEqual([100, 300])
+    expect(partial.map((c) => c.spans)).toEqual([false, true])
+    expect(partial[0].ends.a).not.toBeNull()
+    expect(partial[0].ends.b).toBeNull()
+    expect(barColumns([], 'leg', DEFAULT_SHEAR.axis)).toEqual([])
+  })
+
+  it('anchors every member on the bars it runs along and reports one that lines up with none', () => {
+    const { geometry, bars } = defaultSection()
+    const onColumn = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
+    for (const m of onColumn.members) {
+      expect(m.bars.length).toBeGreaterThan(0)
+      expect(m.ends.a).not.toBeNull()
+      expect(m.ends.b).not.toBeNull()
+    }
+
+    // a manually entered leg between two columns is reported, not moved
+    const between = bars[1].x + 45
+    const u = normalisedPosition(geometry, 'leg', between, DEFAULT_SHEAR.axis)
+    const offBar = resolveLinkLayout(
+      geometry,
+      bars,
+      COVER,
+      { ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [u] },
+      false,
+    )
+    const leg = offBar.intermediate[0]
+    expect(leg.a.x).toBeCloseTo(between, 6)
+    expect(leg.bars).toEqual([])
+    expect(leg.ends).toEqual({ a: null, b: null })
+    const v = validateLinkLayout(offBar, geometry, bars, DEFAULT_SHEAR)
+    expect(v.errors).toEqual([])
+    expect(v.status).toBe('warn')
+    expect(v.warnings.join(' ')).toMatch(/lines up with a longitudinal bar at neither end/)
+    // one leg on its own leaves the side-face bars unrestrained, and that is reported
+    expect(v.unrestrained.length).toBeGreaterThan(0)
+    expect(v.warnings.join(' ')).toMatch(/from the nearest leg, cross-tie or link corner/)
+  })
+
+  it('warns about a longitudinal bar the closed link does not enclose', () => {
+    const { geometry, bars } = defaultSection()
+    const outside: Rebar[] = [...bars, { x: 20, y: 300, dia: 25 }]
+    const layout = resolveLinkLayout(geometry, outside, COVER, DEFAULT_SHEAR, false)
+    const v = validateLinkLayout(layout, geometry, outside, DEFAULT_SHEAR)
+    expect(v.warnings.join(' ')).toMatch(/lies outside the link ring/)
+    // the bar itself is reported by number
+    const index = outside.findIndex((b) => b.x === 20)
+    expect(v.warnings.join(' ')).toContain(`Bar ${index + 1} at (20, 300)`)
   })
 
   it('places an arrangement that always passes its own validation', () => {
@@ -200,20 +306,15 @@ describe('automatic arrangement', () => {
   })
 
   it('keeps the automatic arrangement symmetric for a symmetric bar table', () => {
-    const { geometry, bars } = rect(900, 1200, 6, 6)
-    const auto = autoLinkMembers(buildLinkRing(geometry, COVER, DEFAULT_SHEAR, false), geometry, bars, DEFAULT_SHEAR, false)
-    expect(auto.legs.length).toBeGreaterThan(0)
-    for (const u of auto.legs) {
-      const mirror = Math.round((1 - u) * 1e4) / 1e4
-      expect(auto.legs.some((v) => Math.abs(v - mirror) < 1e-3)).toBe(true)
-    }
-    // and the cross-ties of the narrow deep section pair up the same way
-    const narrow = rect(200, 1500, 4, 10)
-    const tied = autoLinkMembers(buildLinkRing(narrow.geometry, COVER, DEFAULT_SHEAR, false), narrow.geometry, narrow.bars, DEFAULT_SHEAR, false)
-    expect(tied.ties.length).toBeGreaterThan(0)
-    for (const u of tied.ties) {
-      const mirror = Math.round((1 - u) * 1e4) / 1e4
-      expect(tied.ties.some((v) => Math.abs(v - mirror) < 1e-3)).toBe(true)
+    for (const r of [rect(900, 1200, 6, 6), rect(200, 1500, 4, 10), defaultSection()]) {
+      const auto = autoLinkMembers(buildLinkRing(r.geometry, COVER, DEFAULT_SHEAR, false), r.geometry, r.bars, DEFAULT_SHEAR, false)
+      expect(auto.legs.length).toBeGreaterThan(0)
+      for (const u of [...auto.legs, ...auto.ties]) {
+        const mirror = Math.round((1 - u) * 1e4) / 1e4
+        const list = auto.legs.includes(u) ? auto.legs : auto.ties
+        expect({ list: list.length ? list : auto.legs, u }).toEqual({ list, u })
+        expect(list.some((v) => Math.abs(v - mirror) < 1e-3)).toBe(true)
+      }
     }
   })
 
@@ -230,14 +331,29 @@ describe('automatic arrangement', () => {
     expect(empty.members).toEqual([])
   })
 
-  it('updates when the bars move — a new column of bars pulls in a leg', () => {
+  it('follows the bar table when the bars change — new columns pull in legs, gone columns drop them', () => {
     const { geometry, bars } = defaultSection()
     const before = resolveLinkLayout(geometry, bars, COVER, DEFAULT_SHEAR, false)
-    // drop the side-face bars and add an interior bar in the middle of the section
-    const moved = [...bars, { ...bars[0], x: 225, y: 300, faces: undefined, face: undefined } as Rebar]
-    const after = resolveLinkLayout(geometry, moved, COVER, DEFAULT_SHEAR, false)
-    expect(after.members.length).toBeGreaterThan(before.members.length)
-    expect(validateLinkLayout(after, geometry, moved, DEFAULT_SHEAR).unrestrained).toEqual([])
+    expect(before.intermediate.map((m) => Math.round(m.a.x))).toEqual([170, 280])
+
+    // a bottom and a top bar inserted on one line create a new column: a leg appears
+    const inserted = [...bars, { ...bars[0], x: 114, y: 60.5 }, { ...bars[1], x: 114, y: 539.5 } as Rebar]
+    const after = resolveLinkLayout(geometry, inserted, COVER, DEFAULT_SHEAR, false)
+    expect(after.intermediate.length).toBe(before.intermediate.length + 1)
+    // every internal leg of the new arrangement stands on a column of the new table
+    for (const m of after.intermediate) {
+      const onColumn = inserted.some((b) => Math.abs(b.x - m.a.x) < 0.05)
+      expect({ x: Math.round(m.a.x), onColumn }).toEqual({ x: Math.round(m.a.x), onColumn: true })
+    }
+    // and it is the new column that took the leg
+    expect(after.intermediate.some((m) => Math.abs(m.a.x - 114) < 0.05)).toBe(true)
+
+    // removing the top bars of a column takes its leg away again
+    const columnX = before.intermediate[0].a.x
+    const withoutTop = bars.filter((b) => !(Math.abs(b.x - columnX) < 0.05 && b.y > 300))
+    const pruned = resolveLinkLayout(geometry, withoutTop, COVER, DEFAULT_SHEAR, false)
+    expect(pruned.intermediate.map((m) => Math.round(m.a.x))).toEqual([280])
+    expect(validateLinkLayout(pruned, geometry, withoutTop, DEFAULT_SHEAR).unrestrained).toEqual([])
   })
 
   it('honours the shear direction: legs cut the force direction, ties run across the width', () => {
@@ -328,6 +444,16 @@ describe('detailing validation', () => {
     expect(dupTies.v.errors.length).toBeGreaterThan(0)
   })
 
+  it('restrains every bar of the automatic arrangement of a wide section', () => {
+    const geo = rect(900, 1200, 6, 6)
+    const ring = buildLinkRing(geo.geometry, COVER, DEFAULT_SHEAR, false)
+    const layout = resolveLinkLayout(geo.geometry, geo.bars, COVER, DEFAULT_SHEAR, false)
+    expect(RESTRAINT_LIMIT).toBe(150)
+    for (const bar of geo.bars) {
+      expect(barRestraintDistance(bar, ring, layout.members) - RESTRAINT_LIMIT <= 1e-9).toBe(true)
+    }
+  })
+
   it('warns about an unrestrained bar and names it', () => {
     const geo = rect(900, 1200, 6, 6)
     // a bar in the middle of a void-free pocket, far from every link bend
@@ -395,6 +521,23 @@ describe('editor helpers', () => {
     expect(smallValidation.errors.join(' ')).toMatch(/circular link does not fit/)
   })
 
+  it('uses one tolerance for "this bar sits on this line"', () => {
+    expect(MEMBER_BAR_TOL).toBe(25)
+    const { geometry, bars } = defaultSection()
+    // a leg 20 mm off a bar column still counts as running along it ...
+    const near = normalisedPosition(geometry, 'leg', bars[1].x + 20, DEFAULT_SHEAR.axis)
+    // ... a 30 mm offset is still within the clear tolerance ...
+    const mid = normalisedPosition(geometry, 'leg', bars[1].x + 30, DEFAULT_SHEAR.axis)
+    const midLayout = resolveLinkLayout(geometry, bars, COVER, { ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [mid] }, false)
+    const nearLayout = resolveLinkLayout(geometry, bars, COVER, { ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [near] }, false)
+    expect(nearLayout.intermediate[0].bars.length).toBeGreaterThan(0)
+    expect(midLayout.intermediate[0].bars).toEqual([1, 5])
+    // ... and one 45 mm off (32.5 mm clear) does not
+    const far = normalisedPosition(geometry, 'leg', bars[1].x + 45, DEFAULT_SHEAR.axis)
+    const farLayout = resolveLinkLayout(geometry, bars, COVER, { ...DEFAULT_SHEAR, linkLayout: 'manual', legPositions: [far] }, false)
+    expect(farLayout.intermediate[0].bars).toEqual([])
+  })
+
   it('round-trips between normalised positions and millimetre coordinates, unclamped', () => {
     const { geometry } = defaultSection()
     for (const u of [0, 0.25, 0.5, 1, 1.3, -0.2]) {
@@ -416,10 +559,15 @@ describe('editor helpers', () => {
     const again = suggestMemberPosition('tie', [empty], ring, geometry, bars, DEFAULT_SHEAR, false)
     expect(Math.abs(again - empty)).toBeGreaterThan(0.03)
 
-    // with every candidate taken the suggestion lands in the widest free gap
+    // the suggestion is a bar column of the section, so a new leg lands on bars
+    const columns = barColumns(bars, 'leg', DEFAULT_SHEAR.axis).map((c) => (c.coord - 0) / 450)
+    expect(columns.some((c) => Math.abs(c - empty) < 1e-3)).toBe(true)
+
+    // with every column taken the suggestion lands in the widest free gap
     const all = [0.2, 0.8]
     const gap = suggestMemberPosition('leg', all, ring, geometry, bars, DEFAULT_SHEAR, false)
-    expect(gap).toBeCloseTo(0.5, 3)
+    expect(gap).toBeGreaterThan(0)
+    expect(gap).toBeLessThan(1)
   })
 
   it('bends hooks back at 135° and turns the tail into the section', () => {

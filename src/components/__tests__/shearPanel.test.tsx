@@ -221,10 +221,54 @@ describe('stirrup detailing editor', () => {
     expect(html).toContain('>mm</span>')
     // and the value shown is the one the check ran on
     expect(html).toContain('sv = 1,500 mm')
-    expect(html).toContain('⌀8 @ 1,500 c/c')
-    // the automatic arrangement of the fixture section is 2 legs plus 2 cross-ties
-    expect(html).toContain('Cross-tie — not in Asv (2)')
-    expect(html).toContain('2 legs in Asv')
+    // the panel readout, the figure caption and the editor rows all report the
+    // spacing and the leg count the check ran on
+    expect(html).toContain('A<sub>sv</sub> = 4 × ⌀8 = 201.1 mm² per set of legs')
+    expect(html).toContain('provided = 4 × 50.3 mm² @ 1,500 c/c')
+    expect(html).toContain('4 legs in Asv: 2 ring + 2 internal')
+    // the automatic arrangement draws a leg on each interior bar column of the
+    // fixture section: 2 ring legs + 2 internal legs, and nothing left to tie
+    expect(html).toContain('Internal leg — in Asv (2)')
+    expect(html).toContain('Cross-tie — not in Asv (0)')
+    expect(html).toContain('4 legs in Asv')
+    // each row reports the bars the member is hooked around
+    expect(html).toContain('on bars 2 + 6')
+    expect(html).toContain('hooked around bars 2 and 6')
+    expect(msgs).toEqual([])
+  })
+
+  it('draws the internal legs on the actual bar columns, between the bottom and top bars', () => {
+    const { html, layout } = detailing()
+    const f = fixture('IS456')
+    expect(layout.intermediate.length).toBe(2)
+    expect(f.s.bars.length).toBeGreaterThan(8)
+
+    // every bar is drawn at X(bar.x), so the leg x must be one of the bar x values
+    const barX = [...html.matchAll(/<circle cx="([\d.]+)" cy="[\d.]+" r="[\d.]+" class="fill-[^"]*"[^>]*><title>Bar /g)].map(
+      (m) => Number(m[1]),
+    )
+    expect(barX.length).toBe(f.s.bars.length)
+    // the internal legs are drawn as dashed blue lines and are the only 1.5-wide
+    // capacity-coloured lines in the figure
+    const legs = [...html.matchAll(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)" class="stroke-capacity" stroke-width="1.5"/g)]
+      .map((m) => ({ x: Number(m[1]), y1: Number(m[2]), y2: Number(m[4]) }))
+      // the legend swatch is the same style outside the section panel
+      .filter((l) => l.x < 266)
+    expect(legs).toHaveLength(2)
+    for (const leg of legs) {
+      expect(barX.some((x) => Math.abs(x - leg.x) < 0.05)).toBe(true)
+    }
+    // the legs span the full ring, i.e. they meet the horizontal runs of the link
+    const ys = [...html.matchAll(/<path d="M([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+) Z" class="fill-concrete/g)]
+    expect(ys).toHaveLength(1)
+    const boundaryTop = Math.min(Number(ys[0][2]), Number(ys[0][4]), Number(ys[0][6]), Number(ys[0][8]))
+    const boundaryBottom = Math.max(Number(ys[0][2]), Number(ys[0][4]), Number(ys[0][6]), Number(ys[0][8]))
+    for (const leg of legs) {
+      expect(Math.min(leg.y1, leg.y2)).toBeGreaterThan(boundaryTop)
+      expect(Math.max(leg.y1, leg.y2)).toBeLessThan(boundaryBottom)
+    }
+    // and the leg positions are the ones the check counted
+    expect(layout.asvPerS).toBeCloseTo((layout.effectiveLegs * layout.singleLegArea) / 150, 9)
     expect(msgs).toEqual([])
   })
 

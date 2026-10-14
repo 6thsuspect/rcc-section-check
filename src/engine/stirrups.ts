@@ -204,6 +204,76 @@ export function buildLinkRing(
 /* Legs and cross-ties                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Clear distance within which a longitudinal bar counts as sitting on a member's
+ * line (mm). A leg runs along a column of bars when they are this close.
+ */
+export const MEMBER_BAR_TOL = 25
+
+/** A column of longitudinal bars a member of the link cage can run along. */
+export interface BarColumn {
+  /** Cross-axis coordinate of the column: x for a leg, y for a cross-tie. */
+  coord: number
+  /** Indexes of the bars whose centre lies on this column. */
+  bars: number[]
+  /** Ends of the column: the bar nearest each end of the member's span. */
+  ends: { a: number | null; b: number | null }
+  /** True when the column reaches both ends of the section's depth — a bar at
+   * each end, so a member on it connects the two layers of reinforcement. */
+  spans: boolean
+}
+
+/**
+ * The longitudinal bar layout read as the columns a member can be placed on:
+ * bars that share a coordinate across the width (a leg's line) or across the
+ * depth (a cross-tie's line). Each column reports the bars on it and whether it
+ * reaches both layers of reinforcement — a bar in the bottom layer and a bar in
+ * the top layer on the same line — which is what makes an internal leg connect
+ * the bottom reinforcement to the top one.
+ */
+export function barColumns(
+  bars: Rebar[],
+  kind: LinkMemberKind,
+  axis: 'x' | 'y',
+  tol = MEMBER_BAR_TOL,
+): BarColumn[] {
+  if (bars.length === 0) return []
+  const crossAxis = memberAxis(kind, axis)
+  const depthAxis: 'x' | 'y' = crossAxis === 'x' ? 'y' : 'x'
+  const value = (b: Rebar) => (crossAxis === 'x' ? b.x : b.y)
+  const depth = (b: Rebar) => (depthAxis === 'x' ? b.x : b.y)
+  // the two layers of the cage are set by the outermost bars themselves, so a
+  // column is judged against them and not against the concrete faces
+  const depths = bars.map(depth)
+  const frame = { a: Math.min(...depths), b: Math.max(...depths) }
+  const bands = new Map<number, number[]>()
+  bars.forEach((b, i) => {
+    const key = Math.round(value(b) * 10) / 10
+    const bucket = bands.get(key)
+    if (bucket) bucket.push(i)
+    else bands.set(key, [i])
+  })
+  const out: BarColumn[] = []
+  for (const [coord, indexes] of bands) {
+    const sorted = [...indexes].sort((i, j) => depth(bars[i]) - depth(bars[j]))
+    const endBar = (target: number) => {
+      let best: number | null = null
+      let bestD = Infinity
+      for (const i of sorted) {
+        const gap = Math.abs(depth(bars[i]) - target) - bars[i].dia / 2
+        if (gap < bestD) {
+          bestD = gap
+          best = i
+        }
+      }
+      return best !== null && bestD <= tol ? best : null
+    }
+    const ends = { a: endBar(frame.a), b: endBar(frame.b) }
+    out.push({ coord, bars: sorted, ends, spans: ends.a !== null && ends.b !== null })
+  }
+  return out.sort((a, b) => a.coord - b.coord)
+}
+
 export interface ResolvedLinkMember {
   id: string
   kind: LinkMemberKind
@@ -220,6 +290,10 @@ export interface ResolvedLinkMember {
   restrains: number | null
   /** Distance from the member to the nearest longitudinal bar, mm (null = no bars). */
   nearestBar: number | null
+  /** Indexes of the longitudinal bars sitting on this member's line. */
+  bars: number[]
+  /** Bar the member is hooked around at each end (null = no bar lines up there). */
+  ends: { a: number | null; b: number | null }
   /** True for legs: a leg crosses the shear plane and is counted in Asv. */
   effective: boolean
 }
@@ -323,6 +397,19 @@ function resolveMember(
   const a: Point = crossAxis === 'x' ? { x: value, y: lo } : { x: lo, y: value }
   const b: Point = crossAxis === 'x' ? { x: value, y: hi } : { x: hi, y: value }
   const prox = barProximity({ a, b }, bars)
+  const onLine = (bar: Rebar) => segmentDistance(bar, a, b) - bar.dia / 2 <= MEMBER_BAR_TOL
+  const atEnd = (end: Point) => {
+    let best: number | null = null
+    let bestD = Infinity
+    bars.forEach((bar, i) => {
+      const d = Math.hypot(end.x - bar.x, end.y - bar.y) - bar.dia / 2
+      if (d < bestD) {
+        bestD = d
+        best = i
+      }
+    })
+    return best !== null && bestD <= MEMBER_BAR_TOL ? best : null
+  }
   return {
     id: `${kind}-${u.toFixed(4)}`,
     kind,
@@ -333,6 +420,8 @@ function resolveMember(
     length: Math.abs(hi - lo),
     restrains: prox.dist !== null && prox.dist <= Math.max(1.5 * maxBarDia(bars), 10) ? prox.index : null,
     nearestBar: prox.dist,
+    bars: bars.map((bar, i) => (onLine(bar) ? i : -1)).filter((i) => i >= 0),
+    ends: { a: atEnd(a), b: atEnd(b) },
     effective: kind === 'leg',
   }
 }
@@ -389,16 +478,25 @@ function memberDuplicatesRing(
 }
 
 /**
- * Automatic arrangement: the smallest set of intermediate legs and cross-ties
- * that meets the restraint limit, derived from the longitudinal bars and the
- * ring. A bar is restrained when a link bend, an intermediate leg or a
- * cross-tie lies within `RESTRAINT_LIMIT` of it. Intermediate legs come first —
- * a leg restrains a whole column of bars and is link steel counted in Asv — and
- * cross-ties pick up the bars a leg cannot cover (a side-face bar beside one of
- * the ring's own legs, a column too close to another leg). A member that would
- * simply double one of the ring's own runs, or that would sit closer than the
- * minimum clear spacing to another member, is never added, so the automatic
- * arrangement always passes its own validation.
+ * Automatic arrangement, read off the actual bar coordinates:
+ *
+ *  1. an **intermediate leg** on every interior column of longitudinal bars that
+ *     ties the two reinforcement layers together — a bar in the bottom layer and
+ *     a bar in the top layer on the same line across the width. Those are the
+ *     members that connect top and bottom reinforcement, they run between the
+ *     horizontal runs of the closed link, they are link steel counted in Asv, and
+ *     they are placed on the bar columns rather than at an arbitrary position;
+ *  2. a **cross-tie** for every bar a leg does not cover — the side-face bars of a
+ *     deep section, or a level whose bars the ring and the legs leave beyond the
+ *     restraint limit. A tie is not counted in Asv;
+ *  3. a leg only where a column is still left unrestrained (a bar column with no
+ *     bar in the far layer, so rule 1 did not take it).
+ *
+ * A bar counts as restrained when a link bend, an intermediate leg or a cross-tie
+ * lies within `RESTRAINT_LIMIT` of it, and no member is ever placed where it would
+ * simply double one of the ring's own runs or sit closer than the minimum clear
+ * spacing to another member — so the arrangement this rule derives always passes
+ * the validation it is checked against.
  *
  * Order of the result is always ascending, so the drawing is deterministic.
  */
@@ -418,7 +516,6 @@ export function autoLinkMembers(
   const legs: number[] = []
   const ties: number[] = []
   const open = (bar: Rebar) => barRestraintDistance(bar, ring, members) > RESTRAINT_LIMIT
-  const round1 = (v: number) => Math.round(v * 10) / 10
 
   /**
    * Place the automatic members of one kind on every coordinate that still has
@@ -431,21 +528,23 @@ export function autoLinkMembers(
     const crossAxis = memberAxis(kind, axis)
     const [min, max] = polyExtentsLocal(geometry, crossAxis)
     const span = Math.max(max - min, 1e-6)
-    const byCoord = new Map<number, Rebar[]>()
-    for (const bar of bars) {
-      const key = round1(crossAxis === 'x' ? bar.x : bar.y)
-      const bucket = byCoord.get(key)
-      if (bucket) bucket.push(bar)
-      else byCoord.set(key, [bar])
-    }
     const mid = (min + max) / 2
-    const candidates = [...byCoord.entries()]
-      .map(([coord, group]) => ({ coord, count: group.filter(open).length }))
-      .filter((g) => g.count > 0)
-      // widest-open coordinate first; among equals the innermost one, because the
-      // outer rows and columns are the ones the ring's own run already touches.
-      // For a symmetric bar table this keeps the arrangement symmetric.
-      .sort((a, b) => b.count - a.count || Math.abs(a.coord - mid) - Math.abs(b.coord - mid) || a.coord - b.coord)
+    // the candidate positions are the columns of the *actual* longitudinal bars
+    const candidates = barColumns(bars, kind, axis)
+      .map((c) => ({ coord: c.coord, spans: c.spans, count: c.bars.filter((i) => open(bars[i])).length }))
+      .filter((c) => c.count > 0)
+      // a column carrying a bar at each end first — that is the member that ties
+      // the two reinforcement layers together — then the one that frees the most
+      // bars; among equals the innermost one, because the outer rows and columns
+      // are the ones the ring's own run already touches. For a symmetric bar table
+      // this keeps the arrangement symmetric.
+      .sort(
+        (a, b) =>
+          Number(b.spans) - Number(a.spans) ||
+          b.count - a.count ||
+          Math.abs(a.coord - mid) - Math.abs(b.coord - mid) ||
+          a.coord - b.coord,
+      )
     const minClear = Math.max(25, Math.max(settings.linkDia, 0))
     const placed = kind === 'leg' ? legs : ties
     for (const g of candidates) {
@@ -463,12 +562,30 @@ export function autoLinkMembers(
     }
   }
 
-  // Intermediate legs first: a leg restrains a whole column of bars and is link
-  // steel counted in Asv, which is how a wide section is detailed. Cross-ties then
-  // pick up what a leg cannot cover — a side-face bar right beside one of the
-  // ring's own legs, or a column too close to another leg to take a second one.
-  place('leg', 8)
+  /* ---- 1. an internal leg on every column of main bars that ties the two
+     reinforcement layers together (a bar at the bottom and a bar at the top) ---- */
+  const legAxis: 'x' | 'y' = axis === 'y' ? 'x' : 'y'
+  const [legMin, legMax] = polyExtentsLocal(geometry, legAxis)
+  const legSpan = Math.max(legMax - legMin, 1e-6)
+  const minClear = Math.max(25, Math.max(settings.linkDia, 0))
+  const ringLegs = legAxis === 'x' ? [ring.min.x, ring.max.x] : [ring.min.y, ring.max.y]
+  for (const col of barColumns(bars, 'leg', axis)) {
+    // interior columns only, and never one the ring's own leg already runs on
+    if (!col.spans || col.coord - legMin <= 0.002 * legSpan || legMax - col.coord <= 0.002 * legSpan) continue
+    if (ringLegs.some((c) => Math.abs(col.coord - c) < minClear)) continue
+    if (legs.some((u) => Math.abs(col.coord - (legMin + u * legSpan)) < minClear)) continue
+    const u = (col.coord - legMin) / legSpan
+    if (memberDuplicatesRing('leg', u, geometry, ring, settings)) continue
+    const m = resolveMember('leg', u, false, geometry, ring, bars, axis)
+    if (!m) continue
+    members.push({ a: m.a, b: m.b })
+    legs.push(Math.round(u * 1e4) / 1e4)
+  }
+
+  /* ---- 2. cross-ties for the bars a leg does not cover: side-face bars and any
+     level the columns above leave out of reach ---- */
   place('tie', 8)
+  /* ---- 3. and a leg only if a column is still left unrestrained ---- */
   place('leg', 8)
   legs.sort((a, b) => a - b)
   ties.sort((a, b) => a - b)
@@ -635,20 +752,25 @@ export function validateLinkLayout(
   const ownLegClearance = Math.max(25, dia)
   for (const d of layout.dropped) {
     const outside = d.u < -0.0005 || d.u > 1.0005
+    const at = memberCoordinate(geometry, d.kind, d.u, settings.axis)
     errors.push(
       outside
-        ? `${d.kind === 'leg' ? 'Leg' : 'Cross-tie'} at ${(d.u * 100).toFixed(1)} % lies outside the section outline — it is not drawn. Move it inside the ring.`
-        : `${d.kind === 'leg' ? 'Leg' : 'Cross-tie'} at ${(d.u * 100).toFixed(1)} % does not cross the link ring and cannot be drawn — move it inside the ring.`,
+        ? `${d.kind === 'leg' ? 'Leg' : 'Cross-tie'} at ${at.toFixed(0)} mm (${(d.u * 100).toFixed(1)} % of the section) lies outside the section outline — it is not drawn.`
+        : `${d.kind === 'leg' ? 'Leg' : 'Cross-tie'} at ${at.toFixed(0)} mm (${(d.u * 100).toFixed(1)} % of the section) lines up with no bar column of the link ring and cannot be drawn.`,
     )
   }
   for (const m of all) {
     const label = m.kind === 'leg' ? 'Leg' : 'Cross-tie'
     const crossAxis = memberAxis(m.kind, settings.axis)
     const [ringLow, ringHigh] = ringOwn(crossAxis)
-    const value = crossAxis === 'x' ? m.a.x : m.a.y
+    const value = m.u < -0.0005 || m.u > 1.0005
+      ? memberCoordinate(geometry, m.kind, m.u, settings.axis)
+      : crossAxis === 'x'
+        ? m.a.x
+        : m.a.y
     if (m.u < -0.0005 || m.u > 1.0005) {
       errors.push(
-        `${label} at ${(m.u * 100).toFixed(1)} % lies outside the section outline — the member is drawn at the ring edge until it is moved inside.`,
+        `${label} at ${value.toFixed(0)} mm (${(m.u * 100).toFixed(1)} % of the section) lies outside the section outline — the member is drawn at the ring edge until it is moved inside.`,
       )
     } else if (Math.min(Math.abs(value - ringLow), Math.abs(value - ringHigh)) < ownLegClearance) {
       errors.push(
@@ -656,6 +778,17 @@ export function validateLinkLayout(
       )
     }
     if (m.length <= 0) errors.push(`${label} at ${(m.u * 100).toFixed(1)} % does not span the link.`)
+    // a leg or tie is hooked around a longitudinal bar at each end; one that lines
+    // up with none of them is anchored by its hook alone, which has to be verified
+    const ends = m.ends
+    if (ends.a === null || ends.b === null) {
+      const both = ends.a === null && ends.b === null
+      warnings.push(
+        `${label} at ${value.toFixed(0)} mm lines up with a longitudinal bar at ${
+          both ? 'neither end' : 'one end only'
+        } — a ${m.kind === 'leg' ? 'leg' : 'cross-tie'} is normally hooked around a bar at both ends; verify the anchorage.`,
+      )
+    }
   }
   for (let i = 0; i < all.length; i++) {
     for (let j = i + 1; j < all.length; j++) {
@@ -672,6 +805,21 @@ export function validateLinkLayout(
   if (ring.shape === 'circular' && layout.ties.length > 0) {
     warnings.push('Straight cross-ties across a circular hoop are outside the code detailing tables — verify anchorage and restraint by calculation.')
   }
+
+  // the closed link must enclose the longitudinal cage: a bar outside the ring is
+  // not held by it. Bars lining an internal void sit on the void face and are
+  // outside this ring by design.
+  bars.forEach((bar, i) => {
+    if (bar.surface === 'inner') return
+    const inside = ring.circle
+      ? Math.hypot(bar.x - ring.circle.cx, bar.y - ring.circle.cy) <= ring.circle.r + bar.dia / 2 + 1
+      : pointInPolygon({ x: bar.x, y: bar.y }, ring.path)
+    if (!inside) {
+      warnings.push(
+        `Bar ${i + 1} at (${bar.x.toFixed(0)}, ${bar.y.toFixed(0)}) lies outside the link ring — the closed link must enclose the longitudinal reinforcement cage (check the cover of the face this bar sits on).`,
+      )
+    }
+  })
 
   /* ---- bar restraint (a detailing requirement of every supported code) ---- */
   const unrestrained: number[] = []

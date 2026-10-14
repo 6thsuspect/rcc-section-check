@@ -143,5 +143,8 @@ check uses; the drawing never certifies compliance by itself. The Cl 15.4.3.4 sp
 of Table 14 are reported with the verdict. Detailing is validated on the rule that no
 longitudinal bar may be farther than **150 mm** from a link bend, intermediate leg or
 cross-tie, with a minimum clear spacing of `max(25 mm, ⌀link)`. The automatic arrangement
-derives the members from the bar layout by the same rule; manual members that cannot be built
-are reported with their reason and are never moved or clamped.
+places an intermediate leg on every column of the longitudinal bars that carries a bar in the
+bottom layer and a bar in the top layer (so the leg connects the two reinforcement layers) and
+a cross-tie for the bars a leg cannot cover; manual members that cannot be built are reported
+with their reason and are never moved or clamped, and each member reports the bars it is
+hooked around.

@@ -57,21 +57,29 @@ The shear tab carries its own reinforcement diagram and stirrup editor, next to 
   ring, the intermediate legs and the cross-ties, with a member elevation showing the provided
   link spacing (`fig-shear`, same drawing framework, zoom controls and print capture as the
   other figures);
-- line styles are shared by drawing, legend and editor: solid blue = closed outer link (2 legs
-  in Asv), dashed blue = intermediate leg (in Asv), dash-dot ink = cross-tie (restrains a bar,
-  not counted in Asv), filled black = tension bars, hollow = other bars, dotted = the shear
-  plane at the effective depth d;
+- the drawing shows the *connections*: **solid blue** = the closed outer link that encloses the
+  bar cage (2 legs in Asv), **dashed blue** = an intermediate leg on a bar column (in Asv),
+  **dash-dot ink** = a cross-tie (restrains a bar, not counted in Asv), **filled black** =
+  tension bars, **hollow** = other bars, light dotted = the shear plane at the effective depth d.
+  A member is drawn from one horizontal run of the link ring to the other and the longitudinal
+  bars are drawn over it, so a leg meets the bars it hooks and reads as a connection — no
+  disconnected stubs, dashes are phase-matched so they do not alias into solid lines, and the
+  figure caption carries how the provided Asv is made up (`n legs = 2 ring + m internal`);
 - the **link type** (auto / rectangular / circular), **arrangement** (automatic from the bar
   layout, or manual) and the ⌀, effective leg count and spacing are inputs; the effective legs
-  and `Asv = n·⌀²π/4` feed the resistance check, and changing them changes the results — no
-  design equation is modified for the drawing;
-- the **automatic arrangement** reads the bar layout: a bar counts as restrained when a link
-  bend, an intermediate leg or a cross-tie lies within 150 mm of it. A column the ring cannot
-  reach gets an **intermediate leg** (a leg restrains the whole column and is link steel counted
-  in Asv, which is how a wide section is detailed); a bar a leg cannot cover — a side-face bar
-  beside one of the ring's own legs, or a column too close to another leg — gets a **cross-tie**.
-  The arrangement never violates the rules it is validated against, and it is re-derived
-  whenever the section, the cover or the bars change;
+  and `Asv = n·⌀²π/4` feed the resistance check, and changing them changes the results — the
+  figure and the editor both state the arrangement the check ran on, and no design equation is
+  modified for the drawing;
+- the members are placed on the **actual coordinates of the main reinforcement**, not at
+  arbitrary positions. The bar table is read as *columns*: bars sharing a coordinate across the
+  width (a leg's line) or across the depth (a cross-tie's line). A column carrying a bar in the
+  bottom layer **and** a bar in the top layer takes an **intermediate leg** — so an internal leg
+  really connects the bottom reinforcement to the top reinforcement, riding along that column —
+  and its hook tails turn towards the bar each end is anchored on. The bars a leg cannot cover
+  (the side-face bars of a deep section, or a level the ring and the legs leave beyond the
+  150 mm restraint limit) are covered by **cross-ties**. Every member reports the bars it is
+  hooked around; one that lines up with none of them is reported rather than moved. The
+  arrangement is re-derived whenever the section, the cover or the bars change;
 - the **editor** adds, removes, repositions (in mm) and mirrors legs and cross-ties, switches a
   member between the two orientations, distributes positions evenly, shows the clear spacing
   between members and the resulting `Asv`, `Asv/sv` and code minimum; and
