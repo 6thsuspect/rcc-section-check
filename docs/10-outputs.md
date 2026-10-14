@@ -76,8 +76,9 @@ to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header ma
   The drawing is a detailing view: it never by itself certifies compliance. The values shown
   (Asv, Asv/sv, sv,max, VEd/VRd) all come from the selected code's check run on the same
   inputs — the caption reports the components of the provided Asv as drawn (⌀, area per leg,
-  number of legs = 2 ring + internal, spacing) beside the required value, so the graphical
-  arrangement and the calculation parameters can be compared at a glance.
+  number of legs = 2 ring + internal, spacing) beside the required value, and names the source
+  of the arrangement (`auto from n bars`), so the graphical arrangement and the calculation
+  parameters can be compared at a glance.
 
 ## 10.2 Report
 

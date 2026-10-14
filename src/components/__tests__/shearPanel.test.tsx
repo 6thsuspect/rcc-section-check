@@ -269,6 +269,9 @@ describe('stirrup detailing editor', () => {
     }
     // and the leg positions are the ones the check counted
     expect(layout.asvPerS).toBeCloseTo((layout.effectiveLegs * layout.singleLegArea) / 150, 9)
+    // the caption names the source of the arrangement, so the derivation of the
+    // drawn members from the bar table is traceable on the figure itself
+    expect(html).toContain(`auto from ${f.s.bars.length} bars`)
     expect(msgs).toEqual([])
   })
 

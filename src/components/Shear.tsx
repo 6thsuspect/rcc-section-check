@@ -922,8 +922,9 @@ export function ShearDiagram({
   const fit = (text: string, room = 88) => (text.length > room ? `${text.slice(0, room - 1)}…` : text)
   const arrangementText = sep(
     `Ring ${layout.ring.shape} ⌀${fmtN(linkDia, 0)} ${settings.linkShape === 'auto' ? 'auto' : 'forced'} · ${
-      layout.mode
-    } arrangement`,
+      // the source of the members is worth naming: the automatic layout is read off the bar table
+      layout.mode === 'auto' ? `auto from ${bars.length} bars` : 'manual arrangement'
+    }`,
     `${layout.effectiveLegs} legs = 2 ring + ${layout.intermediate.length} internal${layout.ties.length > 0 ? ` · ${layout.ties.length} cross-tie${layout.ties.length === 1 ? '' : 's'}` : ''}`,
   )
 
