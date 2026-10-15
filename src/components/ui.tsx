@@ -695,12 +695,13 @@ export function Check({
 export function SegGroup({
   children,
   className = '',
+  gap = 'gap-1',
   ...rest
-}: { children: ReactNode; className?: string } & HTMLAttributes<HTMLDivElement>) {
+}: { children: ReactNode; className?: string; /** Gap between the segments. */ gap?: string } & HTMLAttributes<HTMLDivElement>) {
   // `rest` carries the group's label and any other attribute through to the div:
   // the tab row, for one, is labelled ("Check module")
   return (
-    <div className={`flex flex-wrap items-stretch gap-1 ${className}`} {...rest}>
+    <div className={`flex flex-wrap items-stretch ${gap} ${className}`} {...rest}>
       {children}
     </div>
   )
@@ -713,6 +714,7 @@ export function SegButton({
   disabled,
   title,
   className = '',
+  variant = 'segment',
 }: {
   active: boolean
   onClick: () => void
@@ -720,7 +722,31 @@ export function SegButton({
   disabled?: boolean
   title?: string
   className?: string
+  /**
+   * `'segment'` (default) is the segmented control: the selected segment is
+   * filled. `'button'` is a plain action button — the same style as the Import /
+   * Export / PDF buttons (`btnCls`), with no selected state, for rows of buttons
+   * that are to read as independent buttons rather than as a tab group. The
+   * `active` flag still reaches assistive technology as `aria-pressed`.
+   */
+  variant?: 'segment' | 'button'
 }) {
+  if (variant === 'button') {
+    return (
+      <button
+        type="button"
+        aria-pressed={active}
+        disabled={disabled}
+        title={title}
+        onClick={onClick}
+        // byte-identical to a shared action button, so hover, focus, pressed,
+        // disabled and padding cannot drift apart from it
+        className={className ? `${btnCls} ${className}` : btnCls}
+      >
+        {children}
+      </button>
+    )
+  }
   return (
     <button
       type="button"

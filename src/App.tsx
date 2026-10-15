@@ -596,16 +596,20 @@ export default function App() {
             </div>
           </div>
 
-          <SegGroup className="shrink-0" aria-label="Check module">
-            <SegButton active={view === 'uls'} onClick={() => setView('uls')} title="Ultimate limit state — P–Mx–My interaction & capacity checks">
+          {/* The three checks read as independent buttons — the same style as
+              the action buttons at the end of the row, with the same spacing —
+              rather than as a segmented control; which one is open is carried by
+              `aria-pressed` and by the view below. */}
+          <SegGroup className="shrink-0" gap="gap-1.5 sm:gap-2" aria-label="Check module">
+            <SegButton variant="button" active={view === 'uls'} onClick={() => setView('uls')} title="Ultimate limit state — P–Mx–My interaction & capacity checks">
               <Icon name="target" size={13} />
               ULS Check
             </SegButton>
-            <SegButton active={view === 'sls'} onClick={() => setView('sls')} title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
+            <SegButton variant="button" active={view === 'sls'} onClick={() => setView('sls')} title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
               <Icon name="shield" size={13} />
               SLS Check
             </SegButton>
-            <SegButton active={view === 'shear'} onClick={() => setView('shear')} title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
+            <SegButton variant="button" active={view === 'shear'} onClick={() => setView('shear')} title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
               <Icon name="link" size={13} />
               Shear Check
             </SegButton>

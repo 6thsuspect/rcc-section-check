@@ -63,6 +63,50 @@ describe('app header', () => {
     expect(msgs).toEqual([])
   })
 
+  it('styles the three checks as buttons, not as a tab group', () => {
+    const { html } = header()
+    const buttons = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map((m) => ({
+      cls: /class="([^"]*)"/.exec(m[1])?.[1] ?? '',
+      attrs: m[1],
+      text: m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+    }))
+    const at = (hint: string) => {
+      const b = buttons.find((x) => x.attrs.includes(hint))
+      expect(b, hint).toBeTruthy()
+      return b as { cls: string; attrs: string; text: string }
+    }
+    const dt = at('Ultimate limit state')
+    const sls = at('Serviceability limit state')
+    const shear = at('Shear design check')
+    const clsOf = (hint: string) => at(hint).cls
+    // the three checks carry exactly the class string of the Import / Export
+    // buttons: same padding, radius, hover, pressed and disabled behaviour
+    const importCls = clsOf('Import a saved project JSON file')
+    expect(importCls).toContain('px-2.5 py-[5px]')
+    expect(importCls).toContain('hover:bg-panel')
+    expect(dt.cls).toBe(importCls)
+    expect(sls.cls).toBe(importCls)
+    expect(shear.cls).toBe(importCls)
+    // and no selected-segment styling is left anywhere on them
+    for (const c of [dt.cls, sls.cls, shear.cls]) {
+      expect(c).not.toContain('bg-accent-wash')
+      expect(c).not.toContain('border-accent')
+      expect(c).not.toContain('shadow-[inset_0_-2px_0')
+      expect(c).not.toContain('flex-1')
+    }
+    // the open check is still announced (the panels below carry the rest)
+    const pressed = [dt, sls, shear].filter((b) => b.attrs.includes('aria-pressed="true"'))
+    expect(pressed).toHaveLength(1)
+    expect(pressed[0].text).toBe('ULS Check')
+    // the row keeps the action row's spacing, so the buttons read as a set of
+    // independent buttons rather than a tight tab strip
+    expect(html).toContain('items-stretch gap-1.5 sm:gap-2 shrink-0')
+    // the segmented controls elsewhere in the app are untouched: they still
+    // carry the filled selected segment
+    expect(html).toContain('bg-accent-wash')
+    expect(msgs).toEqual([])
+  })
+
   it('gates the readout on the action area, not on the viewport or on the tab', () => {
     // both forms are driven by the container query, so every tab switches
     // between them at the same width

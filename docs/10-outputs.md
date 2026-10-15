@@ -37,7 +37,11 @@ is gated on the width of the action area itself (a container query, `statusReado
 appears when that area can hold it beside the buttons, the compact verdict pill stands in
 when it cannot, and the three buttons — always in one non-shrinking group — never wrap, so
 the row is laid out identically whichever tab is selected. All three tabs render the readout
-through the one `HeaderStatus` component, so the three cannot drift apart.
+through the one `HeaderStatus` component, so the three cannot drift apart. The three check
+buttons themselves are drawn as independent buttons in the style of the action buttons beside
+them (`SegButton variant="button"` = the shared `btnCls`), not as a segmented control: the open
+module is not marked by a filled or bordered tab — it is carried by `aria-pressed` for
+assistive technology and by the module's own panels below.
 
 - **Interaction diagrams**, each with every load case overlaid as a point:
   - P–Mx and P–My uniaxial diagrams;
