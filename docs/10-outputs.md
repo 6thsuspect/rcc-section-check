@@ -28,6 +28,17 @@ to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header ma
 
 ## 10.1 On-screen results
 
+The header bar carries the three check tabs (ULS / SLS / Shear) in one row together with,
+to their right, the status readout of the open tab and the **Import project**,
+**Export project** and **PDF report** buttons. The readout reports the same tab-specific
+values shown in the panels below; because its content is wider on some tabs than others, it
+is gated on the width of the action area itself (a container query, `statusReadoutCls` /
+`statusPillCls` in `src/components/ui.tsx`) rather than on the viewport: the full readout
+appears when that area can hold it beside the buttons, the compact verdict pill stands in
+when it cannot, and the three buttons — always in one non-shrinking group — never wrap, so
+the row is laid out identically whichever tab is selected. All three tabs render the readout
+through the one `HeaderStatus` component, so the three cannot drift apart.
+
 - **Interaction diagrams**, each with every load case overlaid as a point:
   - P–Mx and P–My uniaxial diagrams;
   - P–Mres diagram in the resultant-moment plane of each load case

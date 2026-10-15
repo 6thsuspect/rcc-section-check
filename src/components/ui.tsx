@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type PointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type PointerEvent,
+  type ReactNode,
+} from 'react'
 
 /* ------------------------------------------------------------------ *
  * Shared presentation vocabulary.
@@ -249,6 +257,31 @@ export function InfoTooltip({ content }: { content: ReactNode }) {
     </span>
   )
 }
+
+/* ---------------------------------------------------------------- *
+ * Header status readout
+ *
+ * The header carries one status readout per tab and its content is wider on
+ * some tabs than on others (the SLS limits quote N/mm² twice). Both the wide
+ * readout and its compact stand-in are therefore gated on the width of the
+ * header's *action area* — the `@container` the shell puts around it — rather
+ * than on the viewport: a longer readout can never push the action buttons
+ * beside it onto a second line, and every tab gets the same treatment.
+ * ------------------------------------------------------------------ */
+
+/** Wide status readout: appears once the action area can hold it beside the buttons. */
+export const statusReadoutCls =
+  'mr-1 hidden flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden rounded-lg border border-line ' +
+  'bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum @min-[860px]:flex'
+
+/**
+ * The same verdict as a compact pill: shown when the action area is too narrow
+ * for the readout, and itself dropped when even the pill would crowd the buttons
+ * — the buttons are never squeezed and never wrap among themselves.
+ */
+export const statusPillCls =
+  'mr-0.5 hidden shrink-0 items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] ' +
+  'font-bold uppercase tracking-[0.05em] @min-[560px]:inline-flex @min-[860px]:hidden'
 
 /* --------------------------------- fields -------------------------------- */
 
@@ -654,8 +687,18 @@ export function Check({
 }
 
 /** Segmented choice row (codes, shapes, paste mode, arrangements). */
-export function SegGroup({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`flex flex-wrap items-stretch gap-1 ${className}`}>{children}</div>
+export function SegGroup({
+  children,
+  className = '',
+  ...rest
+}: { children: ReactNode; className?: string } & HTMLAttributes<HTMLDivElement>) {
+  // `rest` carries the group's label and any other attribute through to the div:
+  // the tab row, for one, is labelled ("Check module")
+  return (
+    <div className={`flex flex-wrap items-stretch gap-1 ${className}`} {...rest}>
+      {children}
+    </div>
+  )
 }
 
 export function SegButton({

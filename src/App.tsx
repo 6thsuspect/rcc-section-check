@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import type { CaseResult, InteractionSurface, SectionGeometry } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
@@ -69,7 +69,67 @@ import {
   STANDARD_BAR_DIAMETERS,
   btnCls,
   btnPrimaryCls,
+  statusPillCls,
+  statusReadoutCls,
 } from './components/ui'
+
+/**
+ * Status readout of the tab that is open, in the header.
+ *
+ * One component for all three tabs, so the row keeps exactly the same spacing,
+ * alignment and responsive behaviour whichever tab is selected. It renders the
+ * wide readout *and* the compact verdict pill; `statusReadoutCls` /
+ * `statusPillCls` decide which of the two the header has room for (the action
+ * area around them is the `@container`), so the action buttons beside it can
+ * never be pushed onto a second line by a longer readout.
+ */
+export function HeaderStatus({
+  ok,
+  verdict,
+  title,
+  items,
+}: {
+  ok: boolean
+  /** Verdict text, upper case: "ALL CHECKS PASS", "SLS FAILS", … */
+  verdict: string
+  /** Tooltip of the verdict. */
+  title: string
+  /** The two governing values shown beside the verdict. */
+  items: { label: string; value: string; title: string }[]
+}) {
+  const tone = ok ? 'text-ok' : 'text-bad'
+  const pillTone = ok ? 'border-ok/35 bg-ok/8 text-ok' : 'border-bad/35 bg-bad/8 text-bad'
+  return (
+    <>
+      <div className={statusReadoutCls}>
+        {items.map((it, i) => (
+          <Fragment key={it.label}>
+            {i > 0 && <span className="h-3.5 w-px shrink-0 bg-edge" />}
+            <span title={it.title}>
+              <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                {it.label}
+              </span>
+              {it.value}
+            </span>
+          </Fragment>
+        ))}
+        <span
+          className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${tone}`}
+        >
+          <span className={`grid h-[15px] w-[15px] place-items-center rounded-full ${ok ? 'bg-ok/12' : 'bg-bad/12'}`}>
+            <Icon name={ok ? 'check' : 'alert'} size={10} />
+          </span>
+          {verdict}
+        </span>
+      </div>
+
+      <span className={`${statusPillCls} ${pillTone}`} title={title}>
+        <Icon name={ok ? 'check' : 'alert'} size={10} />
+        {verdict}
+      </span>
+    </>
+  )
+}
 
 /** Page container, shared by the header bar and the working area. */
 const shell = 'mx-auto w-full max-w-[1640px] px-3 sm:px-5'
@@ -551,157 +611,114 @@ export default function App() {
             </SegButton>
           </SegGroup>
 
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".json,.rcc"
-              className="hidden"
-            />
+          {/* The action area is the query container the status readout is gated
+              on, so the readout yields to the buttons rather than the reverse.
+              `min-w-min` keeps its min-content floor — inline-size containment
+              would otherwise zero the automatic minimum size and let the tabs
+              squeeze the buttons — so the header still gives the area a line of
+              its own when the tabs and the buttons cannot share one. */}
+          <div className="@container flex min-w-min flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             {view === 'uls' && surface && props && (
-              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
-                <span title="Pure axial (squash) capacity of the section">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Puz</span>
-                  {(surface.Puz / 1e3).toFixed(0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span title="Tension limit of the section">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Pt</span>
-                  {(surface.Pt / 1e3).toFixed(0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span
-                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
-                    anyFail ? 'text-bad' : 'text-ok'
-                  }`}
-                >
-                  <span
-                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${anyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
-                  >
-                    <Icon name={anyFail ? 'alert' : 'check'} size={10} />
-                  </span>
-                  {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-                </span>
-              </div>
+              <HeaderStatus
+                ok={!anyFail}
+                verdict={anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
+                title="Compliance verdict across all load cases"
+                items={[
+                  {
+                    label: 'Puz',
+                    value: `${(surface.Puz / 1e3).toFixed(0)} kN`,
+                    title: 'Pure axial (squash) capacity of the section',
+                  },
+                  {
+                    label: 'Pt',
+                    value: `${(surface.Pt / 1e3).toFixed(0)} kN`,
+                    title: 'Tension limit of the section',
+                  },
+                ]}
+              />
             )}
 
             {view === 'shear' && shearResults.length > 0 && shearSum.governing && (
-              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
-                <span title="Largest design shear force among the shear cases">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Vu gov</span>
-                  {fmtN(shearSum.governing.loadCase.Vu, 0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span title="Shear resistance of the section with the provided links at the governing case">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">VRd</span>
-                  {fmtN(shearSum.governing.VRd / 1e3, 0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span
-                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
-                    shearAnyFail ? 'text-bad' : 'text-ok'
-                  }`}
-                >
-                  <span className={`grid h-[15px] w-[15px] place-items-center rounded-full ${shearAnyFail ? 'bg-bad/12' : 'bg-ok/12'}`}>
-                    <Icon name={shearAnyFail ? 'alert' : 'check'} size={10} />
-                  </span>
-                  {shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
-                </span>
-              </div>
-            )}
-
-            {view === 'sls' && slsList.length > 0 && (
-              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
-                <span title="Permissible concrete stress in bending (IS 456 Table 21)">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σcbc</span>
-                  {slsLimits.sigmaCbc.toFixed(1)} N/mm²
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span title="Permissible tensile steel stress (IS 456 Table 22)">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σst</span>
-                  {slsLimits.sigmaSt.toFixed(0)} N/mm²
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span
-                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
-                    slsAnyFail ? 'text-bad' : 'text-ok'
-                  }`}
-                >
-                  <span
-                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${slsAnyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
-                  >
-                    <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
-                  </span>
-                  {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
-                </span>
-              </div>
-            )}
-
-            {view === 'uls' && surface && props && (
-              <span
-                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
-                  anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
-                }`}
-                title="Compliance verdict across all load cases"
-              >
-                <Icon name={anyFail ? 'alert' : 'check'} size={10} />
-                {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-              </span>
-            )}
-
-            {view === 'sls' && slsList.length > 0 && (
-              <span
-                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
-                  slsAnyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
-                }`}
-                title="SLS stress verdict across all load cases"
-              >
-                <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
-                {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
-              </span>
-            )}
-
-            {view === 'shear' && shearResults.length > 0 && (
-              <span
-                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
-                  shearAnyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
-                }`}
+              <HeaderStatus
+                ok={!shearAnyFail}
+                verdict={shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
                 title="Shear design verdict across all shear cases"
-              >
-                <Icon name={shearAnyFail ? 'alert' : 'check'} size={10} />
-                {shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
-              </span>
+                items={[
+                  {
+                    label: 'Vu gov',
+                    value: `${fmtN(shearSum.governing.loadCase.Vu, 0)} kN`,
+                    title: 'Largest design shear force among the shear cases',
+                  },
+                  {
+                    label: 'VRd',
+                    value: `${fmtN(shearSum.governing.VRd / 1e3, 0)} kN`,
+                    title: 'Shear resistance of the section with the provided links at the governing case',
+                  },
+                ]}
+              />
             )}
 
-            <button
-              type="button"
-              onClick={handleImportClick}
-              className={btnCls}
-              title="Import a saved project JSON file"
-            >
-              <Icon name="folder" size={13} />
-              <span className="hidden sm:inline">Import project</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportClick}
-              className={btnCls}
-              title="Export current project state to a JSON file"
-            >
-              <Icon name="download" size={13} />
-              <span className="hidden sm:inline">Export project</span>
-            </button>
-            <button
-              type="button"
-              className={btnPrimaryCls}
-              onClick={exportPdf}
-              disabled={!surface || !props || results.length === 0}
-              title="Open the full calculation report (ULS, SLS and shear) in a print window — use 'Save as PDF'"
-            >
-              <Icon name="report" size={13} />
-              <span className="hidden sm:inline">PDF report</span>
-            </button>
+            {view === 'sls' && slsList.length > 0 && (
+              <HeaderStatus
+                ok={!slsAnyFail}
+                verdict={slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
+                title="SLS stress verdict across all load cases"
+                items={[
+                  {
+                    label: 'σcbc',
+                    value: `${slsLimits.sigmaCbc.toFixed(1)} N/mm²`,
+                    title: 'Permissible concrete stress in bending (IS 456 Table 21)',
+                  },
+                  {
+                    label: 'σst',
+                    value: `${slsLimits.sigmaSt.toFixed(0)} N/mm²`,
+                    title: 'Permissible tensile steel stress (IS 456 Table 22)',
+                  },
+                ]}
+              />
+            )}
+
+            {/* The action buttons keep one row of their own: they never wrap
+                among themselves and never shrink, so nothing shown beside the
+                tabs can push the PDF report button onto a second line. */}
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json,.rcc"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={handleImportClick}
+                className={btnCls}
+                title="Import a saved project JSON file"
+              >
+                <Icon name="folder" size={13} />
+                <span className="hidden sm:inline">Import project</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportClick}
+                className={btnCls}
+                title="Export current project state to a JSON file"
+              >
+                <Icon name="download" size={13} />
+                <span className="hidden sm:inline">Export project</span>
+              </button>
+              <button
+                type="button"
+                className={btnPrimaryCls}
+                onClick={exportPdf}
+                disabled={!surface || !props || results.length === 0}
+                title="Open the full calculation report (ULS, SLS and shear) in a print window — use 'Save as PDF'"
+              >
+                <Icon name="report" size={13} />
+                <span className="hidden sm:inline">PDF report</span>
+              </button>
+            </div>
+
           </div>
         </div>
 
