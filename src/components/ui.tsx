@@ -414,7 +414,12 @@ export function NumField({
   title,
 }: {
   id?: string
-  label: string
+  /**
+   * Field label. Rendered in the upper-case label style, so a label that carries
+   * a lower-case symbol (the effective depth `d`, say) wraps that symbol in a
+   * `normal-case` element to keep it as typed.
+   */
+  label: ReactNode
   value: number
   onChange: (v: number) => void
   unit?: string

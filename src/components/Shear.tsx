@@ -312,7 +312,14 @@ export function ShearInputsPanel({
             title="Web width for the shear check. 0 uses the net chord width at mid-depth."
           />
           <NumField
-            label="d override"
+            // the effective depth is the lower-case d (the overall depth D is a
+            // different quantity); the label style is upper-case, so this one
+            // symbol is wrapped to keep it exactly as written
+            label={
+              <span>
+                <span className="normal-case">d</span> override
+              </span>
+            }
             unit="mm"
             value={s.dOverride ?? 0}
             min={0}

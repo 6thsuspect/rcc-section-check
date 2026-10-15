@@ -124,6 +124,27 @@ describe('shear panels render hygiene', () => {
     expect(msgs).toEqual([])
   })
 
+  it('keeps the effective-depth symbol lower case in the label of Section values used', () => {
+    const f = fixture('IS456')
+    const html = renderToStaticMarkup(
+      <ShearInputsPanel state={f.s} update={() => {}} section={f.section} layout={f.layout} />,
+    )
+    const from = html.indexOf('Section values used')
+    const to = html.indexOf('Critical section', from)
+    expect(from).toBeGreaterThan(-1)
+    const block = html.slice(from, to)
+    // the shared label style is upper case (b override, Asl override), but the
+    // effective depth is the lower-case d — the overall depth D is a different
+    // quantity — so exactly that one symbol is kept as written
+    expect(block).toContain('>b override<')
+    expect(block).toContain('>Asl override<')
+    expect(block).toContain('<span class="normal-case">d</span> override')
+    // ...and the field, its value and its unit are otherwise untouched
+    expect(block).toContain('Effective depth. 0 uses the compression face')
+    expect(block).toContain('mm')
+    expect(msgs).toEqual([])
+  })
+
   it('puts the link diameter and the leg count on one row of a shared grid', () => {
     const f = fixture('IS456')
     const html = renderToStaticMarkup(
