@@ -68,8 +68,8 @@ import {
   SegButton,
   SegGroup,
   STANDARD_BAR_DIAMETERS,
-  btnCls,
-  btnPrimaryCls,
+  headerBtnCls,
+  headerBtnPrimaryCls,
   statusPillCls,
   statusReadoutCls,
 } from './components/ui'
@@ -595,19 +595,26 @@ export default function App() {
           {/* The three checks read as independent buttons — the same style as
               the action buttons at the end of the row, with the same spacing —
               rather than as a segmented control; which one is open is carried by
-              `aria-pressed` and by the view below. */}
-          <SegGroup className="shrink-0" gap="gap-1.5 sm:gap-2" aria-label="Check module">
-            <SegButton variant="button" active={view === 'uls'} onClick={() => setView('uls')} title="Ultimate limit state — P–Mx–My interaction & capacity checks">
+              `aria-pressed` and by the view below. The group is a wrapping flex
+              row of its own: below 600 px (`max-[600px]:`, i.e. an
+              `@media (max-width: 600px)` query) it takes a full line under the
+              title and the word "Check" leaves the labels
+              (`max-[600px]:hidden` — `display: none` on a phone), so the
+              three buttons share the line instead of the row spilling out of the
+              header; the action buttons then wrap onto the line below this one.
+              The labels keep their full accessible name either way. */}
+          <SegGroup className="shrink-0 max-[600px]:w-full" gap="gap-1 sm:gap-2" aria-label="Check module">
+            <SegButton variant="button" active={view === 'uls'} onClick={() => setView('uls')} aria-label="ULS Check" title="Ultimate limit state — P–Mx–My interaction & capacity checks">
               <Icon name="target" size={13} />
-              ULS Check
+              <span>ULS<span className="max-[600px]:hidden"> Check</span></span>
             </SegButton>
-            <SegButton variant="button" active={view === 'sls'} onClick={() => setView('sls')} title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
+            <SegButton variant="button" active={view === 'sls'} onClick={() => setView('sls')} aria-label="SLS Check" title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
               <Icon name="shield" size={13} />
-              SLS Check
+              <span>SLS<span className="max-[600px]:hidden"> Check</span></span>
             </SegButton>
-            <SegButton variant="button" active={view === 'shear'} onClick={() => setView('shear')} title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
+            <SegButton variant="button" active={view === 'shear'} onClick={() => setView('shear')} aria-label="Shear Check" title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
               <Icon name="link" size={13} />
-              Shear Check
+              <span>Shear<span className="max-[600px]:hidden"> Check</span></span>
             </SegButton>
           </SegGroup>
 
@@ -617,7 +624,7 @@ export default function App() {
               would otherwise zero the automatic minimum size and let the tabs
               squeeze the buttons — so the header still gives the area a line of
               its own when the tabs and the buttons cannot share one. */}
-          <div className="@container flex min-w-min flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+          <div className="@container flex min-w-min flex-1 flex-wrap items-center justify-end gap-1 sm:gap-2">
             {view === 'uls' && surface && props && (
               <HeaderStatus
                 ok={!anyFail}
@@ -680,8 +687,10 @@ export default function App() {
 
             {/* The action buttons keep one row of their own: they never wrap
                 among themselves and never shrink, so nothing shown beside the
-                tabs can push the PDF report button onto a second line. */}
-            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                tabs can push the PDF report button onto a second line. When the
+                row runs out of width they move to the line below the checks
+                (`flex-wrap` on the action area), they do not overlap them. */}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -692,7 +701,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleImportClick}
-                className={btnCls}
+                className={headerBtnCls}
                 title="Import a saved project JSON file"
               >
                 <Icon name="folder" size={13} />
@@ -701,7 +710,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleExportClick}
-                className={btnCls}
+                className={headerBtnCls}
                 title="Export current project state to a JSON file"
               >
                 <Icon name="download" size={13} />
@@ -709,7 +718,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className={btnPrimaryCls}
+                className={headerBtnPrimaryCls}
                 onClick={exportPdf}
                 disabled={!surface || !props || results.length === 0}
                 title="Open the full calculation report (ULS, SLS and shear) in a print window — use 'Save as PDF'"

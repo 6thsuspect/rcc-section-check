@@ -59,6 +59,23 @@ export const btnPrimaryCls =
   'hover:bg-accent-strong hover:shadow-[0_2px_6px_-1px_rgb(28_92_171/0.45)] active:translate-y-[0.5px] ' +
   'disabled:pointer-events-none disabled:opacity-45'
 
+/**
+ * Header buttons — the three checks and the Import / Export / PDF buttons beside
+ * them. The action-button style, compacted on a phone: below 600 px (written out
+ * in the classes rather than hidden behind a theme token, so the breakpoint is
+ * visible in the markup and can be asserted) they lose padding and type and take
+ * a tighter icon gap, and they gain a pressed state that reads under a finger —
+ * `:active` fires during a tap, where there is no hover — with the browser's
+ * tap delay removed. The panels keep `btnCls` / `btnPrimaryCls` as they are.
+ */
+export const headerBtnCls =
+  `${btnCls} max-[600px]:gap-1 max-[600px]:px-2 max-[600px]:py-1 max-[600px]:text-[10.5px] ` +
+  'touch-manipulation active:scale-[0.97] active:bg-panel'
+
+export const headerBtnPrimaryCls =
+  `${btnPrimaryCls} max-[600px]:gap-1 max-[600px]:px-2.5 max-[600px]:py-[5px] max-[600px]:text-[10.5px] ` +
+  'touch-manipulation active:scale-[0.97] active:bg-accent-strong'
+
 /** Destructive action: delete, clear, locked state. */
 export const btnDangerCls =
   'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-field border border-bad/30 bg-bad/8 ' +
@@ -715,6 +732,7 @@ export function SegButton({
   title,
   className = '',
   variant = 'segment',
+  'aria-label': ariaLabel,
 }: {
   active: boolean
   onClick: () => void
@@ -725,23 +743,28 @@ export function SegButton({
   /**
    * `'segment'` (default) is the segmented control: the selected segment is
    * filled. `'button'` is a plain action button — the same style as the Import /
-   * Export / PDF buttons (`btnCls`), with no selected state, for rows of buttons
-   * that are to read as independent buttons rather than as a tab group. The
-   * `active` flag still reaches assistive technology as `aria-pressed`.
+   * Export / PDF buttons (`headerBtnCls`: the shared action-button style,
+   * compacted below the header's phone breakpoint), with no selected state, for
+   * rows of buttons that are to read as independent buttons rather than as a tab
+   * group. The `active` flag still reaches assistive technology as `aria-pressed`.
    */
   variant?: 'segment' | 'button'
+  /** Accessible name, when the visible label alone would not carry it (a label
+   *  that shortens below a breakpoint, for one). */
+  'aria-label'?: string
 }) {
   if (variant === 'button') {
     return (
       <button
         type="button"
         aria-pressed={active}
+        aria-label={ariaLabel}
         disabled={disabled}
         title={title}
         onClick={onClick}
-        // byte-identical to a shared action button, so hover, focus, pressed,
-        // disabled and padding cannot drift apart from it
-        className={className ? `${btnCls} ${className}` : btnCls}
+        // byte-identical to the header's action buttons, so hover, focus,
+        // pressed, disabled, padding and the responsive steps cannot drift apart
+        className={className ? `${headerBtnCls} ${className}` : headerBtnCls}
       >
         {children}
       </button>
@@ -751,6 +774,7 @@ export function SegButton({
     <button
       type="button"
       aria-pressed={active}
+      aria-label={ariaLabel}
       disabled={disabled}
       title={title}
       onClick={onClick}

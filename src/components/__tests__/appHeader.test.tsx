@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import App, { HeaderStatus } from '../../App'
-import { statusPillCls, statusReadoutCls } from '../ui'
+import { btnCls, btnPrimaryCls, headerBtnCls, headerBtnPrimaryCls, statusPillCls, statusReadoutCls } from '../ui'
 import appSource from '../../App.tsx?raw'
 
 let msgs: string[]
@@ -46,7 +46,7 @@ describe('app header', () => {
     // the action area keeps a min-content floor: inline-size containment would
     // zero the automatic minimum size and let the tabs squeeze the buttons
     expect(area).toContain('min-w-min')
-    const groupAt = area.indexOf('flex shrink-0 items-center gap-1.5 sm:gap-2')
+    const groupAt = area.indexOf('flex shrink-0 items-center gap-1 sm:gap-2')
     expect(groupAt).toBeGreaterThan(-1)
     const group = area.slice(groupAt)
     expect([...group.matchAll(/<button/g)]).toHaveLength(3)
@@ -100,10 +100,64 @@ describe('app header', () => {
     expect(pressed[0].text).toBe('ULS Check')
     // the row keeps the action row's spacing, so the buttons read as a set of
     // independent buttons rather than a tight tab strip
-    expect(html).toContain('items-stretch gap-1.5 sm:gap-2 shrink-0')
+    expect(html).toContain('items-stretch gap-1 sm:gap-2 shrink-0 max-[600px]:w-full')
     // the segmented controls elsewhere in the app are untouched: they still
     // carry the filled selected segment
     expect(html).toContain('bg-accent-wash')
+    expect(msgs).toEqual([])
+  })
+
+  it('compacts the header on a phone — no overlap, no sideways scrolling', () => {
+    const { html } = header()
+    const headerHtml = html.slice(0, html.indexOf('</header>'))
+
+    // the header row wraps (it is never a sideways-scrolling strip: the app root
+    // clips overflow, so anything that did not wrap would be lost, not scrolled)
+    expect(html).toContain('flex flex-wrap items-center justify-between')
+    expect(headerHtml).not.toContain('overflow-x')
+
+    // the three checks are one wrapping flex row, and below the phone breakpoint
+    // that row takes a full line of its own under the title
+    expect(html).toContain('flex flex-wrap items-stretch gap-1 sm:gap-2 shrink-0 max-[600px]:w-full')
+
+    // the word "Check" is a span of its own, hidden by a media query on a phone
+    // (`max-[600px]:hidden` = `@media (width < 600px) { display: none }`), so the
+    // labels shorten to ULS / SLS / Shear instead of the row spilling out
+    const labels = [...headerHtml.matchAll(/<span>([A-Za-z]+)<span class="([^"]*)"> Check<\/span><\/span>/g)].map(
+      (m) => ({ word: m[1], cls: m[2] }),
+    )
+    expect(labels.map((l) => l.word)).toEqual(['ULS', 'SLS', 'Shear'])
+    for (const l of labels) expect(l.cls).toBe('max-[600px]:hidden')
+    // ...and the full name survives the breakpoint, for screen readers and for
+    // anything that queries the button by name
+    for (const name of ['ULS Check', 'SLS Check', 'Shear Check']) {
+      expect(html).toContain(`aria-label="${name}"`)
+    }
+
+    // every header button — checks and actions alike — carries the compact
+    // phone style: smaller padding, type and icon gap, plus a pressed state that
+    // reads under a finger and no double-tap-zoom delay
+    expect(headerBtnCls.startsWith(btnCls)).toBe(true)
+    expect(headerBtnPrimaryCls.startsWith(btnPrimaryCls)).toBe(true)
+    for (const cls of [headerBtnCls, headerBtnPrimaryCls]) {
+      expect(cls).toContain('max-[600px]:px-2')
+      expect(cls).toContain('max-[600px]:py-')
+      expect(cls).toContain('max-[600px]:text-[10.5px]')
+      expect(cls).toContain('max-[600px]:gap-1')
+      expect(cls).toContain('touch-manipulation')
+      expect(cls).toContain('active:scale-[0.97]')
+    }
+    // the panels' buttons are untouched: the compaction lives on the header only
+    expect(btnCls).not.toContain('max-[')
+    expect(btnPrimaryCls).not.toContain('max-[')
+    expect(btnCls).toContain('active:translate-y-[0.5px]')
+    // and that is what the header renders: six buttons, all of them compact
+    const headerButtons = [...headerHtml.matchAll(/<button([^>]*)>/g)].map(
+      (m) => /class="([^"]*)"/.exec(m[1])?.[1] ?? '',
+    )
+    expect(headerButtons).toHaveLength(6)
+    for (const cls of headerButtons) expect(cls).toContain('max-[600px]:text-[10.5px]')
+    expect(headerButtons[5]).toContain('bg-accent') // the PDF button keeps its fill
     expect(msgs).toEqual([])
   })
 

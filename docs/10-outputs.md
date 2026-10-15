@@ -48,9 +48,24 @@ when it cannot, and the three buttons — always in one non-shrinking group — 
 the row is laid out identically whichever tab is selected. All three tabs render the readout
 through the one `HeaderStatus` component, so the three cannot drift apart. The three check
 buttons themselves are drawn as independent buttons in the style of the action buttons beside
-them (`SegButton variant="button"` = the shared `btnCls`), not as a segmented control: the open
-module is not marked by a filled or bordered tab — it is carried by `aria-pressed` for
+them (`SegButton variant="button"` = the shared `headerBtnCls`), not as a segmented control: the
+open module is not marked by a filled or bordered tab — it is carried by `aria-pressed` for
 assistive technology and by the module's own panels below.
+
+The header adapts rather than overlaps, and it never scrolls sideways — the app root clips
+overflow, so anything that did not wrap would be lost rather than scrolled to. The three checks
+sit in a wrapping flex row (`SegGroup`), the row itself is `flex-wrap` with
+`justify-content: space-between`, and the action area keeps a min-content floor so it takes a
+line of its own instead of squeezing the buttons. Below 600 px (`max-[600px]:…`, i.e. an
+`@media (max-width: 600px)` query — the breakpoint is written out in the class names so it is
+visible in the markup and asserted by `src/components/__tests__/appHeader.test.tsx`) the header
+compacts: the check row takes a full line under the title, the word "Check" leaves the labels
+(`display: none`; the buttons keep their full accessible name through `aria-label`), the
+buttons lose padding and type and take a tighter icon gap, and the action buttons wrap onto the
+line below the checks. The header buttons also carry a pressed state that reads under a finger
+(`:active` fires during a tap, where there is no hover) with the browser's double-tap-zoom delay
+removed (`touch-manipulation`); buttons outside the header keep `btnCls` / `btnPrimaryCls` as
+they were.
 
 - **Interaction diagrams**, each with every load case overlaid as a point:
   - P–Mx and P–My uniaxial diagrams;
