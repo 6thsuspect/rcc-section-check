@@ -109,11 +109,21 @@ automatically.
 
 ## Branding
 
-The application logo is the bar/section lattice of the header mark on the ink tile: SVG at
-`public/favicon.svg` (browser tab, with `prefers-color-scheme` inversion for dark tab strips),
-`public/favicon-32.png` fallback and `public/apple-touch-icon.png` for home-screen pinning.
-Regenerate the PNGs after any change to the mark with `npm run icons` (dependency-free — the
-geometry in `scripts/make-favicons.mjs` mirrors the SVG).
+One piece of artwork (a dark drafting tile carrying the reinforced concrete section: boundary,
+closed stirrup with its two hooks, and the eight main bars) is the mark of the app title, the
+printed report header and the browser tab:
+
+- `src/components/Logo.tsx` — the header mark (`AppLogo`) and `logoSvgMarkup()`, which the
+  report uses to emit the same drawing into the printed title line;
+- `public/favicon.svg` — the standalone artwork for the browser tab;
+- `public/favicon-32.png` and `public/apple-touch-icon.png` — the raster fallbacks, regenerated
+  after any change to the mark with `npm run icons` (dependency-free: `scripts/make-favicons.mjs`
+  draws the same geometry with edge-antialiased signed-distance fields and encodes the PNG with
+  `node:zlib`).
+
+`src/components/__tests__/branding.test.tsx` fails if the four drift apart — it compares the
+favicon against the component shape by shape and checks the rasteriser still carries the same
+bar centres and hooks.
 
 ## Stack
 

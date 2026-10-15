@@ -19,12 +19,21 @@ Every figure (section preview, P–M diagram, Mx–My contour and the shear link
 
 ### Branding
 
-The application logo — the bar/section lattice of the header mark on the ink tile — is the
-browser-tab favicon: `public/favicon.svg` (with a dark-tab variant via `prefers-color-scheme`),
-`public/favicon-32.png` for browsers without SVG favicons, and `public/apple-touch-icon.png` for
-home-screen pinning. `npm run icons` regenerates the PNGs from the same geometry after any change
-to the mark (`public/favicon.svg`, `scripts/make-favicons.mjs` and the header mark in
-`src/App.tsx` are kept in step).
+The application logo — a dark drafting tile carrying the reinforced concrete section (boundary,
+closed stirrup with its two hooks, and the eight main bars) — is one piece of artwork on three
+surfaces:
+
+- the **app title mark** in the header (`AppLogo` in `src/components/Logo.tsx`);
+- the **printed report header**: the same drawing, emitted into the title line by
+  `logoSvgMarkup()`, laid out beside the heading by the `.head` rules in the report stylesheet;
+- the **browser tab**: `public/favicon.svg`, with `public/favicon-32.png` for browsers without
+  SVG favicons and `public/apple-touch-icon.png` for home-screen pinning.
+
+`npm run icons` regenerates the two PNGs from the same geometry after any change to the mark
+(`scripts/make-favicons.mjs` draws it with edge-antialiased signed-distance fields and encodes
+the PNG with `node:zlib`), and `src/components/__tests__/branding.test.tsx` checks that the
+component, the favicon and the rasteriser still describe the same drawing. The document's
+`theme-color` is the tile colour.
 
 ## 10.1 On-screen results
 

@@ -14,6 +14,7 @@ import {
 } from './engine/cover'
 import { contourAtP, pmCurve } from './engine/surface'
 import type { AppState } from './state'
+import { logoSvgMarkup } from './components/Logo'
 import type { NeutralAxisResult } from './engine/flexure'
 import type { SpacingReport } from './engine/barSpacing'
 import type {
@@ -79,7 +80,12 @@ export interface ReportContext {
   svgs: { section: string; pm: string; contour: string; shear?: string }
 }
 
-export function exportReport(ctx: ReportContext): void {
+/**
+ * The report as one self-contained HTML document (styles inlined, figures
+ * embedded as SVG). Pure: it only reads the context, so it is what the tests
+ * and any other caller use — `exportReport` opens it in a print window.
+ */
+export function reportHtml(ctx: ReportContext): string {
   const { state, spec, grade, props, surface, results, checks, flex, svgs } = ctx
   const conc = spec.concrete(state.fck)
   const steel = spec.steel(grade.fy)
@@ -240,6 +246,9 @@ ${notes}`
   .case { page-break-inside: avoid; }
   .pb { page-break-before: always; }
   svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  /* application mark, on the title line */
+  .head { display: flex; align-items: center; gap: 12px; }
+  .head .logo { width: 54px; height: 54px; margin: 0; flex: none; }
   /* svg theme classes (light palette, matching the app) */
   .fill-concrete{fill:#e9eef3}.fill-paper{fill:#fbfcfd}.fill-capacity{fill:#2a78d6}.fill-demand{fill:#eb6834}
   .fill-ink{fill:#17222c}.fill-ink-2{fill:#485866}.fill-ink-3{fill:#75828e}
@@ -249,11 +258,16 @@ ${notes}`
   @media print { body { padding: 0; } }
 </style></head><body>
 
-<h1>RCC Section Check — Calculation Report</h1>
-<div class="meta">
-  Design code: <b>${esc(spec.name)}</b> (${esc(spec.edition)}) &nbsp;·&nbsp;
-  Date: ${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN')} &nbsp;·&nbsp;
-  Method: ULS strain-compatibility interaction surface (biaxial P–M<sub>x</sub>–M<sub>y</sub>)${ctx.shear ? '; shear design check per the same code' : ''}
+<div class="head">
+  ${logoSvgMarkup('rep', 'class="logo" width="54" height="54" role="img" aria-label="RCC Section Check"')}
+  <div>
+    <h1>RCC Section Check — Calculation Report</h1>
+    <div class="meta">
+      Design code: <b>${esc(spec.name)}</b> (${esc(spec.edition)}) &nbsp;·&nbsp;
+      Date: ${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN')} &nbsp;·&nbsp;
+      Method: ULS strain-compatibility interaction surface (biaxial P–M<sub>x</sub>–M<sub>y</sub>)${ctx.shear ? '; shear design check per the same code' : ''}
+    </div>
+  </div>
 </div>
 
 <h2>1 &nbsp;Input data</h2>
@@ -353,6 +367,12 @@ ${shearSectionHtml}
 
 </body></html>`
 
+  return html
+}
+
+/** Build the report and open it in a print window ("Save as PDF" produces the file). */
+export function exportReport(ctx: ReportContext): void {
+  const html = reportHtml(ctx)
   const win = window.open('', '_blank')
   if (!win) {
     window.alert('Popup blocked — allow popups for this site to export the PDF report.')
