@@ -7,9 +7,12 @@
     by the header mark and by the printed report) and with the geometry drawn by
     scripts/make-favicons.mjs (the PNG fallbacks); branding.test.tsx checks them.
     The supplied artwork was 500 × 600; the tile is squared here so it fills a
-    square icon slot, the drawing inside is unchanged (translated 50 units), and
-    the pattern path carries fill="none" — an open path is filled as if closed,
-    which would wash a triangle over every grid cell.
+    square icon slot, and the drawing inside is unchanged — only placed, by the
+    group translation below, so that the rectangular section sits exactly in the
+    middle of the tile (120 units of tile on either side, 70 above and below, the
+    section's own centre on the centre of the tile). The pattern path carries
+    fill="none" — an open path is filled as if closed, which would wash a
+    triangle over every grid cell.
   -->
   <defs>
     <!-- Background grid pattern -->
@@ -28,7 +31,7 @@
   <rect width="600" height="600" rx="40" fill="none" stroke="#1e293b" stroke-width="2" />
 
   <!-- Main drawing group -->
-  <g filter="url(#shadow)" transform="translate(50 0)">
+  <g filter="url(#shadow)" transform="translate(50 30)">
     <!-- RCC section boundary: slightly reduced depth -->
     <!-- Outer boundary -->
     <rect x="70" y="40" width="360" height="460" rx="40" fill="#f8fafc" />

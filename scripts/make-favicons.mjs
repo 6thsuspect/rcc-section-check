@@ -23,8 +23,11 @@ const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../public')
 /* ----------------------------- the mark ------------------------------ */
 /** Design space of the artwork (square, like the SVG viewBox). */
 const DESIGN = 600
-/** The drawing sits at x + 50 inside the squared tile. */
+/** The drawing sits at (x + 50, y + 30) inside the squared tile — the placement
+ *  that centres the 360 × 460 section on the 600 × 600 tile (equal margins on
+ *  both sides). */
 const DX = 50
+const DY = 30
 /** Dark drafting tile. */
 const TILE = { size: 600, r: 40, fill: [0x0a, 0x0a, 0x0a], edge: [0x1e, 0x29, 0x3b], edgeW: 2 }
 /** Grid pattern over the tile. */
@@ -147,11 +150,11 @@ function render(size, { square = false } = {}) {
   // tile geometry, in device units, centred on the canvas
   const tileHalf = (TILE.size / 2) * s
   const tileR = square ? 0 : TILE.r * s
-  const frame = { halfW: (FRAME.w / 2) * s, halfH: (FRAME.h / 2) * s, radius: FRAME.r * s, cx: (FRAME.x + DX + FRAME.w / 2 - DESIGN / 2) * s, cy: (FRAME.y + FRAME.h / 2 - DESIGN / 2) * s }
-  const core = { halfW: (CORE.w / 2) * s, halfH: (CORE.h / 2) * s, radius: CORE.r * s, cx: (CORE.x + DX + CORE.w / 2 - DESIGN / 2) * s, cy: (CORE.y + CORE.h / 2 - DESIGN / 2) * s }
-  const stirrup = { halfW: (STIRRUP.w / 2) * s, halfH: (STIRRUP.h / 2) * s, radius: STIRRUP.r * s, cx: (STIRRUP.x + DX + STIRRUP.w / 2 - DESIGN / 2) * s, cy: (STIRRUP.y + STIRRUP.h / 2 - DESIGN / 2) * s }
+  const frame = { halfW: (FRAME.w / 2) * s, halfH: (FRAME.h / 2) * s, radius: FRAME.r * s, cx: (FRAME.x + DX + FRAME.w / 2 - DESIGN / 2) * s, cy: (FRAME.y + DY + FRAME.h / 2 - DESIGN / 2) * s }
+  const core = { halfW: (CORE.w / 2) * s, halfH: (CORE.h / 2) * s, radius: CORE.r * s, cx: (CORE.x + DX + CORE.w / 2 - DESIGN / 2) * s, cy: (CORE.y + DY + CORE.h / 2 - DESIGN / 2) * s }
+  const stirrup = { halfW: (STIRRUP.w / 2) * s, halfH: (STIRRUP.h / 2) * s, radius: STIRRUP.r * s, cx: (STIRRUP.x + DX + STIRRUP.w / 2 - DESIGN / 2) * s, cy: (STIRRUP.y + DY + STIRRUP.h / 2 - DESIGN / 2) * s }
   const px = (v) => (v + DX - DESIGN / 2) * s
-  const py = (v) => (v - DESIGN / 2) * s
+  const py = (v) => (v + DY - DESIGN / 2) * s
 
   // 1. the tile — pixel-centre coordinates, in device units about the canvas centre
   const centre = (v) => v + 0.5 - size / 2

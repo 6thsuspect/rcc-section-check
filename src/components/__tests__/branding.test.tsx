@@ -12,7 +12,19 @@
  */
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { AppLogo, LOGO_BARS, LOGO_HOOKS, LOGO_SHADOW, LOGO_STIRRUP, LOGO_VIEWBOX, logoSvgMarkup } from '../Logo'
+import {
+  AppLogo,
+  LOGO_BARS,
+  LOGO_FRAME,
+  LOGO_HOOKS,
+  LOGO_OFFSET_X,
+  LOGO_OFFSET_Y,
+  LOGO_SHADOW,
+  LOGO_STIRRUP,
+  LOGO_TILE,
+  LOGO_VIEWBOX,
+  logoSvgMarkup,
+} from '../Logo'
 import { reportHtml } from '../../report'
 import App from '../../App'
 import { initialState } from '../../state'
@@ -150,6 +162,71 @@ describe('application logo', () => {
     expect(body).toContain('<h1>RCC Section Check — Calculation Report</h1>')
   })
 
+  it('keeps the rectangular section exactly in the middle of the tile', () => {
+    /**
+     * The box of the artwork, measured from the markup: every shape of the
+     * drawing lives inside the translated group, so its placement is the group
+     * translation. The three tile rectangles and the defs come before that group
+     * and are left out.
+     */
+    const box = (svg: string) => {
+      const groupAt = svg.indexOf('<g filter=')
+      expect(groupAt).toBeGreaterThan(-1)
+      const drawing = svg.slice(groupAt)
+      const [, tx, ty] = /translate\((-?[\d.]+) (-?[\d.]+)\)/.exec(drawing)!
+      const dx = Number(tx)
+      const dy = Number(ty)
+      let minX = Infinity
+      let maxX = -Infinity
+      let minY = Infinity
+      let maxY = -Infinity
+      const add = (x: number, y: number) => {
+        minX = Math.min(minX, x + dx)
+        maxX = Math.max(maxX, x + dx)
+        minY = Math.min(minY, y + dy)
+        maxY = Math.max(maxY, y + dy)
+      }
+      for (const m of drawing.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)) {
+        add(Number(m[1]), Number(m[2]))
+        add(Number(m[1]) + Number(m[3]), Number(m[2]) + Number(m[4]))
+      }
+      for (const m of drawing.matchAll(/<circle cx="([\d.-]+)" cy="([\d.-]+)" r="([\d.]+)"/g)) {
+        add(Number(m[1]) - Number(m[3]), Number(m[2]) - Number(m[3]))
+        add(Number(m[1]) + Number(m[3]), Number(m[2]) + Number(m[3]))
+      }
+      for (const m of drawing.matchAll(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/g)) {
+        add(Number(m[1]), Number(m[2]))
+        add(Number(m[3]), Number(m[4]))
+      }
+      return { minX, maxX, minY, maxY, left: minX, right: LOGO_TILE.size - maxX, top: minY, bottom: LOGO_TILE.size - maxY }
+    }
+
+    const t = LOGO_TILE.size
+    for (const [name, svg] of [['component', logoSvgMarkup('x')], ['favicon', faviconSvg]] as const) {
+      const b = box(svg)
+      // the outermost element is the rectangular section, at its own size
+      expect(b.maxX - b.minX, name).toBe(LOGO_FRAME.w)
+      expect(b.maxY - b.minY, name).toBe(LOGO_FRAME.h)
+      // equal tile on both sides and above and below — and the section's centre
+      // on the centre of the tile, so the mark mirrors about both centre lines
+      expect(b.left, name).toBe(b.right)
+      expect(b.top, name).toBe(b.bottom)
+      expect((b.minX + b.maxX) / 2, name).toBe(t / 2)
+      expect((b.minY + b.maxY) / 2, name).toBe(t / 2)
+      // 120 units of tile on either side, 70 above and below
+      expect([b.left, b.top], name).toEqual([120, 70])
+    }
+
+    // the bars mirror each other about the section's own axes, column for column
+    // and row for row
+    const bars = (pick: 'cx' | 'cy') => [...new Set(LOGO_BARS.map((b) => b[pick]))]
+    for (const v of bars('cx')) expect(bars('cx')).toContain(t - (v + LOGO_OFFSET_X) - LOGO_OFFSET_X)
+    for (const v of bars('cy')) expect(bars('cy')).toContain(t - (v + LOGO_OFFSET_Y) - LOGO_OFFSET_Y)
+    expect(bars('cx')).toHaveLength(3)
+    expect(bars('cy')).toHaveLength(3)
+    expect(LOGO_BARS).toHaveLength(8)
+  })
+
   it('is the browser icon, in step with the component', () => {
     // The standalone favicon is the same artwork as the component's, written by
     // hand rather than generated, so compare the drawing rather than the bytes:
@@ -180,7 +257,7 @@ describe('application logo', () => {
       expect(svg).toContain('<rect x="90" y="60" width="320" height="420" rx="20" fill="#0a0a0a" />')
       expect(svg).toContain('stroke="#475569" stroke-width="3"')
       expect(svg).toContain('flood-opacity="0.6"')
-      expect(svg).toContain('transform="translate(50 0)"')
+      expect(svg).toContain(`transform="translate(${LOGO_OFFSET_X} ${LOGO_OFFSET_Y})"`)
       expect(svg).toContain('viewBox="0 0 600 600"')
     }
     // the document points at it, with the PNG fallbacks
@@ -205,6 +282,7 @@ describe('application logo', () => {
     // the rasteriser beside them draws the same geometry as the component
     expect(rasteriser).toContain('const DESIGN = 600')
     expect(rasteriser).toContain('const DX = 50')
+    expect(rasteriser).toContain('const DY = 30')
     for (const b of LOGO_BARS) expect(rasteriser).toContain(`{ cx: ${b.cx}, cy: ${b.cy} }`)
     for (const h of LOGO_HOOKS) {
       expect(rasteriser).toContain(`x1: ${h.x1}`)

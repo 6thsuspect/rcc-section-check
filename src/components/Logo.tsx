@@ -14,18 +14,29 @@
  *    keeps the three in step.
  *
  * The supplied artwork came on a 500 × 600 tile; the tile is squared to
- * 600 × 600 here (the drawing inside is unchanged, translated 50 units to stay
- * centred) so it fills a square icon slot — the header mark, the favicon and the
- * iOS home-screen icon — without transparencies down the sides. The pattern path
- * carries `fill="none"`: an open path is filled as if closed, which would have
- * washed a triangle over every grid cell.
+ * 600 × 600 here so the mark fills a square icon slot — the header mark, the
+ * favicon and the iOS home-screen icon — without transparencies down the sides.
+ * The drawing inside is unchanged, only placed: see `LOGO_OFFSET_X` /
+ * `LOGO_OFFSET_Y` below, which put the rectangular section exactly in the middle
+ * of the tile — equal margins on both sides (120 left/right, 70 top/bottom), and
+ * the section's own axes running through the centre of the tile, so the mark is
+ * symmetric about both centre lines. The pattern path carries `fill="none"`: an
+ * open path is filled as if closed, which would have washed a triangle over
+ * every grid cell.
  */
 import { useId } from 'react'
 
 /** Design space of the artwork — a square canvas, like every icon surface. */
 export const LOGO_VIEWBOX = '0 0 600 600'
-/** Horizontal offset of the drawing inside the squared tile. */
+/**
+ * Placement of the supplied 500 × 600 drawing inside the squared 600 × 600 tile.
+ * The drawing is 360 × 460, so at these offsets it sits exactly in the middle:
+ * 120 units of tile on either side, 70 above and below, and its centre — like the
+ * centres of the boundary, the core, the stirrup and the bar pattern — falls on
+ * the centre of the tile at (300, 300).
+ */
 export const LOGO_OFFSET_X = 50
+export const LOGO_OFFSET_Y = 30
 /** Dark tile: size, corner radius and its two colours. */
 export const LOGO_TILE = { size: 600, r: 40, fill: '#0a0a0a', edge: '#1e293b' }
 /** Concrete boundary: the outer face and the hollow core inside it. */
@@ -90,7 +101,7 @@ export function logoSvgMarkup(uid = '', attrs = ''): string {
     `<rect width="${LOGO_TILE.size}" height="${LOGO_TILE.size}" rx="${LOGO_TILE.r}" fill="${LOGO_TILE.fill}" />`,
     `<rect width="${LOGO_TILE.size}" height="${LOGO_TILE.size}" rx="${LOGO_TILE.r}" fill="url(#${grid})" />`,
     `<rect width="${LOGO_TILE.size}" height="${LOGO_TILE.size}" rx="${LOGO_TILE.r}" fill="none" stroke="${LOGO_TILE.edge}" stroke-width="2" />`,
-    `<g filter="url(#${shadow})" transform="translate(${LOGO_OFFSET_X} 0)">`,
+    `<g filter="url(#${shadow})" transform="translate(${LOGO_OFFSET_X} ${LOGO_OFFSET_Y})">`,
     `<rect ${rect(LOGO_FRAME)} fill="${LOGO_FRAME.fill}" />`,
     `<rect ${rect(LOGO_CORE)} fill="${LOGO_CORE.fill}" />`,
     `<rect ${rect(LOGO_STIRRUP)} fill="none" stroke="${LOGO_STIRRUP.stroke}" stroke-width="${LOGO_STIRRUP.width}" />`,

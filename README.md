@@ -111,7 +111,10 @@ automatically.
 
 One piece of artwork (a dark drafting tile carrying the reinforced concrete section: boundary,
 closed stirrup with its two hooks, and the eight main bars) is the mark of the app title, the
-printed report header and the browser tab:
+printed report header and the browser tab. The section sits exactly in the middle of the tile —
+equal margins on both sides (120 units left and right, 70 above and below), its own axes on the
+centre lines, so the mark mirrors about both axes (the stirrup's hooks and the drop shadow are
+the artwork's own detail and stay where the drawing puts them):
 
 - `src/components/Logo.tsx` — the header mark (`AppLogo`) and `logoSvgMarkup()`, which the
   report uses to emit the same drawing into the printed title line;
@@ -122,8 +125,9 @@ printed report header and the browser tab:
   `node:zlib`).
 
 `src/components/__tests__/branding.test.tsx` fails if the four drift apart — it compares the
-favicon against the component shape by shape and checks the rasteriser still carries the same
-bar centres and hooks.
+favicon against the component shape by shape, measures the drawing's box from the markup to
+check the section is centred with equal margins (and that the bars mirror about its axes), and
+checks the rasteriser still carries the same placement, bar centres and hooks.
 
 ## Stack
 

@@ -21,7 +21,10 @@ Every figure (section preview, P–M diagram, Mx–My contour and the shear link
 
 The application logo — a dark drafting tile carrying the reinforced concrete section (boundary,
 closed stirrup with its two hooks, and the eight main bars) — is one piece of artwork on three
-surfaces:
+surfaces. The rectangular section is centered: 120 units of tile on either side and 70 above and
+below, with the section's own axes on the centre lines of the tile, so the drawing mirrors about
+both axes and no element sits closer to one edge than to its opposite (the stirrup's hooks and
+the drop shadow are the artwork's own detail and stay as drawn).
 
 - the **app title mark** in the header (`AppLogo` in `src/components/Logo.tsx`);
 - the **printed report header**: the same drawing, emitted into the title line by
@@ -32,7 +35,8 @@ surfaces:
 `npm run icons` regenerates the two PNGs from the same geometry after any change to the mark
 (`scripts/make-favicons.mjs` draws it with edge-antialiased signed-distance fields and encodes
 the PNG with `node:zlib`), and `src/components/__tests__/branding.test.tsx` checks that the
-component, the favicon and the rasteriser still describe the same drawing. The document's
+component, the favicon and the rasteriser still describe the same drawing, and measures the
+artwork's box from the markup to hold the section centered with equal margins. The document's
 `theme-color` is the tile colour.
 
 ## 10.1 On-screen results
