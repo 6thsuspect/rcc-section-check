@@ -34,6 +34,20 @@ describe('render hygiene', () => {
     expect(msgs).toEqual([])
   })
 
+  it('carries the copyright notice in the footer of the app', () => {
+    const html = renderToStaticMarkup(<App />)
+    // the footer sits below the workspace, pinned to the foot of the window
+    const footerAt = html.indexOf('© 2025 Arvind Singh Rawat. All Rights Reserved.')
+    expect(footerAt).toBeGreaterThan(-1)
+    const footer = html.slice(html.lastIndexOf('<footer', footerAt), html.indexOf('</footer>', footerAt))
+    expect(footer).toContain('shrink-0') // the workspace above it scrolls, it does not
+    expect(footer).toContain('border-t border-edge')
+    expect(footer).toContain('text-center')
+    // it is the licence line, not part of the report's disclaimer block
+    expect(html.slice(0, footerAt)).toContain('</main>')
+    expect(msgs).toEqual([])
+  })
+
   const kinds: Array<'rect' | 'circle' | 'tee' | 'ishape' | 'angle' | 'box' | 'hollowCircle'> = [
     'rect',
     'circle',

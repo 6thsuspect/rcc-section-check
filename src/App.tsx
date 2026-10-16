@@ -1106,6 +1106,13 @@ export default function App() {
         )}
       </main>
 
+      {/* Copyright line, at the foot of the window: `main` above it is the only
+          scrolling region, so the notice stays visible. The year is the one in
+          the notice itself, not today's date. */}
+      <footer className={`${shell} shrink-0 border-t border-edge py-2 text-center text-[11px] leading-none text-ink-3`}>
+        © 2025 Arvind Singh Rawat. All Rights Reserved.
+      </footer>
+
       {/*
         Figures for the print report that the current tab does not show, kept
         mounted off-screen so `exportReport` can capture every figure — the

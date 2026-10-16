@@ -131,6 +131,13 @@ they were.
   of the arrangement (`auto from n bars`), so the graphical arrangement and the calculation
   parameters can be compared at a glance.
 
+### Footer
+
+A single line — **© 2025 Arvind Singh Rawat. All Rights Reserved.** — sits at the foot of the app,
+below the workspace and outside its scrolling region, so it stays visible whatever is scrolled.
+The year is the one in the notice, not today's date (a plain string in `src/App.tsx`; it is not
+derived from the clock).
+
 ## 10.2 Report
 
 The **PDF report** button (header bar) builds a self-contained print document — all figures
