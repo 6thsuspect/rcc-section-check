@@ -895,6 +895,7 @@ export default function App() {
         <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           <CodeMaterialsPanel state={state} update={update} />
           <ClearCoverPanel
+            importStamp={importStamp}
             state={state}
             update={update}
             audit={coverAudit}
@@ -902,6 +903,7 @@ export default function App() {
             setActiveFace={setActiveFace}
           />
           <SectionPanel
+            importStamp={importStamp}
             state={state}
             update={update}
             onBarDiaCustomizeChange={setCustomizeBarDiameter}

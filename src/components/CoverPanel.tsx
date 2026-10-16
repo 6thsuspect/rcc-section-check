@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { AdvancedCoverFigure, faceCoverForInput } from './AdvancedCoverFigure'
 import { generateSection } from '../engine/sections'
 import {
@@ -72,12 +72,20 @@ export function ClearCoverPanel({
   audit,
   activeFace,
   setActiveFace,
+  importStamp = 0,
 }: {
   state: AppState
   update: (patch: Partial<AppState>) => void
   audit: CoverAudit
   activeFace?: ActiveFace | null
   setActiveFace?: (face: ActiveFace | null) => void
+  /**
+   * Bumped by the app on every file import. A file that carries an individual
+   * cover per face opens the advanced block, so what it brought is on screen
+   * rather than hidden behind the toggle — the rule this panel already starts
+   * with, applied to the values an import replaces the cover with.
+   */
+  importStamp?: number
 }) {
   const cover = state.cover
   const [note, setNote] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null)
@@ -102,6 +110,13 @@ export function ClearCoverPanel({
   // Advanced cover is hidden by default; a project that already carries
   // individual face values opens with it visible so they are not concealed.
   const [showAdvanced, setShowAdvanced] = useState(() => !uniform)
+  const importStampRef = useRef(importStamp)
+
+  useEffect(() => {
+    if (importStamp === importStampRef.current) return
+    importStampRef.current = importStamp
+    if (!uniform) setShowAdvanced(true)
+  }, [importStamp, uniform])
 
   const patchCover = (next: CoverSpec) => {
     setNote(null)

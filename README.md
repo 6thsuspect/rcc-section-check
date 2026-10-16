@@ -131,7 +131,7 @@ checks the rasteriser still carries the same placement, bar centres and hooks.
 
 ## Report
 
-The header's **PDF report** button prints a self-contained calculation report (§10.2 of
+The header's **PDF report** button prints a self-contained calculation report (§10.3 of
 `docs/10-outputs.md`) — figures embedded as inline SVG — for "Save as PDF". `src/reportDelivery.ts`
 delivers it by the first route the browser allows: a window of its own, else a hidden frame in
 the page (no popup permission needed, so it works in an embedded preview), else the report file
@@ -211,6 +211,14 @@ the storage behaviour, both dialogs and the stylesheet rules they depend on.
 
 The rules the reader follows:
 
+- **The section geometry is read from the file, not inherited from the screen.** A boundary may be
+  written as `{x, y}` points, `[x, y]` pairs, flat coordinates, `{x, y, width, height}` or
+  `{cx, cy, diameter}`, under any of `boundary`, `points`, `vertices`, `outline`, `section.points` …;
+  the parametric parameters of every shape (rectangle, circle, tee, I, angle, box, hollow circle) are
+  read from their own names and aliases; and the section type follows what the file describes, so an
+  import replaces the previous geometry outright. Openings (`holes`, `voids`, `cutouts`, `openings`,
+  `ducts`, `apertures`) are read the same way — a bolt hole or a duct as a circle, a cutout as a
+  rectangle or a ring — and are kept with a generated section as well as with a boundary.
 - **A field the file carries is applied; a field it does not carry keeps the value already on
   screen.** No default ever replaces something the user can see, and a valid zero is a value: `0` for
   `memberLength`, `Pu`, `av`, an override — all of them survive the round trip, as do decimals.
@@ -218,10 +226,13 @@ The rules the reader follows:
   section, `normalizeCover` for the covers, `repositionAutomaticBars` when a boundary moves the
   automatic rows, `sanitizeBarRows`/`sanitizeLinkPositions` for the tables. Nothing re-derives
   geometry here, so the imported section behaves exactly as a typed-in one.
-- **Unusable values are reported, not applied**: a negative dimension, a bar count below 2, a wall
-  opening wider than its outer diameter, an exposure class the selected code does not have, a cot θ
-  outside 1.0–2.5, a mesh below 4 steps, a name that is not one of the code's steel grades. The field
-  keeps the value it had and the banner lists it under **Not populated**.
+- **Unusable values are reported, not applied**: a negative dimension, a wall opening wider than its
+  outer diameter, an exposure class the selected code does not have, a cot θ outside 1.0–2.5, a mesh
+  below 4 steps, a name that is not one of the code's steel grades, an opening that cannot be read.
+  The field keeps the value it had and the banner lists it under **Not populated**. Two cases are
+  adjusted instead, and said out loud: a bar count below what the generator places on that face or
+  ring (2 on a face, 6 on a ring) is raised to it, and a rotation the file states is reported as not
+  applied because the app has no rotation control — its coordinates are taken as written.
 - **The banner is the report**: the green message counts the input groups taken from the file and
   lists them; every group it could not populate is listed with the reason ("not in the file — the
   cover in use was kept"). A complete import clears itself after five seconds as before; one with
@@ -229,14 +240,26 @@ The rules the reader follows:
 - A file that is not JSON, or JSON that is not an object, is refused with a message that says so —
   the file dialog also accepts `.txt` for that reason.
 
+**The geometry that reaches the screen.** An imported section is a *controlled* section: the app
+holds the boundary, the openings and the parametric definition the file gave, so every input the app
+has for it is filled from the file. Where the app keeps a form value of its own — the shape the
+Section geometry panel is showing, which boundary or opening its table is on, the bar count on the
+circular arrangement form, whether the per-face cover block is open — those follow the import too,
+through one `importStamp` the header bumps on every successful read. Nothing else in the panels
+changes: the stamp is only ever a re-seed after a file is read.
+
 One more rule lives in the circular-reinforcement panel: a bar table that came from a file is left
 exactly as the file wrote it. Without that guard the panel's live generator would replace an imported
 circular arrangement with its own default one on the first render after the import. It stays held
 until the arrangement is edited, `Apply layout` is pressed, or the section changes underneath it.
 
-`src/__tests__/importFile.test.ts` covers all of the above: the project round trip (including zeros
-and decimals), the external mappings, units, invalid values, the boundary case, the bar-table hints
-and the app wiring.
+`src/__tests__/importFile.test.ts` covers the parsing half: the project round trip (including zeros
+and decimals), the external mappings, the units, every spelling of a boundary and of an opening, the
+invalid-value reporting and the app wiring. `src/components/__tests__/sectionPanelImport.test.tsx`
+covers the geometry that reaches the screen: the shape controls of all seven section types, the
+boundary table and the drawn figure, the openings (with the calculated area of the section they
+leave), the properties (area, centroid, Ixx/Iyy) and the app's own analysis — interaction surface,
+utilisation and compliance checks — running on the imported section.
 
 ## Stack
 
@@ -302,7 +325,7 @@ src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear mo
   void uses that void's own cover (blank = inherit the matching outer face), and circular
   rings take the governing (largest) face cover. Cover, bar diameter and section edits update
   automatic geometry live; coordinate-table edits switch only the edited rows to `manual`,
-  which are audited but not overwritten — see `docs/03` §3.6 and `docs/04` §4.2.
+  which are audited but not overwritten — see `docs/03` §3.6 and `docs/04` §4.3.
 - Loads are entered **already factored**; material partial safety factors are applied
   internally by the code stress blocks. Second-order / slenderness moments must be
   included upstream (the tool flags the slenderness screens).

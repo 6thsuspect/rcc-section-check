@@ -53,7 +53,7 @@ deducted automatically (§5.4), so the user never adjusts for it.
 
 Bulk tools — "generate bars along an edge at spacing s, offset c" and circular-section
 arrangements (uniform ring, alternate bars, bundles, triples, layered rings; see
-[§4.3](04-predefined-sections.md)) — fill the same table; every generated bar remains
+[§4.4](04-predefined-sections.md)) — fill the same table; every generated bar remains
 individually editable.
 
 ## 3.4 Materials
@@ -104,7 +104,7 @@ field while they are equal). **Link faces** mirrors one value across all four.
   Table 16 covers are read to the same datum, so a link diameter is required
   (default ⌀8) before a bar centre can be placed.
 - **Bar placement:** every generated bar sits at `cover(face) + ⌀tie + ⌀bar/2`
-  from the face it lies against ([§4.2](04-predefined-sections.md)), so the
+  from the face it lies against ([§4.3](04-predefined-sections.md)), so the
   achieved cover equals the value entered for that face.
 - **Circular sections** are radially symmetric: the ring is placed at the
   *governing* (largest) face cover, which keeps every face at or above its

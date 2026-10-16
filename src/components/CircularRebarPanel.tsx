@@ -62,6 +62,25 @@ function barsKey(bars: Rebar[]): string {
  * Circular-section reinforcement arrangement builder.
  * Generates ordinary {x,y,dia} bars that feed the shared reinforcement table.
  */
+/**
+ * The arrangement configuration after a file is imported. A uniform ring takes
+ * the imported section's bar count — a file that lays twelve bars on its ring
+ * must not be shown as the eight the form happened to hold — and every kind
+ * takes the imported bar diameter. A bundled, tripled or layered arrangement
+ * keeps its own shape: only the diameter moves.
+ */
+export function configForImportedSection(
+  cfg: CircularRebarConfig,
+  predefined: PredefinedSection | null,
+  barDia: number,
+): CircularRebarConfig {
+  const circular = predefined && (predefined.kind === 'circle' || predefined.kind === 'hollowCircle')
+  if (circular && cfg.kind === 'uniform') {
+    return sanitizeCircularConfig({ ...cfg, nBars: predefined.nBars, barDia })
+  }
+  return sanitizeCircularConfig({ ...cfg, barDia })
+}
+
 export function CircularRebarPanel({
   predefined,
   bars = [],
@@ -113,7 +132,11 @@ export function CircularRebarPanel({
     importStampRef.current = importStamp
     importedBarsRef.current = bars
     lastKeyRef.current = barsKey(bars)
-  }, [importStamp, bars])
+    // The arrangement form follows the imported section too — a file that brings
+    // twelve bars on its ring shows twelve here, not the count that was
+    // configured before the import.
+    setCfg((prev) => configForImportedSection(prev, predefined, barDia))
+  }, [importStamp, bars, predefined, barDia])
 
   // A manual table edit is an explicit opt-out from live regeneration. The
   // user can still press Apply layout or turn the live checkbox back on.

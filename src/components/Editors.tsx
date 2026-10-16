@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LoadCase, Rebar, SectionGeometry } from '../engine/types'
 import { CODES, type CodeSpec } from '../engine/codes'
 import {
@@ -125,14 +125,34 @@ export function SectionPanel({
   state,
   update,
   onBarDiaCustomizeChange,
+  importStamp = 0,
 }: {
   state: AppState
   update: (patch: Partial<AppState>) => void
   onBarDiaCustomizeChange?: (enabled: boolean) => void
+  /**
+   * Bumped by the app every time a file is imported. The shape form and the
+   * boundary/void selection below follow the imported section, so the panel
+   * cannot go on showing the kind and the dimensions that were there before the
+   * import — nor point at a void the imported geometry does not have.
+   */
+  importStamp?: number
 }) {
   const [shape, setShape] = useState<PredefinedSection>(state.predefined ?? defaultPredefined('rect'))
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
   const [frozen, setFrozen] = useState(false)
+  const importStampRef = useRef(importStamp)
+
+  // A file import replaces the section outright: the shape buttons, every
+  // dimension and count in the form, and the boundary table all come from the
+  // file afterwards. `state.predefined` is what the app now holds — a parametric
+  // definition the file gave, or null for a boundary the file described.
+  useEffect(() => {
+    if (importStamp === importStampRef.current) return
+    importStampRef.current = importStamp
+    setShape(state.predefined ?? defaultPredefined('rect'))
+    setLoop(0)
+  }, [importStamp, state.predefined])
 
   const apply = (def: PredefinedSection, opts?: { keepBars?: boolean }) => {
     if (frozen) return
@@ -159,7 +179,9 @@ export function SectionPanel({
     })
   }
 
-  const poly = loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]
+  // The table always shows something: after an import the selected void may not
+  // exist (the file has fewer openings or none at all).
+  const poly = (loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]) ?? []
   const setPoly = (p: { x: number; y: number }[]) => {
     if (frozen) return
     const geometry: SectionGeometry =

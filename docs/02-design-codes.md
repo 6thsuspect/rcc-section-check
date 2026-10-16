@@ -39,7 +39,7 @@ longitudinal bars and the links are drawn together on the shared section geometr
 effective legs (2 legs of the closed link + intermediate legs) with the entered spacing are
 what the code check above consumes. The detailing rules are applied **on top of** the selected
 code's clauses — they never change a design equation — and an arrangement that cannot be built
-is reported with its reason ([§10.1](10-outputs.md), [§9](09-validation.md) rule V14).
+is reported with its reason ([§10.2](10-outputs.md), [§9](09-validation.md) rule V14).
 
 ## 2.2 Scope boundaries
 

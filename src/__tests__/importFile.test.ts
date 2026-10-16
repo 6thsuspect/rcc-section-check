@@ -8,6 +8,7 @@ import { importProjectText, importSummary } from '../importFile'
 import { initialState, type AppState } from '../state'
 import { isAutomaticBar, repositionAutomaticBars } from '../engine/reinforcement'
 import { generateSection } from '../engine/sections'
+import { sectionProperties } from '../engine/geometry'
 
 const read = (file: unknown, current: AppState = initialState()) =>
   importProjectText(typeof file === 'string' ? file : JSON.stringify(file), current)
@@ -326,6 +327,80 @@ describe('importProjectText — fields the file does not populate', () => {
     expect(state).toEqual(current)
     expect(importSummary(report).imported).toHaveLength(0)
     expect(report.counts.missing).toBeGreaterThan(0)
+  })
+})
+
+describe('importProjectText — the ways a file may write its geometry', () => {
+  it('reads the outer ring from every spelling it is likely to arrive in', () => {
+    const expected = [
+      { x: 0, y: 0 },
+      { x: 600, y: 0 },
+      { x: 600, y: 300 },
+      { x: 0, y: 300 },
+    ]
+    const spellings: Record<string, unknown>[] = [
+      { boundary: expected },
+      { points: [[0, 0], [600, 0], [600, 300], [0, 300]] },
+      { outline: [{ X: 0, Y: 0 }, { X: 600, Y: 0 }, { X: 600, Y: 300 }, { X: 0, Y: 300 }] },
+      { vertices: [0, 0, 600, 0, 600, 300, 0, 300] },
+      { section: { points: [[0, 0], [600, 0], [600, 300], [0, 300]] } },
+      { geometry: { boundary: expected } },
+      { section: { boundary: { points: expected } } },
+    ]
+    for (const file of spellings) {
+      const { state } = read(file)
+      expect(state.geometry.boundary, JSON.stringify(file).slice(0, 40)).toEqual(expected)
+      expect(state.predefined).toBe(null)
+      expect(sectionProperties(state.geometry, state.bars).area).toBeCloseTo(180000, 6)
+    }
+  })
+
+  it('reads a boundary written as a rectangle, and openings written as rectangles', () => {
+    const { state } = read({
+      boundary: { x: 0, y: 0, width: 600, height: 300 },
+      voids: [{ x: 100, y: 100, width: 200, height: 100 }],
+    })
+    expect(state.geometry.boundary).toHaveLength(4)
+    expect(state.geometry.voids).toEqual([
+      [
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+        { x: 300, y: 200 },
+        { x: 100, y: 200 },
+      ],
+    ])
+  })
+
+  it('counts the same opening only once, however many names it is filed under', () => {
+    const hole = { x: 200, y: 150, diameter: 60 }
+    const { state } = read({
+      boundary: { x: 0, y: 0, width: 600, height: 300 },
+      holes: [hole],
+      cutouts: [hole],
+      geometry: { holes: [hole] },
+    })
+    expect(state.geometry.voids).toHaveLength(1)
+  })
+
+  it('converts the openings with the same unit block as the geometry', () => {
+    const { state } = read({
+      units: { length: 'cm' },
+      boundary: { x: 0, y: 0, width: 60, height: 30 },
+      holes: [{ x: 20, y: 15, diameter: 6 }],
+    })
+    expect(state.geometry.boundary[2]).toEqual({ x: 600, y: 300 })
+    const ring = state.geometry.voids[0]
+    const mean = ring.map((p) => Math.hypot(p.x - 200, p.y - 150)).reduce((a, b) => a + b, 0) / ring.length
+    expect(mean).toBeCloseTo(30, 1)
+  })
+
+  it('reports a section it cannot read rather than keeping the old one silently', () => {
+    const current = initialState()
+    const { state, report } = read({ sectionType: 'rect', width: 'wide', depth: null }, current)
+    expect(state.geometry).toEqual(current.geometry)
+    expect(state.predefined).toEqual(current.predefined)
+    const invalid = importSummary(report).invalid
+    expect(invalid.some((f) => f.group === 'Section geometry')).toBe(true)
   })
 })
 

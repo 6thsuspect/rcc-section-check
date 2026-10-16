@@ -33,8 +33,9 @@ import { newCaseId, newShearCaseId } from './state'
 import { CODES } from './engine/codes'
 import { COVER_FACES, normalizeCover } from './engine/cover'
 import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
-import { defaultPredefined, generateSection, type PredefinedSection } from './engine/sections'
-import type { LoadCase, Rebar, SectionGeometry } from './engine/types'
+import { circlePoly, defaultPredefined, generateSection, type PredefinedSection } from './engine/sections'
+import { centroid, ensureCCW } from './engine/geometry'
+import type { LoadCase, Point, Rebar, SectionGeometry } from './engine/types'
 import { repositionAutomaticBars, isAutomaticBar } from './engine/reinforcement'
 import {
   MAX_COT_THETA,
@@ -449,7 +450,7 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
   const code = patch.code ?? current.code
 
   // ---------------------------------------------------------------- section
-  const section = readSection(root, current, units, report)
+  const section = readSection(root, current, units)
 
   // ---------------------------------------------------------------- materials
   const fckRaw = first(root, [
@@ -552,12 +553,25 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
     section.base && (section.explicit || Object.keys(section.params).length > 0)
       ? ({ ...section.base, ...section.params } as PredefinedSection)
       : null
+  // The openings the file defines: with a boundary they are its voids, and with
+  // a parametric section they are kept alongside the openings it generates.
+  const voids = section.boundary ? section.boundary.voids : section.cutouts
   if (section.boundary) {
     patch.geometry = section.boundary
     // The boundary is the section, so the app stops deriving it from a shape
     // definition — unless the file's own definition came with it.
     patch.predefined = section.base
-    patch.shapeClass = section.base?.kind === 'circle' || section.base?.kind === 'hollowCircle' ? 'circ' : 'rect'
+    patch.shapeClass =
+      section.shapeClass ?? (section.base?.kind === 'circle' || section.base?.kind === 'hollowCircle' ? 'circ' : 'rect')
+    report.add(
+      GROUPS.section,
+      'imported',
+      `${section.boundary.boundary.length} boundary points` +
+        `${voids.length ? ` and ${voids.length} opening(s)` : ''}` +
+        `${patch.shapeClass === 'circ' ? ', circular' : ''}` +
+        `${section.base ? `, with the parametric ${section.base.kind} definition the file carries` : ''}`,
+    )
+    if (section.base) report.add(GROUPS.shape, 'imported', `parametric ${section.base.kind}`)
     if (!barsFromFile && current.bars.length > 0) {
       // Bars the app placed itself follow the boundary they belong to, exactly
       // as they do when the boundary is edited in the app.
@@ -575,7 +589,10 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
   } else if (def) {
     const opts = { cover: patch.cover ?? current.cover, tieDia: patch.tieDia ?? current.tieDia, barDia: patch.barDia ?? current.barDia }
     const gen = generateSection(def, opts)
-    patch.geometry = gen.geometry
+    // The section is generated from the file's own parameters, and any hole or
+    // cutout the file adds is kept with it — the app's own generator knows the
+    // hollow shapes (box, hollow circle) and the file may add more.
+    patch.geometry = voids.length ? { boundary: gen.geometry.boundary, voids: [...gen.geometry.voids, ...voids] } : gen.geometry
     patch.shapeClass = gen.shapeClass
     patch.predefined = def
     const read = Object.keys(section.params)
@@ -586,6 +603,9 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
         ? `${def.kind}: ${read.map((k) => `${k} = ${section.params[k]}`).join(', ')}${section.badParams.length ? ` (${section.badParams.join(', ')} not usable)` : ''}`
         : `${def.kind} — the definition the file carries`,
     )
+    if (voids.length) {
+      report.add(GROUPS.section, 'imported', `${voids.length} opening(s) in the section kept with it`)
+    }
     if (section.badParams.length) {
       report.add(GROUPS.section, 'invalid', `${section.badParams.join(', ')} — left as they are`)
     }
@@ -616,6 +636,19 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
         ? `no usable section dimensions in the file (${section.badParams.join(', ') || 'nothing read'}) — the section in use was kept`
         : 'no boundary or section dimensions in the file — the section in use was kept',
     )
+  }
+
+  // Openings the file names but does not describe, and anything it states about
+  // its section that this app cannot show — both are said rather than dropped.
+  if (section.badCutouts.length) {
+    report.add(
+      GROUPS.section,
+      'invalid',
+      `${section.badCutouts.join(', ')} could not be read as a hole or cutout — ${section.badCutouts.length === 1 ? 'it was' : 'they were'} skipped`,
+    )
+  }
+  for (const note of section.notes) {
+    report.add(GROUPS.section, 'invalid', note)
   }
 
   // A bar table the file gave is the reinforcement, whether or not the section
@@ -750,6 +783,14 @@ type SectionRead = {
   explicit: boolean
   /** The boundary the file gave, when it gave one — the geometry itself. */
   boundary: SectionGeometry | null
+  /** Openings the file defines (holes, cutouts, ducts) — rings, in mm. */
+  cutouts: Point[][]
+  /** Openings that were there but could not be read, with the reason. */
+  badCutouts: string[]
+  /** `shapeClass` when the file states it, or a circle declared as points. */
+  shapeClass: 'rect' | 'circ' | null
+  /** Anything the file states about the section that is not applied. */
+  notes: string[]
   /** Parameters that were there but unusable, with the reason. */
   badParams: string[]
 }
@@ -759,31 +800,30 @@ type SectionRead = {
  * caller composes the definition once the reinforcement has been read too, so a
  * bar count from the file can still reach the parametric definition.
  */
-function readSection(root: Rec, current: AppState, units: UnitScale, report: Report): SectionRead {
-  const out: SectionRead = { base: null, params: {}, explicit: false, boundary: null, badParams: [] }
+function readSection(root: Rec, current: AppState, units: UnitScale): SectionRead {
+  const out: SectionRead = {
+    base: null,
+    params: {},
+    explicit: false,
+    boundary: null,
+    cutouts: [],
+    badCutouts: [],
+    shapeClass: null,
+    notes: [],
+    badParams: [],
+  }
 
-  // A complete boundary wins: it is the geometry itself.
-  const boundaryRaw = first(root, ['geometry.boundary', 'boundary', 'polygon', 'outline', 'section.boundary'])
-  if (Array.isArray(boundaryRaw) && boundaryRaw.length >= 3) {
-    const point = (p: unknown): { x: number; y: number } => ({
-      x: (num(isRec(p) ? (p.x ?? p[0]) : null) ?? 0) * units.length,
-      y: (num(isRec(p) ? (p.y ?? p[1]) : null) ?? 0) * units.length,
-    })
-    const boundary = boundaryRaw.map(point)
-    const voidsRaw = first(root, ['geometry.voids', 'voids', 'holes', 'section.voids'])
-    const voids = Array.isArray(voidsRaw)
-      ? voidsRaw.filter((v): v is unknown[] => Array.isArray(v) && v.length >= 3).map((v) => v.map(point))
-      : []
-    out.boundary = { boundary, voids }
+  const geometry = readGeometry(root, units)
+  out.cutouts = geometry.voids
+  out.badCutouts = geometry.bad
+  out.shapeClass = readShapeClass(root, geometry.boundary)
+  out.notes = rotationNotes(root)
+
+  // A complete boundary wins: it is the geometry itself, openings and all.
+  if (geometry.boundary) {
+    out.boundary = { boundary: geometry.boundary, voids: geometry.voids }
     out.base = readPredefined(first(root, ['predefined', 'sectionDefinition', 'parametric']))
     out.explicit = out.base !== null
-    report.add(
-      GROUPS.section,
-      'imported',
-      `${boundary.length} boundary points${voids.length ? ` and ${voids.length} void(s)` : ''}` +
-        `${out.base ? `, with the parametric ${out.base.kind} definition the file carries` : ''}`,
-    )
-    if (out.base) report.add(GROUPS.shape, 'imported', `parametric ${out.base.kind}`)
     return out
   }
 
@@ -791,13 +831,232 @@ function readSection(root: Rec, current: AppState, units: UnitScale, report: Rep
   // boundary and the bar coordinates from them, exactly as the editor does.
   const explicit = readPredefined(first(root, ['predefined', 'sectionDefinition', 'parametric']))
   const kind = explicit?.kind ?? inferKind(root)
-  if (!kind) {
-    report.add(GROUPS.section, 'missing', 'no boundary or section dimensions in the file — the section in use was kept')
-    return out
-  }
+  if (!kind) return out
   out.base = explicit ?? predefinedFor(kind, current)
   out.explicit = explicit !== null
   out.params = readParams(root, out.base, units, out.badParams)
+  return out
+}
+
+/* ------------------------------------------------------------ the geometry */
+
+/** The outer ring and the openings, however the file writes them. */
+type GeometryRead = { boundary: Point[] | null; voids: Point[][]; bad: string[] }
+
+/** Where a file may describe the outer ring of its section. */
+const BOUNDARY_PATHS = [
+  'geometry.boundary',
+  'boundary',
+  'outline',
+  'polygon',
+  'points',
+  'vertices',
+  'nodeCoordinates',
+  'section.boundary',
+  'section.outline',
+  'section.points',
+  'section.vertices',
+  'geometry.points',
+  'sectionGeometry.boundary',
+  'sectionProperties.boundary',
+] as const
+
+/** Where it may describe the openings in it. */
+const OPENING_PATHS = [
+  'geometry.voids',
+  'voids',
+  'holes',
+  'cutouts',
+  'openings',
+  'ducts',
+  'apertures',
+  'section.voids',
+  'section.holes',
+  'section.cutouts',
+  'section.openings',
+  'geometry.holes',
+  'geometry.cutouts',
+  'geometry.openings',
+] as const
+
+/** A point written as `{x, y}`, `[x, y]` or a `{ X, Y }` pair. */
+function toPoint(raw: unknown): Point | null {
+  if (Array.isArray(raw)) {
+    const x = num(raw[0])
+    const y = num(raw[1])
+    return x !== null && y !== null ? { x, y } : null
+  }
+  if (isRec(raw)) {
+    const x = num(first(raw, ['x', 'cx', 'easting', 'u']))
+    const y = num(first(raw, ['y', 'cy', 'northing', 'v']))
+    return x !== null && y !== null ? { x, y } : null
+  }
+  return null
+}
+
+/**
+ * A closed ring from whatever the file calls it: a list of points, coordinates
+ * written out flat (`[0,0, 400,0, 400,300]`), a circle (`{x, y, diameter}` — a
+ * bolt hole, a duct, a round column) or a rectangle (`{x, y, width, height}`
+ * from its lower-left corner, or about `{cx, cy}` when the file gives a centre).
+ * Lengths arrive in the file's own unit and come back in mm.
+ */
+function readRing(raw: unknown, units: UnitScale, depth = 0): Point[] | null {
+  const scale = (p: Point): Point => ({ x: p.x * units.length, y: p.y * units.length })
+
+  if (Array.isArray(raw)) {
+    const pts = raw.map(toPoint)
+    if (raw.length >= 3 && pts.every((p): p is Point => p !== null)) return pts.map(scale)
+    // coordinates written out flat, one pair after another
+    if (raw.length >= 6 && raw.length % 2 === 0) {
+      const flat = raw.map(num)
+      if (flat.every((v): v is number => v !== null)) {
+        const out: Point[] = []
+        for (let i = 0; i < flat.length; i += 2) out.push({ x: flat[i] * units.length, y: flat[i + 1] * units.length })
+        return out
+      }
+    }
+    return null
+  }
+  if (!isRec(raw) || depth > 2) return null
+
+  // a wrapper the file may have put around the ring itself
+  const inner = first(raw, ['points', 'vertices', 'coordinates', 'coords', 'boundary', 'outline', 'ring', 'path'])
+  if (inner !== undefined) {
+    const ring = readRing(inner, units, depth + 1)
+    if (ring) return ring
+  }
+
+  const cx = num(first(raw, ['cx', 'x', 'centre.x', 'center.x', 'x0']))
+  const cy = num(first(raw, ['cy', 'y', 'centre.y', 'center.y', 'y0']))
+  const radius = num(first(raw, ['radius', 'r']))
+  const diameter = num(first(raw, ['diameter', 'dia', 'd']))
+  const r = radius ?? (diameter !== null ? diameter / 2 : null)
+  if (cx !== null && cy !== null && r !== null && r > 0) {
+    return circlePoly(cx * units.length, cy * units.length, r * units.length)
+  }
+
+  const w = length(raw, ['width', 'w', 'b', 'bx', 'sideX'], units)
+  const h = length(raw, ['height', 'depth', 'h', 'by', 'sideY'], units)
+  const x0 = num(first(raw, ['x0', 'x1']))
+  const y0 = num(first(raw, ['y0', 'y1']))
+  if (x0 !== null && y0 !== null) {
+    const x1 = num(first(raw, ['x1', 'x2', 'xend']))
+    const y1 = num(first(raw, ['y1', 'y2', 'yend']))
+    if (x1 !== null && y1 !== null) {
+      const xs = [x0 * units.length, x1 * units.length].sort((a, b) => a - b)
+      const ys = [y0 * units.length, y1 * units.length].sort((a, b) => a - b)
+      return rectRing(xs[0], ys[0], xs[1] - xs[0], ys[1] - ys[0])
+    }
+  }
+  if (w !== null && h !== null && w > 0 && h > 0) {
+    const x = num(first(raw, ['cx', 'x', 'centre.x', 'center.x', 'x0'])) ?? 0
+    const y = num(first(raw, ['cy', 'y', 'centre.y', 'center.y', 'y0'])) ?? 0
+    const centred = first(raw, ['cx', 'cy', 'centre', 'center']) !== undefined
+    // `{x, y, width, height}` reads from the lower-left corner unless a centre
+    // is given, which is how a cutout is dimensioned most often
+    return centred
+      ? rectRing((x - w / 2), (y - h / 2), w, h)
+      : rectRing(x, y, w, h)
+  }
+  return null
+}
+
+/**
+ * A rectangle as a polygon, counter-clockwise from its lower-left corner.
+ * Void rings are subtracted from the section, so one winding serves both.
+ */
+function rectRing(x: number, y: number, w: number, h: number): Point[] {
+  return [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ]
+}
+
+/** The outer ring, the openings, and whatever about them could not be read. */
+function readGeometry(root: Rec, units: UnitScale): GeometryRead {
+  let boundary: Point[] | null = null
+  for (const path of BOUNDARY_PATHS) {
+    const raw = deep(root, path)
+    if (raw === undefined || raw === null) continue
+    const ring = readRing(raw, units)
+    if (ring) {
+      // Rings are taken counter-clockwise, the winding the app's own generator
+      // gives every section, so a file that lists its corners the other way
+      // round still lands in the state exactly as a generated one would.
+      boundary = ensureCCW(ring)
+      break
+    }
+  }
+
+  const out: GeometryRead = { boundary, voids: [], bad: [] }
+  const seen = new Set<string>()
+  for (const path of OPENING_PATHS) {
+    const raw = deep(root, path)
+    if (!Array.isArray(raw)) continue
+    raw.forEach((entry: unknown, i: number) => {
+      const ring = readRing(entry, units)
+      if (!ring || ring.length < 3) {
+        out.bad.push(`${path} ${i + 1}`)
+        return
+      }
+      const canonical = ensureCCW(ring)
+      const key = JSON.stringify(canonical)
+      if (seen.has(key)) return
+      seen.add(key)
+      out.voids.push(canonical)
+    })
+  }
+  return out
+}
+
+/** A file may say outright that its section is circular (or not). */
+function readShapeClass(root: Rec, boundary: Point[] | null): 'rect' | 'circ' | null {
+  const raw = first(root, ['shapeClass', 'sectionClass', 'section.shapeClass'])
+  if (raw === 'circ' || raw === 'circular') return 'circ'
+  if (raw === 'rect' || raw === 'rectangular') return 'rect'
+  for (const path of ['isCircular', 'circular', 'round', 'geometry.circular', 'section.circular']) {
+    const flagValue = flag(deep(root, path))
+    if (flagValue !== null) return flagValue ? 'circ' : 'rect'
+  }
+  const kind = first(root, ['sectionType', 'shape', 'section.type', 'section.shape'])
+  if (typeof kind === 'string') {
+    const mapped = SECTION_KINDS[idKey(kind)]
+    if (mapped === 'circle' || mapped === 'hollowCircle') return 'circ'
+  }
+  // A circle written out as coordinates: a column or a pile drawn as a ring.
+  // Only a generous, evenly spaced ring counts, so a genuine polygon is never
+  // mistaken for one.
+  if (boundary && isCircularRing(boundary)) return 'circ'
+  return null
+}
+
+/** True when a ring is an even circle about its own centroid. */
+function isCircularRing(ring: Point[]): boolean {
+  if (ring.length < 16) return false
+  const c = centroid(ring)
+  const radii = ring.map((p) => Math.hypot(p.x - c.x, p.y - c.y))
+  const mean = radii.reduce((a, b) => a + b, 0) / radii.length
+  if (!(mean > 0)) return false
+  return radii.every((r) => Math.abs(r - mean) <= 0.01 * mean)
+}
+
+/**
+ * Rotation, if the file states one, is **reported rather than applied**: this
+ * app has no rotation control, so the only honest reading of a rotated section
+ * is what its own coordinates say. Saying so is better than turning the section
+ * by an angle the app cannot show or edit.
+ */
+function rotationNotes(root: Rec): string[] {
+  const out: string[] = []
+  for (const path of ['rotation', 'rotationDeg', 'rotationAngle', 'rotate', 'rotZ', 'thetaZ', 'orientation', 'section.rotation', 'geometry.rotation']) {
+    const value = num(deep(root, path))
+    if (value !== null && value !== 0) {
+      out.push(`${path} ${value}° is not applied — this app has no rotation control, so the coordinates in the file are taken as they are`)
+    }
+  }
   return out
 }
 
@@ -887,7 +1146,20 @@ function readParams(root: Rec, base: PredefinedSection, units: UnitScale, bad: s
         bad.push(`${counts ? 'a count' : 'a length'} of ${value}${counts ? '' : ' mm'}`)
         break
       }
-      out[param] = counts ? Math.round(value) : value
+      if (counts) {
+        // The generator places at least six bars on a ring and two on a face;
+        // a smaller count in the file is raised to that and said out loud.
+        const floor = (base.kind === 'circle' || base.kind === 'hollowCircle') && param === 'nBars' ? 6 : 2
+        const rounded = Math.round(value)
+        if (rounded < floor) {
+          bad.push(`a count of ${rounded} on ${param}, raised to ${floor} (the fewest the app places there)`)
+          out[param] = floor
+        } else {
+          out[param] = rounded
+        }
+      } else {
+        out[param] = value
+      }
       break
     }
   }
