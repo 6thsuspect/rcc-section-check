@@ -22,11 +22,18 @@ const H = 340
 const PAD = 34
 const FONT = "Bahnschrift, 'Avenir Next', 'Segoe UI', sans-serif"
 
+/**
+ * Label colours offered next to the figure. The first entry follows the theme
+ * (dark ink on the light sheet, light ink on the dark one) and is the default:
+ * a fixed dark grey would vanish the moment the interface goes dark. Its `hex`
+ * is empty because a native colour input only accepts a real hex value — the
+ * empty string is what the state carries while the theme colour is selected.
+ */
 const LABEL_COLORS = [
-  { name: 'ink', hex: '#17222c' },
-  { name: 'blue', hex: '#2a78d6' },
-  { name: 'orange', hex: '#d95926' },
-  { name: 'green', hex: '#0ca30c' },
+  { name: 'auto', title: 'Label colour — follows the theme ink', hex: '', swatch: 'var(--color-ink)' },
+  { name: 'blue', title: 'Label colour — blue', hex: '#2a78d6', swatch: '#2a78d6' },
+  { name: 'orange', title: 'Label colour — orange', hex: '#d95926', swatch: '#d95926' },
+  { name: 'green', title: 'Label colour — green', hex: '#0ca30c', swatch: '#0ca30c' },
 ]
 
 /** Hover text of a bar: coordinates, diameter and its cover audit result. */
@@ -104,7 +111,10 @@ export function SectionPreview({
 }) {
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
-  const [labelColor, setLabelColor] = useState(LABEL_COLORS[1].hex)
+  /* '' = the theme ink; any other value is the hex the swatches and the
+     colour picker write */
+  const [labelColor, setLabelColor] = useState('')
+  const labelInk = labelColor || 'var(--color-ink)'
   const [showNA, setShowNA] = useState(true)
   const [showCover, setShowCover] = useState(true)
   const clipId = useId()
@@ -239,15 +249,15 @@ export function SectionPreview({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className={chipGroupCls} title="Label font size">
             <button
-              className="grid h-[18px] w-[19px] place-items-center rounded text-[10px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[0.625rem] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
               aria-label="Smaller labels"
               onClick={() => setFontSize((v) => Math.max(8, v - 1))}
             >
               A−
             </button>
-            <span className="w-5 text-center text-[10.5px] text-ink-3 tnum">{fontSize}</span>
+            <span className="w-5 text-center text-[0.65625rem] text-ink-3 tnum">{fontSize}</span>
             <button
-              className="grid h-[18px] w-[19px] place-items-center rounded text-[11px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[0.6875rem] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
               aria-label="Larger labels"
               onClick={() => setFontSize((v) => Math.min(20, v + 1))}
             >
@@ -260,10 +270,10 @@ export function SectionPreview({
                 key={c.name}
                 aria-label={`Label colour ${c.name}`}
                 aria-pressed={labelColor === c.hex}
-                title={`Label colour — ${c.name}`}
-                className="h-[13px] w-[13px] rounded-full border border-black/10 transition-transform duration-150 hover:scale-110"
+                title={c.title}
+                className="h-[13px] w-[13px] rounded-full border border-edge transition-transform duration-150 hover:scale-110"
                 style={{
-                  background: c.hex,
+                  background: c.swatch,
                   outline: labelColor === c.hex ? '2px solid var(--color-accent)' : 'none',
                   outlineOffset: '1px',
                 }}
@@ -272,7 +282,7 @@ export function SectionPreview({
             ))}
             <input
               type="color"
-              value={labelColor}
+              value={labelColor || '#17222c'}
               aria-label="Custom label colour"
               title="Custom label colour"
               className="h-[15px] w-[17px] cursor-pointer rounded-[3px] border border-edge transition-transform duration-150 hover:scale-105"
@@ -442,7 +452,7 @@ export function SectionPreview({
               fontSize={fontSize}
               fontFamily={FONT}
               fontWeight="600"
-              fill={labelColor}
+              fill={labelInk}
               textAnchor={xuEls && xuEls.tagAnchorEnd ? 'end' : 'start'}
             >
               NA
@@ -472,7 +482,7 @@ export function SectionPreview({
               textAnchor="middle"
               dominantBaseline="middle"
               paintOrder="stroke"
-              stroke="var(--color-card, #fff)"
+              stroke="var(--color-card)"
               strokeWidth="3"
               className="fill-demand"
             >
@@ -503,7 +513,7 @@ export function SectionPreview({
                 fontWeight="700"
                 textAnchor={anchor}
                 paintOrder="stroke"
-                stroke="var(--color-card, #fff)"
+                stroke="var(--color-card)"
                 strokeWidth="3"
                 fill={ok ? 'var(--color-ok)' : 'var(--color-bad)'}
               >
@@ -525,7 +535,7 @@ export function SectionPreview({
             <text x={cx + 204} y={cy + 4} className="fill-ink-2" fontSize="11" fontFamily={FONT}>X</text>
             <text x={cx + 4} y={cy - 164} className="fill-ink-2" fontSize="11" fontFamily={FONT}>Y</text>
             {showLabels && props && (
-              <text x={cx + 6} y={cy + 16} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelColor}>
+              <text x={cx + 6} y={cy + 16} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelInk}>
                 G ({fmtN(props.cx, 0)}, {fmtN(props.cy, 0)})
               </text>
             )}
@@ -558,7 +568,7 @@ export function SectionPreview({
                   y={Y(b.y) - r - 1}
                   fontSize={fontSize}
                   fontFamily={FONT}
-                  fill={labelColor}
+                  fill={labelInk}
                 >
                   {i + 1}
                 </text>

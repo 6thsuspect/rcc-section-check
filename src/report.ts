@@ -14,8 +14,16 @@ import {
 } from './engine/cover'
 import { contourAtP, pmCurve } from './engine/surface'
 import type { AppState } from './state'
+import { logoSvgMarkup } from './components/Logo'
+import { REPORT_MARKER, deliverReport, type ReportDelivery } from './reportDelivery'
 import type { NeutralAxisResult } from './engine/flexure'
 import type { SpacingReport } from './engine/barSpacing'
+import type {
+  ShearCaseResult,
+  ShearSectionData,
+  ShearSettings,
+  ShearSummary,
+} from './engine/shear'
 
 /**
  * Calculation report export. Builds a self-contained print document (all
@@ -63,10 +71,22 @@ export interface ReportContext {
   xuMaxLabel?: string
   spacing?: SpacingReport
   selectedName: string
-  svgs: { section: string; pm: string; contour: string }
+  /** Shear design check results (self-contained module; optional for older callers). */
+  shear?: {
+    section: ShearSectionData
+    settings: ShearSettings
+    results: ShearCaseResult[]
+    summary: ShearSummary
+  }
+  svgs: { section: string; pm: string; contour: string; shear?: string }
 }
 
-export function exportReport(ctx: ReportContext): void {
+/**
+ * The report as one self-contained HTML document (styles inlined, figures
+ * embedded as SVG). Pure: it only reads the context, so it is what the tests
+ * and any other caller use — `exportReport` opens it in a print window.
+ */
+export function reportHtml(ctx: ReportContext): string {
   const { state, spec, grade, props, surface, results, checks, flex, svgs } = ctx
   const conc = spec.concrete(state.fck)
   const steel = spec.steel(grade.fy)
@@ -156,6 +176,50 @@ export function exportReport(ctx: ReportContext): void {
         .join('')
     : ''
 
+  const shearSectionHtml = (() => {
+    const sh = ctx.shear
+    if (!sh || sh.results.length === 0) return ''
+    const { section, settings, results: shearResults, summary } = sh
+    const g = summary.governing
+    const caseRows = shearResults
+      .map(
+        (r) =>
+          `<tr><td>${esc(r.loadCase.name)}</td><td>${f(r.loadCase.Vu, 0)}</td><td>${f(r.loadCase.Pu, 0)}</td><td>${f(r.tauV, 3)}</td><td>${f(r.tauC, 3)}</td><td>${f(r.tauCMax, 2)}</td><td>${f(r.Vc / 1e3, 0)}</td><td>${f(r.asvPerSReq, 3)}</td><td>${f(r.asvPerSProvided, 3)}</td><td>${f(r.spaceMax, 0)}</td><td>${Number.isFinite(r.ratio) ? f(r.ratio, 3) : '—'}</td><td class="${r.ok ? 'pass' : 'fail'}">${r.ok ? 'PASS' : 'FAIL'}</td></tr>`,
+      )
+      .join('')
+    const steps = g
+      ? `<h4>Step-by-step calculation — governing case ${esc(g.loadCase.name)}</h4>
+<table class="calc"><tr><th>Clause</th><th>Step</th><th>Substituted value</th></tr>${g.steps
+          .map(
+            (st) =>
+              `<tr><td class="mono">${esc(st.clause)}</td><td>${esc(st.title)}${st.expr ? `<br><span class="small mono">${esc(st.expr)}</span>` : ''}</td><td class="mono">${esc(st.value)}</td></tr>`,
+          )
+          .join('')}</table>
+<table class="calc"><tr><th>Clause</th><th>Check</th><th>Computed</th><th>Limit</th><th>Status</th></tr>${g.checks
+          .map(
+            (c) =>
+              `<tr><td class="mono">${esc(c.clause)}</td><td>${esc(c.title)}${c.note ? `<br><span class="small">${esc(c.note)}</span>` : ''}</td><td class="mono">${esc(c.demand)}</td><td class="mono">${esc(c.limit)}</td><td class="${c.status === 'fail' ? 'fail' : c.status === 'warn' ? 'warn' : 'pass'}">${c.status.toUpperCase()}</td></tr>`,
+          )
+          .join('')}</table>`
+      : ''
+    const notes = g && g.notes.length > 0 ? `<p class="small">${g.notes.map((n) => esc(n)).join('<br>')}</p>` : ''
+    return `<h2 class="pb">9 &nbsp;Shear design check (${esc(spec.name)})</h2>
+<table class="calc">
+  <tr><td>Shear direction / tension face</td><td>Along ${section.axis === 'y' ? 'y (Mx bending plane)' : 'x (My bending plane)'} · tension face ${esc(section.tensionFace)} · ${esc(settings.member)} design</td></tr>
+  <tr><td>Section used</td><td>h = ${f(section.h, 0)} mm, b = ${f(section.b, 0)} mm, d = ${f(section.d, 0)} mm, A<sub>sl</sub> = ${f(section.Asl, 0)} mm² (${section.tensionBarCount} tension bars), cover to links ${f(section.coverTension, 0)} mm</td></tr>
+  <tr><td>Provided links</td><td>⌀${f(settings.linkDia, 0)} @ ${f(settings.linkSpacing, 0)} mm c/c, ${settings.linkLegs} legs → A<sub>sv</sub> = ${f((settings.linkLegs * Math.PI * settings.linkDia * settings.linkDia) / 4, 1)} mm², A<sub>sv</sub>/s = ${f(summary.provided, 3)} mm²/mm</td></tr>
+  <tr><td>Required A<sub>sv</sub>/s (worst case)</td><td>${f(summary.worstRequired, 3)} mm²/mm</td></tr>
+  <tr><td>Web-crushing utilisation (worst)</td><td>τ<sub>v</sub>/τ<sub>max</sub> = ${f(summary.worstStressRatio, 3)}</td></tr>
+  <tr><td>Verdict</td><td class="${summary.anyFail ? 'fail' : 'pass'}"><b>${summary.anyFail ? `FAIL (${summary.failCount} case${summary.failCount === 1 ? '' : 's'})` : 'PASS — all shear cases'}</b></td></tr>
+</table>
+<table><tr><th>Case</th><th>V<sub>u</sub> (kN)</th><th>P<sub>u</sub> (kN)</th><th>τ<sub>v</sub> (N/mm²)</th><th>τ<sub>c</sub> (N/mm²)</th><th>τ<sub>max</sub> (N/mm²)</th><th>V<sub>c</sub> (kN)</th><th>A<sub>sv</sub>/s req</th><th>A<sub>sv</sub>/s prov</th><th>s<sub>v,max</sub> (mm)</th><th>V<sub>Ed</sub>/V<sub>Rd</sub></th><th>Status</th></tr>${caseRows}</table>
+<p class="small">V<sub>Ed</sub>/V<sub>Rd</sub> ≤ 1 passes; the web-crushing limit τ<sub>v</sub> ≤ τ<sub>max</sub> is checked separately. As<sub>v</sub>/s is the total area of all link legs per mm of member length; the minimum reinforcement rule of the code is included in the required value.</p>
+${ctx.svgs.shear ? `<div class="fig">${ctx.svgs.shear}<p>Link cross-section (${settings.linkLegs} legs) and the member elevation at the provided link spacing.</p></div>` : ''}
+${steps}
+${notes}`
+  })()
+
+
   const html = `<!doctype html>
 <html><head><meta charset="utf-8">
 <title>RCC Section Check — Calculation Report</title>
@@ -183,6 +247,13 @@ export function exportReport(ctx: ReportContext): void {
   .case { page-break-inside: avoid; }
   .pb { page-break-before: always; }
   svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  /* application mark, on the title line */
+  .head { display: flex; align-items: center; gap: 12px; }
+  .head .logo { width: 54px; height: 54px; margin: 0; flex: none; }
+  /* The figures are serialised from the app, where a label may be painted with
+     the theme ink. The report is always the light one, so those two tokens are
+     pinned here rather than inherited from the app. */
+  :root { --color-ink: #17222c; --color-card: #ffffff; }
   /* svg theme classes (light palette, matching the app) */
   .fill-concrete{fill:#e9eef3}.fill-paper{fill:#fbfcfd}.fill-capacity{fill:#2a78d6}.fill-demand{fill:#eb6834}
   .fill-ink{fill:#17222c}.fill-ink-2{fill:#485866}.fill-ink-3{fill:#75828e}
@@ -190,13 +261,18 @@ export function exportReport(ctx: ReportContext): void {
   .stroke-edge{stroke:#dde4ea}.stroke-edge-strong{stroke:#b9c4cd}
   .disclaimer { margin-top: 18px; padding-top: 8px; border-top: 1.5px solid #17222c; font-size: 10px; color: #485866; }
   @media print { body { padding: 0; } }
-</style></head><body>
+</style></head><body ${REPORT_MARKER}>
 
-<h1>RCC Section Check — Calculation Report</h1>
-<div class="meta">
-  Design code: <b>${esc(spec.name)}</b> (${esc(spec.edition)}) &nbsp;·&nbsp;
-  Date: ${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN')} &nbsp;·&nbsp;
-  Method: ULS strain-compatibility interaction surface (biaxial P–M<sub>x</sub>–M<sub>y</sub>)
+<div class="head">
+  ${logoSvgMarkup('rep', 'class="logo" width="54" height="54" role="img" aria-label="RCC Section Check"')}
+  <div>
+    <h1>RCC Section Check — Calculation Report</h1>
+    <div class="meta">
+      Design code: <b>${esc(spec.name)}</b> (${esc(spec.edition)}) &nbsp;·&nbsp;
+      Date: ${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN')} &nbsp;·&nbsp;
+      Method: ULS strain-compatibility interaction surface (biaxial P–M<sub>x</sub>–M<sub>y</sub>)${ctx.shear ? '; shear design check per the same code' : ''}
+    </div>
+  </div>
 </div>
 
 <h2>1 &nbsp;Input data</h2>
@@ -282,6 +358,7 @@ ${naSection(ctx)}
 
 <h2>8 &nbsp;Code compliance (${esc(spec.name)})</h2>
 <table><tr><th>Clause</th><th>Check</th><th>Computed</th><th>Limit</th><th>Status</th></tr>${checkRows}</table>
+${shearSectionHtml}
 
 <div class="disclaimer">
   <b>Method statement.</b> Plane sections remain plane; concrete tension ignored; concrete and steel follow the
@@ -295,18 +372,18 @@ ${naSection(ctx)}
 
 </body></html>`
 
-  const win = window.open('', '_blank')
-  if (!win) {
-    window.alert('Popup blocked — allow popups for this site to export the PDF report.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-  win.document.title = 'RCC-Section-Check-Report'
-  window.setTimeout(() => {
-    win.focus()
-    win.print()
-  }, 450)
+  return html
+}
+
+/**
+ * Build the report and send it to the print dialog ("Save as PDF" produces the
+ * file). Resolves with the route the report actually took: a window of its own,
+ * a hidden frame in this page (when popups are refused, as in an embedded
+ * preview), or the file itself. The routing and the print timing live in
+ * `src/reportDelivery.ts`.
+ */
+export function exportReport(ctx: ReportContext): Promise<ReportDelivery> {
+  return deliverReport(reportHtml(ctx))
 }
 
 /** Neutral axis, xu,max, classification and Mu per case, plus the physical spacing / overlap audit. */

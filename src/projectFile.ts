@@ -4,6 +4,16 @@ import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
 import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
 import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
+import {
+  DEFAULT_SHEAR,
+  MAX_COT_THETA,
+  MIN_COT_THETA,
+  tensionFaceOptions,
+  type ShearAxis,
+  type ShearLoadCase,
+  type ShearMember,
+  type ShearSettings,
+} from './engine/shear'
 
 export interface ProjectFile {
   version: string
@@ -17,7 +27,7 @@ export interface ProjectFile {
  */
 export function exportProjectFile(state: AppState, customFilename?: string) {
   const project: ProjectFile = {
-    version: '1.3',
+    version: '1.5',
     app: 'RCC Section Check',
     exportedAt: new Date().toISOString(),
     state,
@@ -33,6 +43,57 @@ export function exportProjectFile(state: AppState, customFilename?: string) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+/**
+ * Coerce a persisted reinforcement coordinate table into valid `Rebar` rows.
+ * A row that carries no usable diameter keeps the 20 mm the app has always
+ * used for such a file; every other field is kept only when it is valid.
+ */
+export function sanitizeBarRows(raw: readonly any[]): Rebar[] {
+  return raw.map((b: any) => {
+    const validFaces: RebarFace[] = ['bottom', 'right', 'top', 'left']
+    const faces = Array.isArray(b?.faces) ? b.faces.filter((f: any): f is RebarFace => validFaces.includes(f)) : undefined
+    const positioning: RebarPositioningMode | undefined =
+      b?.positioning === 'automatic' || b?.positioning === 'manual' ? b.positioning : undefined
+    const surface: RebarSurface | undefined = b?.surface === 'inner' || b?.surface === 'outer' ? b.surface : undefined
+    const bar: Rebar = {
+      x: Number.isFinite(b?.x) ? Number(b.x) : 0,
+      y: Number.isFinite(b?.y) ? Number(b.y) : 0,
+      dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
+    }
+    if (positioning) bar.positioning = positioning
+    const face = validFaces.includes(b?.face) ? (b.face as RebarFace) : faces?.[0]
+    if (face) bar.face = face
+    if (faces?.length) bar.faces = faces
+    if (surface) bar.surface = surface
+    if (Number.isInteger(b?.voidIndex) && b.voidIndex >= 0) bar.voidIndex = Number(b.voidIndex)
+    if (Number.isInteger(b?.layer) && b.layer >= 0) bar.layer = Number(b.layer)
+    if (typeof b?.groupId === 'string') bar.groupId = b.groupId
+    if (b?.axis === 'x' || b?.axis === 'y') bar.axis = b.axis
+    if (Number.isFinite(b?.u)) bar.u = Math.max(0, Math.min(1, Number(b.u)))
+    if (b?.radial === true) bar.radial = true
+    return bar
+  })
+}
+
+/**
+ * Normalised 0…1 member positions, deduped and sorted. Slightly out-of-range
+ * entries are kept: the editor reports them instead of quietly moving the
+ * user's link layout. Anything that is not a number (or a numeric string) is
+ * not a position and is dropped.
+ */
+export function sanitizeLinkPositions(v: any): number[] {
+  if (!Array.isArray(v)) return []
+  const out: number[] = []
+  for (const raw of v) {
+    if (typeof raw !== 'number' && typeof raw !== 'string') continue
+    const n = Number(raw)
+    if (!Number.isFinite(n)) continue
+    const u = Math.min(Math.max(n, -1), 2)
+    if (out.every((x) => Math.abs(x - u) > 1e-6)) out.push(u)
+  }
+  return out.sort((a, b) => a - b)
 }
 
 /**
@@ -63,6 +124,14 @@ export function parseProjectFile(jsonText: string): AppState {
     Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
     Mux: Number.isFinite(c?.Mux) ? Number(c.Mux) : 0,
     Muy: Number.isFinite(c?.Muy) ? Number(c.Muy) : 0,
+  })
+
+  /** Coerce one persisted shear case row into a sanitized ShearLoadCase. */
+  const mapShearCase = (c: any, id: string, name: string): ShearLoadCase => ({
+    id,
+    name,
+    Vu: Number.isFinite(c?.Vu) ? Number(c.Vu) : 0,
+    Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0,
   })
 
   if (!rawState.geometry || typeof rawState.geometry !== 'object' || !Array.isArray(rawState.geometry.boundary)) {
@@ -102,6 +171,48 @@ export function parseProjectFile(jsonText: string): AppState {
         mapCase(c, `cwc-fallback-${idx + 1}-${Date.now()}`, c.name),
       )
 
+  // v1.4 adds the shear design tab. Older files have no shear cases: seed one
+  // case per ULS combination (Vu = 0, same axial load and name) so the tab opens
+  // on the file's own load set and the user only has to enter the shear forces.
+  const shearCases: ShearLoadCase[] = Array.isArray(rawState.shearCases)
+    ? rawState.shearCases.map((c: any, idx: number) =>
+        mapShearCase(c, typeof c?.id === 'string' ? c.id : `sc-${idx + 1}-${Date.now()}`, typeof c?.name === 'string' ? c.name : `SC${idx + 1}`),
+      )
+    : rawState.cases.map((c: any, idx: number) =>
+        mapShearCase(
+          { Vu: 0, Pu: Number.isFinite(c?.Pu) ? Number(c.Pu) : 0 },
+          `sc-fallback-${idx + 1}-${Date.now()}`,
+          typeof c?.name === 'string' ? c.name : `SC${idx + 1}`,
+        ),
+      )
+
+  const rawShear = rawState.shear && typeof rawState.shear === 'object' ? rawState.shear : {}
+  const sanitiserPositions = sanitizeLinkPositions
+  const shearAxis: ShearAxis = rawShear.axis === 'x' ? 'x' : 'y'
+  const faceOptions = tensionFaceOptions(shearAxis)
+  const shear: ShearSettings = {
+    axis: shearAxis,
+    tensionFace: faceOptions.includes(rawShear.tensionFace) ? rawShear.tensionFace : faceOptions[0],
+    member: (rawShear.member === 'beam' || rawShear.member === 'column' ? rawShear.member : DEFAULT_SHEAR.member) as ShearMember,
+    linkDia: Number.isFinite(rawShear.linkDia) && rawShear.linkDia > 0 ? Number(rawShear.linkDia) : DEFAULT_SHEAR.linkDia,
+    linkLegs: Number.isInteger(rawShear.linkLegs) && rawShear.linkLegs >= 2 ? Number(rawShear.linkLegs) : DEFAULT_SHEAR.linkLegs,
+    linkSpacing: Number.isFinite(rawShear.linkSpacing) && rawShear.linkSpacing > 0 ? Number(rawShear.linkSpacing) : DEFAULT_SHEAR.linkSpacing,
+    bOverride: Number.isFinite(rawShear.bOverride) && rawShear.bOverride > 0 ? Number(rawShear.bOverride) : null,
+    dOverride: Number.isFinite(rawShear.dOverride) && rawShear.dOverride > 0 ? Number(rawShear.dOverride) : null,
+    aslOverride: Number.isFinite(rawShear.aslOverride) && rawShear.aslOverride > 0 ? Number(rawShear.aslOverride) : null,
+    criticalDistance: Number.isFinite(rawShear.criticalDistance) && rawShear.criticalDistance > 0 ? Number(rawShear.criticalDistance) : 0,
+    enhance: rawShear.enhance === true,
+    cotTheta: Number.isFinite(rawShear.cotTheta)
+      ? Math.min(MAX_COT_THETA, Math.max(MIN_COT_THETA, Number(rawShear.cotTheta)))
+      : DEFAULT_SHEAR.cotTheta,
+    // v1.5 link detailing: shape, arrangement source and manual leg / tie lists.
+    linkShape:
+      rawShear.linkShape === 'rectangular' || rawShear.linkShape === 'circular' ? rawShear.linkShape : DEFAULT_SHEAR.linkShape,
+    linkLayout: rawShear.linkLayout === 'manual' ? 'manual' : DEFAULT_SHEAR.linkLayout,
+    legPositions: sanitiserPositions(rawShear.legPositions),
+    tiePositions: sanitiserPositions(rawShear.tiePositions),
+  }
+
   const sanitized: AppState = {
     code,
     geometry: {
@@ -120,30 +231,7 @@ export function parseProjectFile(jsonText: string): AppState {
           )
         : [],
     },
-    bars: rawState.bars.map((b: any) => {
-      const validFaces: RebarFace[] = ['bottom', 'right', 'top', 'left']
-      const faces = Array.isArray(b?.faces) ? b.faces.filter((f: any): f is RebarFace => validFaces.includes(f)) : undefined
-      const positioning: RebarPositioningMode | undefined =
-        b?.positioning === 'automatic' || b?.positioning === 'manual' ? b.positioning : undefined
-      const surface: RebarSurface | undefined = b?.surface === 'inner' || b?.surface === 'outer' ? b.surface : undefined
-      const bar: Rebar = {
-        x: Number.isFinite(b?.x) ? Number(b.x) : 0,
-        y: Number.isFinite(b?.y) ? Number(b.y) : 0,
-        dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
-      }
-      if (positioning) bar.positioning = positioning
-      const face = validFaces.includes(b?.face) ? (b.face as RebarFace) : faces?.[0]
-      if (face) bar.face = face
-      if (faces?.length) bar.faces = faces
-      if (surface) bar.surface = surface
-      if (Number.isInteger(b?.voidIndex) && b.voidIndex >= 0) bar.voidIndex = Number(b.voidIndex)
-      if (Number.isInteger(b?.layer) && b.layer >= 0) bar.layer = Number(b.layer)
-      if (typeof b?.groupId === 'string') bar.groupId = b.groupId
-      if (b?.axis === 'x' || b?.axis === 'y') bar.axis = b.axis
-      if (Number.isFinite(b?.u)) bar.u = Math.max(0, Math.min(1, Number(b.u)))
-      if (b?.radial === true) bar.radial = true
-      return bar
-    }),
+    bars: sanitizeBarRows(rawState.bars),
     predefined: rawState.predefined ?? null,
     shapeClass: ['rect', 'circ'].includes(rawState.shapeClass) ? rawState.shapeClass : defState.shapeClass,
     fck: Number.isFinite(rawState.fck) && rawState.fck > 0 ? Number(rawState.fck) : defState.fck,
@@ -163,6 +251,9 @@ export function parseProjectFile(jsonText: string): AppState {
       exposure: exposureOk ? rawCw.exposure : DEFAULT_EXPOSURE[code],
       longTerm: rawCw.longTerm === true,
     },
+    shearCases,
+    // v1.4 shear inputs; older files open with the code-neutral defaults.
+    shear,
     mesh:
       rawState.mesh && typeof rawState.mesh === 'object'
         ? {

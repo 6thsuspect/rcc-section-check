@@ -33,6 +33,10 @@ import {
   rowDelCls,
   SubCard,
   noteSmCls,
+  useWheelStepSize,
+  wheelBase,
+  wheelHint,
+  wheelRef,
 } from './ui'
 
 const KINDS: CircularArrangementKind[] = ['uniform', 'alternate', 'bundle', 'triple', 'layered']
@@ -62,6 +66,25 @@ function barsKey(bars: Rebar[]): string {
  * Circular-section reinforcement arrangement builder.
  * Generates ordinary {x,y,dia} bars that feed the shared reinforcement table.
  */
+/**
+ * The arrangement configuration after a file is imported. A uniform ring takes
+ * the imported section's bar count — a file that lays twelve bars on its ring
+ * must not be shown as the eight the form happened to hold — and every kind
+ * takes the imported bar diameter. A bundled, tripled or layered arrangement
+ * keeps its own shape: only the diameter moves.
+ */
+export function configForImportedSection(
+  cfg: CircularRebarConfig,
+  predefined: PredefinedSection | null,
+  barDia: number,
+): CircularRebarConfig {
+  const circular = predefined && (predefined.kind === 'circle' || predefined.kind === 'hollowCircle')
+  if (circular && cfg.kind === 'uniform') {
+    return sanitizeCircularConfig({ ...cfg, nBars: predefined.nBars, barDia })
+  }
+  return sanitizeCircularConfig({ ...cfg, barDia })
+}
+
 export function CircularRebarPanel({
   predefined,
   bars = [],
@@ -71,10 +94,20 @@ export function CircularRebarPanel({
   setBarDia,
   onBarDiaCustomizeChange,
   onApply,
+  importStamp = 0,
 }: {
   predefined: PredefinedSection | null
   /** Existing rows are inspected so an intentionally manual layout is not replaced on mount. */
   bars?: Rebar[]
+  /**
+   * Bumped by the app every time a file is imported. A bar table read from a
+   * file is the user's own data: it is left exactly as the file wrote it — and
+   * shown as it is — until the arrangement in this panel is edited, `Apply
+   * layout` is pressed, or the section changes underneath it. Without this,
+   * the live generator would quietly replace an imported arrangement with this
+   * panel's default one on the first render after the import.
+   */
+  importStamp?: number
   cover: number
   tieDia: number
   barDia: number
@@ -90,6 +123,24 @@ export function CircularRebarPanel({
   const [autoApply, setAutoApply] = useState(() => bars.length === 0 || bars.some(isAutomaticBar))
   const [lastApplied, setLastApplied] = useState(0)
   const lastKeyRef = useRef('')
+  /** The rows a file brought in, held until the arrangement is touched. */
+  const importedBarsRef = useRef<Rebar[] | null>(null)
+  const importStampRef = useRef(importStamp)
+
+  // An import writes a complete bar table; the live generator takes its hands
+  // off it until the user changes something in this panel. The baseline is set
+  // to the imported arrangement so an unchanged section is still skipped by the
+  // key check below.
+  useEffect(() => {
+    if (importStamp === importStampRef.current) return
+    importStampRef.current = importStamp
+    importedBarsRef.current = bars
+    lastKeyRef.current = barsKey(bars)
+    // The arrangement form follows the imported section too — a file that brings
+    // twelve bars on its ring shows twelve here, not the count that was
+    // configured before the import.
+    setCfg((prev) => configForImportedSection(prev, predefined, barDia))
+  }, [importStamp, bars, predefined, barDia])
 
   // A manual table edit is an explicit opt-out from live regeneration. The
   // user can still press Apply layout or turn the live checkbox back on.
@@ -150,6 +201,8 @@ export function CircularRebarPanel({
   }, [predefined?.kind])
 
   const patch = (p: Partial<CircularRebarConfig>) => {
+    // An edit here is the user's own arrangement taking over from the file's.
+    importedBarsRef.current = null
     setCfg((prev) => sanitizeCircularConfig({ ...prev, ...p }))
   }
 
@@ -191,6 +244,8 @@ export function CircularRebarPanel({
   // Live-update the bar table while auto-apply is on (keyed so identical layouts skip).
   useEffect(() => {
     if (!autoApply || R == null) return
+    // The table still holds exactly what the file brought: leave it alone.
+    if (importedBarsRef.current === bars) return
     applyBars(result.bars)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.key, autoApply, R, Ri])
@@ -199,11 +254,31 @@ export function CircularRebarPanel({
 
   const outerPitch = pitchRadius(R, cover, tieDia, cfg.barDia)
   const liveCfg = sanitizeCircularConfig({ ...cfg, sectionRadius: R, innerRadius: Ri > 0 ? Ri : undefined, cover, tieDia })
+  /**
+   * The values the blank (automatic) fields are standing in for. A wheel notch
+   * over such a field starts from the number the app is using — shown in the
+   * field's placeholder and in the readouts — so nudging an "auto" spacing
+   * takes over from the automatic value instead of dropping the field to zero.
+   */
+  const bundleSpacingAuto = bundleSpacingUsed({ ...cfg, bundleSpacing: null })
+  const bundleInnerAuto = bundleInnerSpacingUsed({ ...cfg, bundleInnerSpacing: null })
+  const groupCount = cfg.kind === 'triple' ? cfg.nGroups : cfg.nBars
+  const angularAuto = groupCount > 0 ? 360 / groupCount : 0
+  /**
+   * The pitch radius a layer falls back on while its own radius is blank: the
+   * ring less one bar and its clearance for every layer in front of it. The
+   * caption prints it and a wheel notch on the blank field starts from it.
+   */
+  const layerRadiusAuto = (layer: CircularLayerDef, idx: number) =>
+    Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25)))
+  /** The wheel increment in force, named under the form. */
+  const wheelStep = useWheelStepSize()
   const bundleDias = bundleDiameters(liveCfg)
   const bundleEq = Math.sqrt(bundleDias.reduce((a, d) => a + d * d, 0))
   const bundleCheck = spacingReport(result.bars)
 
   const setKind = (kind: CircularArrangementKind) => {
+    importedBarsRef.current = null
     const next = defaultCircularRebarConfig(kind, R, cover, tieDia, cfg.barDia || barDia)
     // Preserve shared fields the user already set.
     next.startAngleDeg = cfg.startAngleDeg
@@ -298,9 +373,9 @@ export function CircularRebarPanel({
               key={k}
               type="button"
               aria-pressed={cfg.kind === k}
-              className={`rounded-field border px-2 py-[5px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
+              className={`rounded-field border px-2 py-[5px] font-display text-[0.6875rem] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
                 cfg.kind === k
-                  ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
                   : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
               }`}
               onClick={() => setKind(k)}
@@ -365,14 +440,16 @@ export function CircularRebarPanel({
               <OptionalMmField
                 label="Bundle spacing (c/c)"
                 value={cfg.bundleSpacing ?? null}
-                placeholder={`equal · ${bundleSpacingUsed({ ...cfg, bundleSpacing: null }).toFixed(0)}`}
+                auto={bundleSpacingAuto}
+                placeholder={`equal · ${bundleSpacingAuto.toFixed(0)}`}
                 title="Centre-to-centre distance between adjacent bundles on the pitch circle. Blank = bundles equally spaced around the ring."
                 onChange={(v) => patch({ bundleSpacing: v, angularSpacingDeg: null })}
               />
               <OptionalMmField
                 label="Bar spacing in bundle (c/c)"
                 value={cfg.bundleInnerSpacing ?? null}
-                placeholder={`auto · ${bundleInnerSpacingUsed({ ...cfg, bundleInnerSpacing: null }).toFixed(0)}`}
+                auto={bundleInnerAuto}
+                placeholder={`auto · ${bundleInnerAuto.toFixed(0)}`}
                 title="Centre-to-centre distance between bars inside one bundle — independent of the bundle spacing. Enter the bar diameter for bars in contact."
                 onChange={(v) => patch({ bundleInnerSpacing: v })}
               />
@@ -439,11 +516,16 @@ export function CircularRebarPanel({
               />
               {cfg.kind !== 'bundle' && (
               <label className="flex min-w-0 flex-col gap-[3px]">
-                <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                   Angular spacing (blank = equal)
                 </span>
                 <span className={fieldBoxCls}>
                   <input
+                    ref={wheelRef<HTMLInputElement>(() => ({
+                      value: wheelBase(cfg.angularSpacingDeg, angularAuto),
+                      min: 0,
+                      onChange: (v) => patch({ angularSpacingDeg: v > 0 ? v : null }),
+                    }))}
                     type="number"
                     className={fieldCls}
                     value={cfg.angularSpacingDeg ?? ''}
@@ -456,7 +538,7 @@ export function CircularRebarPanel({
                       else patch({ angularSpacingDeg: parseFloat(t) || null })
                     }}
                   />
-                  <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                  <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
                     °
                   </span>
                 </span>
@@ -507,7 +589,9 @@ export function CircularRebarPanel({
         )}
         <p className={`${noteSmCls} -mt-0.5`}>
           Pitch radius = R − cover − ⌀tie − ⌀bar/2, using the governing face cover from the cover panel. Generated
-          bars fill the reinforcement table and stay individually editable.
+          bars fill the reinforcement table and stay individually editable. A wheel notch over any field here — a
+          spacing left blank included, which starts from the automatic value — moves it by {wheelStep}, the
+          increment set in Settings.
         </p>
 
         {cfg.kind === 'layered' && (
@@ -527,15 +611,15 @@ export function CircularRebarPanel({
                   className="rounded-lg border border-line bg-card p-2 transition-shadow duration-150 ease-ui hover:shadow-card"
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
-                      <span className="grid h-[15px] w-[15px] place-items-center rounded bg-panel text-[9px] text-ink-3">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
+                      <span className="grid h-[15px] w-[15px] place-items-center rounded bg-panel text-[0.5625rem] text-ink-3">
                         {idx + 1}
                       </span>
                       Layer {idx + 1}
-                      <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-ink-3">
+                      <span className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-ink-3">
                         {layer.radius != null
                           ? `r = ${layer.radius.toFixed(0)} mm`
-                          : `r ≈ auto (${Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25))).toFixed(0)} mm)`}
+                          : `r ≈ auto (${layerRadiusAuto(layer, idx).toFixed(0)} mm)`}
                       </span>
                     </span>
                     <button
@@ -550,12 +634,17 @@ export function CircularRebarPanel({
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                         Radius (mm)
                       </span>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: wheelBase(layer.radius, layerRadiusAuto(layer, idx)),
+                          min: 0,
+                          onChange: (v) => updateLayer(layer.id, { radius: v > 0 ? v : null }),
+                        }))}
                         type="number"
-                        className={`${cellCls} px-2 py-[5px] text-[13px]`}
+                        className={`${cellCls} px-2 py-[5px] text-[0.8125rem]`}
                         value={layer.radius ?? ''}
                         placeholder="auto"
                         step={5}
@@ -589,11 +678,16 @@ export function CircularRebarPanel({
                       onChange={(v) => updateLayer(layer.id, { startAngleDeg: v })}
                     />
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                         Angular spacing
                       </span>
                       <span className={fieldBoxCls}>
                         <input
+                          ref={wheelRef<HTMLInputElement>(() => ({
+                            value: wheelBase(layer.angularSpacingDeg, layer.nBars > 0 ? 360 / layer.nBars : 0),
+                            min: 0,
+                            onChange: (v) => updateLayer(layer.id, { angularSpacingDeg: v > 0 ? v : null }),
+                          }))}
                           type="number"
                           className={fieldCls}
                           value={layer.angularSpacingDeg ?? ''}
@@ -607,7 +701,7 @@ export function CircularRebarPanel({
                             })
                           }}
                         />
-                        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                        <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
                           °
                         </span>
                       </span>
@@ -622,7 +716,7 @@ export function CircularRebarPanel({
         {/* Warnings + apply controls */}
         {result.warnings.length > 0 && (
           <Banner tone="warn">
-            <b className="font-display text-[10px] uppercase tracking-[0.07em]">Layout warnings</b>
+            <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Layout warnings</b>
             <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
               {result.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -634,7 +728,11 @@ export function CircularRebarPanel({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
           <Check
             checked={autoApply}
-            onChange={setAutoApply}
+            onChange={(v) => {
+              // Switching the live generator on by hand is a request for it.
+              importedBarsRef.current = null
+              setAutoApply(v)
+            }}
             label="Live-update bar table"
             title="Keep the reinforcement table in sync with these settings"
           />
@@ -652,7 +750,7 @@ export function CircularRebarPanel({
                 <span>Apply to table</span>
               </button>
             )}
-            <span className="font-mono text-[11px] text-ink-3 tnum">
+            <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
               {result.bars.length} bar{result.bars.length === 1 ? '' : 's'}
               {lastApplied > 0 && autoApply ? ' · synced' : ''}
             </span>
@@ -667,21 +765,30 @@ export function CircularRebarPanel({
 function OptionalMmField({
   label,
   value,
+  auto,
   placeholder,
   title,
   onChange,
 }: {
   label: string
   value: number | null
+  /** The value the app uses while the field is blank — the wheel starts there. */
+  auto: number
   placeholder: string
   title?: string
   onChange: (v: number | null) => void
 }) {
+  const step = useWheelStepSize()
   return (
-    <label className="flex min-w-0 flex-col gap-[3px]" title={title}>
-      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
+    <label className="flex min-w-0 flex-col gap-[3px]" title={title ? `${title} ${wheelHint(step, 'mm')}` : title}>
+      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
       <span className={fieldBoxCls}>
         <input
+          ref={wheelRef<HTMLInputElement>(() => ({
+            value: wheelBase(value, auto),
+            min: 0,
+            onChange,
+          }))}
           type="number"
           className={fieldCls}
           value={value ?? ''}
@@ -694,7 +801,7 @@ function OptionalMmField({
             onChange(t === '' || !Number.isFinite(v) || v <= 0 ? null : v)
           }}
         />
-        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+        <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
           mm
         </span>
       </span>

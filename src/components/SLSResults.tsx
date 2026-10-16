@@ -139,7 +139,7 @@ export function SlsSummaryPanel({
       ) : (
         <>
           <div
-            className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 font-display text-[12px] font-bold uppercase tracking-[0.05em] ${
+            className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 font-display text-[0.75rem] font-bold uppercase tracking-[0.05em] ${
               anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
             }`}
           >
@@ -197,7 +197,7 @@ export function SlsCalculationPanel({
   const pureAxial = !Number.isFinite(result.xu)
   return (
     <Card title={`SLS calculation — ${lc.name}`} subtitle="working-stress (direct stress) method">
-      <div className="grid grid-cols-1 gap-x-5 gap-y-1.5 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-5 gap-y-1.5 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-2">
         <Row k="Service moment MEd" v={`${fmtN(result.MEd / 1e6, 1)} kN·m`} note={`Mux ${fmtN(result.Mux, 1)} · Muy ${fmtN(result.Muy, 1)} kN·m, θ = ${fmtN((result.phi * 180) / Math.PI, 0)}°`} />
         <Row k="Service axial Pu" v={`${fmtN(result.Pu, 0)} kN`} note="compression positive" />
         <Row k="Modular ratio m" v={fmtN(result.m, 2)} note="280/(3·σcbc)" />
@@ -263,13 +263,13 @@ function StressLine({
   return (
     <div className={`rounded-field border px-2.5 py-2 ${ok ? 'border-ok/30 bg-ok/8' : 'border-bad/30 bg-bad/8'}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink-2">{label}</span>
+        <span className="font-display text-[0.65625rem] font-bold uppercase tracking-[0.06em] text-ink-2">{label}</span>
         <Verdict ok={ok} />
       </div>
       <div className="mt-1 flex items-baseline gap-2 tnum">
-        <span className={`text-[16px] font-bold ${ok ? 'text-ink' : 'text-bad'}`}>{fmtN(value, value < 20 ? 2 : 1)}</span>
-        <span className="text-[11px] text-ink-3">≤ {fmtN(limit, limit < 20 ? 1 : 0)} N/mm²</span>
-        <span className={`ml-auto text-[12px] font-bold ${ok ? 'text-ok' : 'text-bad'}`}>
+        <span className={`text-[1rem] font-bold ${ok ? 'text-ink' : 'text-bad'}`}>{fmtN(value, value < 20 ? 2 : 1)}</span>
+        <span className="text-[0.6875rem] text-ink-3">≤ {fmtN(limit, limit < 20 ? 1 : 0)} N/mm²</span>
+        <span className={`ml-auto text-[0.75rem] font-bold ${ok ? 'text-ok' : 'text-bad'}`}>
           {Number.isFinite(ratio) ? `${fmtN(ratio * 100, 1)}%` : '—'}
         </span>
       </div>
@@ -280,10 +280,10 @@ function StressLine({
 function Row({ k, v, note }: { k: string; v: string; note?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
+      <dt className="font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
       <dd className="font-semibold text-ink">
         {v}
-        {note && <span className="ml-1 font-normal text-[10.5px] text-ink-3">{note}</span>}
+        {note && <span className="ml-1 font-normal text-[0.65625rem] text-ink-3">{note}</span>}
       </dd>
     </div>
   )

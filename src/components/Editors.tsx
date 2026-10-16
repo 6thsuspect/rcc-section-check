@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LoadCase, Rebar, SectionGeometry } from '../engine/types'
 import { CODES, type CodeSpec } from '../engine/codes'
 import {
@@ -10,6 +10,8 @@ import {
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
 import { isAutomaticBar, repositionAutomaticBars } from '../engine/reinforcement'
+import { barCoordinatesText, sectionCoordinatesText } from '../clipboard'
+import { useCopyFeedback } from '../useCopyFeedback'
 import {
   Banner,
   Card,
@@ -33,7 +35,26 @@ import {
   btnCls,
   btnDangerCls,
   codeChipCls,
+  wheelRef,
 } from './ui'
+
+/**
+ * What a copy button reports: the coordinates that went to the clipboard, or
+ * why they did not. One line, the app's small-text size, in the status colours
+ * — so it reads the same in the light and the dark theme.
+ */
+function CopyNoteLine({ note }: { note: { ok: boolean; text: string } | null }) {
+  if (!note) return null
+  return (
+    <p
+      role="status"
+      className={`flex items-start gap-1.5 text-[0.65625rem] leading-snug ${note.ok ? 'text-ok' : 'text-bad'}`}
+    >
+      <Icon name={note.ok ? 'check' : 'alert'} size={12} className="mt-px shrink-0" />
+      <span>{note.text}</span>
+    </p>
+  )
+}
 
 export function CodeMaterialsPanel({
   state,
@@ -63,12 +84,12 @@ export function CodeMaterialsPanel({
           </SegButton>
         ))}
       </SegGroup>
-      <p className="mb-3 text-[11px] leading-snug text-ink-2">
+      <p className="mb-3 text-[0.6875rem] leading-snug text-ink-2">
         {spec.name} — {spec.edition}
       </p>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Concrete grade
           </span>
           <select
@@ -85,7 +106,7 @@ export function CodeMaterialsPanel({
           </select>
         </label>
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Steel grade (IS 1786)
           </span>
           <select
@@ -125,14 +146,34 @@ export function SectionPanel({
   state,
   update,
   onBarDiaCustomizeChange,
+  importStamp = 0,
 }: {
   state: AppState
   update: (patch: Partial<AppState>) => void
   onBarDiaCustomizeChange?: (enabled: boolean) => void
+  /**
+   * Bumped by the app every time a file is imported. The shape form and the
+   * boundary/void selection below follow the imported section, so the panel
+   * cannot go on showing the kind and the dimensions that were there before the
+   * import — nor point at a void the imported geometry does not have.
+   */
+  importStamp?: number
 }) {
   const [shape, setShape] = useState<PredefinedSection>(state.predefined ?? defaultPredefined('rect'))
   const [loop, setLoop] = useState(0) // 0 = boundary, 1.. = void index+1
   const [frozen, setFrozen] = useState(false)
+  const importStampRef = useRef(importStamp)
+
+  // A file import replaces the section outright: the shape buttons, every
+  // dimension and count in the form, and the boundary table all come from the
+  // file afterwards. `state.predefined` is what the app now holds — a parametric
+  // definition the file gave, or null for a boundary the file described.
+  useEffect(() => {
+    if (importStamp === importStampRef.current) return
+    importStampRef.current = importStamp
+    setShape(state.predefined ?? defaultPredefined('rect'))
+    setLoop(0)
+  }, [importStamp, state.predefined])
 
   const apply = (def: PredefinedSection, opts?: { keepBars?: boolean }) => {
     if (frozen) return
@@ -159,7 +200,16 @@ export function SectionPanel({
     })
   }
 
-  const poly = loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]
+  // The table always shows something: after an import the selected void may not
+  // exist (the file has fewer openings or none at all).
+  const poly = (loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]) ?? []
+
+  // Copy every coordinate of the section — the boundary and each opening in it
+  // — as the tab-separated rows beside the button show them.
+  const { note: copyNote, copy } = useCopyFeedback(
+    'section point',
+    'No section coordinates to copy — the boundary needs at least three points.',
+  )
   const setPoly = (p: { x: number; y: number }[]) => {
     if (frozen) return
     const geometry: SectionGeometry =
@@ -198,9 +248,9 @@ export function SectionPanel({
               key={k}
               disabled={frozen}
               aria-pressed={shape.kind === k}
-              className={`rounded-field border px-2 py-[5px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
+              className={`rounded-field border px-2 py-[5px] font-display text-[0.6875rem] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
                 shape.kind === k
-                  ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
                   : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
               }`}
               onClick={() => {
@@ -234,30 +284,46 @@ export function SectionPanel({
         />
 
         <div className="mb-1.5 mt-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t border-line pt-2.5">
-          <span className="flex items-center gap-1.5 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-2">
+          <span className="flex items-center gap-1.5 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
             <Icon name="ruler" size={12} className="text-ink-3" />
             <span>Boundary coordinates (mm)</span>
-            <span className="font-body text-[10px] font-normal normal-case tracking-normal text-ink-3">
+            <span className="font-body text-[0.625rem] font-normal normal-case tracking-normal text-ink-3">
               {state.predefined ? 'generated, editable' : 'custom'}
             </span>
             {frozen && <span className="font-semibold lowercase text-bad">(frozen)</span>}
           </span>
-          {state.geometry.voids.length > 0 && (
-            <select
-              className={selectInlineCls}
-              value={loop}
-              disabled={frozen}
-              onChange={(e) => setLoop(Number(e.target.value))}
+          <span className="flex flex-wrap items-center gap-1.5">
+            {state.geometry.voids.length > 0 && (
+              <select
+                className={selectInlineCls}
+                value={loop}
+                disabled={frozen}
+                onChange={(e) => setLoop(Number(e.target.value))}
+              >
+                <option value={0}>outer boundary</option>
+                {state.geometry.voids.map((_, i) => (
+                  <option key={i} value={i + 1}>
+                    void {i + 1}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              className={btnCls}
+              onClick={() => copy(sectionCoordinatesText(state.geometry))}
+              title={
+                'Copy every section coordinate — the boundary and each opening (void, hole, cutout) — as ' +
+                'tab-separated rows with headers, ready to paste into Excel, AutoCAD or STAAD. ' +
+                "The values are the ones shown here, in the section's own coordinate system."
+              }
             >
-              <option value={0}>outer boundary</option>
-              {state.geometry.voids.map((_, i) => (
-                <option key={i} value={i + 1}>
-                  void {i + 1}
-                </option>
-              ))}
-            </select>
-          )}
+              <Icon name="copy" size={12} />
+              <span>Copy coordinates</span>
+            </button>
+          </span>
         </div>
+        <CopyNoteLine note={copyNote} />
         <div className="max-h-56 overflow-auto rounded-lg border border-line">
           <table className={tblCls}>
             <thead className="sticky top-0 z-10">
@@ -271,9 +337,14 @@ export function SectionPanel({
             <tbody>
               {poly.map((p, i) => (
                 <tr key={i} className="border-t border-line transition-colors duration-150 hover:bg-panel/60">
-                  <td className={`${tdCls} font-mono text-[11px] text-ink-3`}>{i + 1}</td>
+                  <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                   <td className={tdCls}>
                     <input
+                      ref={wheelRef<HTMLInputElement>(() => ({
+                        value: p.x,
+                        onChange: (v) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: v } : q))),
+                        enabled: !frozen,
+                      }))}
                       className={cellCls}
                       type="number"
                       value={p.x}
@@ -283,6 +354,11 @@ export function SectionPanel({
                   </td>
                   <td className={tdCls}>
                     <input
+                      ref={wheelRef<HTMLInputElement>(() => ({
+                        value: p.y,
+                        onChange: (v) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: v } : q))),
+                        enabled: !frozen,
+                      }))}
                       className={cellCls}
                       type="number"
                       value={p.y}
@@ -311,7 +387,7 @@ export function SectionPanel({
             <span>Vertex</span>
           </button>
           {frozen && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-bad">
+            <span className="inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-bad">
               <Icon name="lock" size={11} />
               Section geometry is locked
             </span>
@@ -383,7 +459,7 @@ function ShapeParams({
       {shape.kind === 'circle' && (
         <>
           {f('Diameter D', 'D')}
-          <p className="col-span-2 flex items-start gap-1.5 self-end pb-1 text-[10.5px] leading-snug text-ink-2">
+          <p className="col-span-2 flex items-start gap-1.5 self-end pb-1 text-[0.65625rem] leading-snug text-ink-2">
             <Icon name="info" size={12} className="mt-px shrink-0 text-ink-3" />
             <span>Reinforcement layout is configured in the <b className="font-semibold text-ink">Circular reinforcement</b> panel below.</span>
           </p>
@@ -461,7 +537,7 @@ function ShapeParams({
         <>
           {f('Outer Do', 'Do')}
           {f('Inner Di', 'Di')}
-          <p className="col-span-1 flex items-start gap-1.5 self-end pb-1 text-[10.5px] leading-snug text-ink-2">
+          <p className="col-span-1 flex items-start gap-1.5 self-end pb-1 text-[0.65625rem] leading-snug text-ink-2">
             <Icon name="info" size={12} className="mt-px shrink-0 text-ink-3" />
             <span>Use the <b className="font-semibold text-ink">Circular reinforcement</b> panel — choose <b className="font-semibold text-ink">Layered</b> for an inner ring.</span>
           </p>
@@ -485,7 +561,7 @@ function PasteMode({
 }) {
   const opt = (v: 'append' | 'replace', text: string) => (
     <label
-      className={`flex cursor-pointer items-center gap-1.5 rounded-field border px-2 py-1 text-[11px] transition-[background-color,border-color,color] duration-150 ease-ui ${
+      className={`flex cursor-pointer items-center gap-1.5 rounded-field border px-2 py-1 text-[0.6875rem] transition-[background-color,border-color,color] duration-150 ease-ui ${
         mode === v
           ? v === 'replace'
             ? 'border-bad/35 bg-bad/8 text-bad'
@@ -517,7 +593,7 @@ function PasteMode({
         {opt('append', 'Append on paste')}
         {opt('replace', 'Replace all on paste')}
       </div>
-      <p className="mt-1.5 text-[10.5px] leading-snug text-ink-3">
+      <p className="mt-1.5 text-[0.65625rem] leading-snug text-ink-3">
         Copy cells and press{' '}
         <code className={codeChipCls}>Ctrl+V</code>{' '}
         anywhere in the table — rows are added automatically. {replaceHint}
@@ -542,7 +618,7 @@ function ValidateBanner({
   if (status.kind === 'ok') {
     return (
       <Banner tone="ok">
-        <b className="font-display text-[10px] uppercase tracking-[0.07em]">Valid</b>
+        <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Valid</b>
         <span className="ml-1.5">
           {status.count} {noun}
           {status.count === 1 ? '' : 's'} configured.
@@ -553,11 +629,11 @@ function ValidateBanner({
   if (status.kind === 'empty') return <Banner tone="info">{status.message}</Banner>
   return (
     <Banner tone="error">
-      <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+      <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
         {status.errors.length} invalid {noun}
         {status.errors.length === 1 ? '' : 's'}
       </b>
-      <ul className="mt-0.5 max-h-20 space-y-px overflow-y-auto font-mono text-[11px] tnum">
+      <ul className="mt-0.5 max-h-20 space-y-px overflow-y-auto font-mono text-[0.6875rem] tnum">
         {status.errors.map((err, i) => (
           <li key={i}>
             Row {err.line}: {err.message}
@@ -578,6 +654,19 @@ export function RebarPanel({
   customizeBarDiameter: boolean
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
+  /**
+   * One row edited — by a typed cell or by a wheel notch, which take the same
+   * path: the row is marked manual and the validate banner is cleared.
+   */
+  const setBarAt = (i: number, patch: Partial<Rebar>) => {
+    setStatus({ kind: 'idle' })
+    update(bars.map((q, j) => (j === i ? { ...q, ...patch } : q)))
+  }
+  /** A custom ⌀, rounded to four decimals and floored at 0.0001 mm. */
+  const setBarDia = (i: number, raw: number) => {
+    if (!Number.isFinite(raw) || raw <= 0) return
+    setBarAt(i, { dia: Math.max(0.0001, Math.round(raw * 10000) / 10000) })
+  }
   const DIAS = STANDARD_BAR_DIAMETERS
   const diameterOptions = (value: number) =>
     DIAS.includes(value) ? DIAS : [...DIAS, value].sort((a, b) => a - b)
@@ -589,6 +678,13 @@ export function RebarPanel({
     | { kind: 'empty'; message: string }
     | { kind: 'errors'; errors: { line: number; message: string }[] }
   >({ kind: 'idle' })
+
+  // Copy the whole table — every bar with its number, coordinates, diameter and
+  // face — in the same coordinate system as the section, for Excel/CAD/STAAD.
+  const { note: copyNote, copy } = useCopyFeedback(
+    'bar coordinate',
+    'No bar coordinates to copy — the reinforcement table is empty.',
+  )
 
   // Excel paste handler that automatically expands rows and populates values
   const handleExcelPaste = (e: React.ClipboardEvent) => {
@@ -681,13 +777,13 @@ export function RebarPanel({
               <tr className="border-b border-edge bg-panel/95 backdrop-blur-sm">
                 <th className={`${thCls} w-9 text-left`}>#</th>
                 <th className={`${thCls} text-left`}>
-                  X coordinate <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">x</code>
+                  X coordinate <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">x</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Y coordinate <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">y</code>
+                  Y coordinate <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">y</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Bar diameter <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">⌀</code>
+                  Bar diameter <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">⌀</code>
                 </th>
                 <th className={`${thCls} w-9`}></th>
               </tr>
@@ -696,61 +792,52 @@ export function RebarPanel({
               {bars.length > 0 ? (
                 bars.map((b, i) => (
                   <tr key={i} className="border-t border-line transition-colors duration-150 hover:bg-panel/60">
-                    <td className={`${tdCls} font-mono text-[11px] text-ink-3`}>{i + 1}</td>
+                    <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: b.x,
+                          // a wheel edit is an edit like a typed one: the row
+                          // becomes manual and the validate banner is cleared
+                          onChange: (v) => setBarAt(i, { x: v, positioning: 'manual' }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={b.x}
                         placeholder="0"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            bars.map((q, j) =>
-                              j === i ? { ...q, x: num(e.target.value), positioning: 'manual' as const } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setBarAt(i, { x: num(e.target.value), positioning: 'manual' })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: b.y,
+                          onChange: (v) => setBarAt(i, { y: v, positioning: 'manual' }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={b.y}
                         placeholder="0"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            bars.map((q, j) =>
-                              j === i ? { ...q, y: num(e.target.value), positioning: 'manual' as const } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setBarAt(i, { y: num(e.target.value), positioning: 'manual' })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       {customizeBarDiameter ? (
                         <input
+                          ref={wheelRef<HTMLInputElement>(() => ({
+                            value: b.dia,
+                            min: 0.0001,
+                            onChange: (v) => setBarDia(i, v),
+                          }))}
                           className={cellCls}
                           type="number"
                           value={b.dia}
                           min={0.0001}
                           step={0.0001}
                           aria-label={`Bar ${i + 1} diameter (custom)`}
-                          onChange={(e) => {
-                            const raw = parseFloat(e.target.value)
-                            if (!Number.isFinite(raw) || raw <= 0) return
-                            const dia = Math.max(0.0001, Math.round(raw * 10000) / 10000)
-                            setStatus({ kind: 'idle' })
-                            update(
-                              bars.map((q, j) =>
-                                j === i ? { ...q, dia } : q
-                              )
-                            )
-                          }}
+                          onChange={(e) => setBarDia(i, parseFloat(e.target.value))}
                         />
                       ) : (
                         <select
@@ -789,7 +876,7 @@ export function RebarPanel({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-4 py-7 text-center text-[11.5px] text-ink-2">
+                  <td colSpan={5} className="px-4 py-7 text-center text-[0.71875rem] text-ink-2">
                     <span className="inline-flex items-center gap-1.5">
                       <Icon name="plus" size={13} className="text-ink-3" />
                       No bars yet — add a row below, or paste rows from Excel with <b>Ctrl+V</b>.
@@ -806,6 +893,19 @@ export function RebarPanel({
         {/* Table Toolbar & Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
           <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              className={btnCls}
+              onClick={() => copy(barCoordinatesText(bars))}
+              title={
+                'Copy every bar in this table — number, X, Y, diameter, face, surface and placement — as ' +
+                'tab-separated rows with headers, ready to paste into Excel, AutoCAD or STAAD. ' +
+                "The coordinates are the ones in the table, in the section's own coordinate system."
+              }
+            >
+              <Icon name="copy" size={12} />
+              <span>Copy bar coordinates</span>
+            </button>
             <button className={btnCls} onClick={validate}>
               <Icon name="shield" size={12} />
               <span>Validate</span>
@@ -830,10 +930,12 @@ export function RebarPanel({
               </button>
             )}
           </div>
-          <span className="font-mono text-[11px] text-ink-3 tnum">
+          <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
             {bars.length} {bars.length === 1 ? 'bar' : 'bars'}
           </span>
         </div>
+
+        <CopyNoteLine note={copyNote} />
       </div>
     </Card>
   )
@@ -862,6 +964,12 @@ export function LoadCasesPanel({
     | { kind: 'empty'; message: string }
     | { kind: 'errors'; errors: { line: number; message: string }[] }
   >({ kind: 'idle' })
+
+  /** One case edited — typed or wheeled, the same path: values, banner cleared. */
+  const setCaseAt = (i: number, patch: Partial<LoadCase>) => {
+    setStatus({ kind: 'idle' })
+    update(cases.map((q, j) => (j === i ? { ...q, ...patch } : q)))
+  }
 
   // Excel paste handler that automatically expands rows and populates 4 columns
   const handleExcelPaste = (e: React.ClipboardEvent) => {
@@ -995,13 +1103,13 @@ export function LoadCasesPanel({
                 </th>
                 <th className={`${thCls} text-left`}>Name</th>
                 <th className={`${thCls} text-left`}>
-                  Pu <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN</code>
+                  Pu <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Mux <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN·m</code>
+                  Mux <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN·m</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Muy <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN·m</code>
+                  Muy <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN·m</code>
                 </th>
                 <th className={`${thCls} w-9`}></th>
               </tr>
@@ -1043,52 +1151,43 @@ export function LoadCasesPanel({
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Pu,
+                          onChange: (v) => setCaseAt(i, { Pu: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Pu}
                         placeholder="1000"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Pu: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Pu: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Mux,
+                          onChange: (v) => setCaseAt(i, { Mux: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Mux}
                         placeholder="100"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Mux: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Mux: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Muy,
+                          onChange: (v) => setCaseAt(i, { Muy: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Muy}
                         placeholder="50"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Muy: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Muy: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
@@ -1112,7 +1211,7 @@ export function LoadCasesPanel({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-7 text-center text-[11.5px] text-ink-2">
+                  <td colSpan={6} className="px-4 py-7 text-center text-[0.71875rem] text-ink-2">
                     <span className="inline-flex items-center gap-1.5">
                       <Icon name="plus" size={13} className="text-ink-3" />
                       No load cases yet — add one below, or paste rows from Excel with <b>Ctrl+V</b>.
@@ -1153,7 +1252,7 @@ export function LoadCasesPanel({
               </button>
             )}
           </div>
-          <span className="font-mono text-[11px] text-ink-3 tnum">
+          <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
             {cases.length} {cases.length === 1 ? 'case' : 'cases'}
           </span>
         </div>

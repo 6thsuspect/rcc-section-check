@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import type { CaseResult } from './engine/types'
+import { Fragment, useMemo, useRef, useState } from 'react'
+import type { CaseResult, InteractionSurface, SectionGeometry } from './engine/types'
 import { CODES } from './engine/codes'
 import { ensureCCW, isSimplePolygon, sectionProperties, signedArea } from './engine/geometry'
 import { generateSection } from './engine/sections'
@@ -9,8 +9,9 @@ import { complianceChecks } from './engine/checks'
 import { auditCovers, radialCover } from './engine/cover'
 import { isAutomaticBar, repositionAutomaticBars, validateOuterCoverFit } from './engine/reinforcement'
 import { exportReport } from './report'
-import { exportProjectFile, parseProjectFile } from './projectFile'
-import { initialState, type AppState } from './state'
+import { exportProjectFile } from './projectFile'
+import { importProjectText, importSummary, type ImportReport } from './importFile'
+import { fmtN, initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo, type StressOverlay } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
@@ -19,6 +20,15 @@ import { CircularRebarPanel, isCircularSection } from './components/CircularReba
 import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
 import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './components/SLSResults'
 import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
+import {
+  ShearCasesPanel,
+  ShearDetailingCard,
+  ShearDiagram,
+  ShearInputsPanel,
+  ShearResultsTable,
+  ShearStepPanel,
+  ShearSummaryPanel,
+} from './components/Shear'
 import { neutralAxisAnalysis, type NeutralAxisResult } from './engine/flexure'
 import {
   buildSlsModel,
@@ -35,6 +45,26 @@ import {
 } from './engine/crackWidth'
 import { spacingReport } from './engine/barSpacing'
 import {
+  resolveLinkLayout,
+  validateLinkLayout,
+  withResolvedLegs,
+  type LinkLayout,
+  type LinkValidation,
+} from './engine/stirrups'
+import {
+  SHEAR_CODE_INFO,
+  shearCheck,
+  shearSectionData,
+  shearSummary,
+  type ShearCaseResult,
+  type ShearSectionData,
+  type ShearSettings,
+} from './engine/shear'
+import { AppLogo } from './components/Logo'
+import { AboutPanel } from './components/AboutPanel'
+import { SettingsPanel } from './components/SettingsPanel'
+import { useSettings } from './useSettings'
+import {
   Banner,
   Card,
   EmptyState,
@@ -42,12 +72,81 @@ import {
   SegButton,
   SegGroup,
   STANDARD_BAR_DIAMETERS,
-  btnCls,
-  btnPrimaryCls,
+  headerBtnCls,
+  headerBtnPrimaryCls,
+  noteSmCls,
+  statusPillCls,
+  statusReadoutCls,
 } from './components/ui'
 
+/**
+ * Status readout of the tab that is open, in the header.
+ *
+ * One component for all three tabs, so the row keeps exactly the same spacing,
+ * alignment and responsive behaviour whichever tab is selected. It renders the
+ * wide readout *and* the compact verdict pill; `statusReadoutCls` /
+ * `statusPillCls` decide which of the two the header has room for (the action
+ * area around them is the `@container`), so the action buttons beside it can
+ * never be pushed onto a second line by a longer readout.
+ */
+export function HeaderStatus({
+  ok,
+  verdict,
+  title,
+  items,
+}: {
+  ok: boolean
+  /** Verdict text, upper case: "ALL CHECKS PASS", "SLS FAILS", … */
+  verdict: string
+  /** Tooltip of the verdict. */
+  title: string
+  /** The two governing values shown beside the verdict. */
+  items: { label: string; value: string; title: string }[]
+}) {
+  const tone = ok ? 'text-ok' : 'text-bad'
+  const pillTone = ok ? 'border-ok/35 bg-ok/8 text-ok' : 'border-bad/35 bg-bad/8 text-bad'
+  return (
+    <>
+      <div className={statusReadoutCls}>
+        {items.map((it, i) => (
+          <Fragment key={it.label}>
+            {i > 0 && <span className="h-3.5 w-px shrink-0 bg-edge" />}
+            <span title={it.title}>
+              <span className="mr-1 font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">
+                {it.label}
+              </span>
+              {it.value}
+            </span>
+          </Fragment>
+        ))}
+        <span
+          className={`inline-flex items-center gap-1.5 font-display text-[0.6875rem] font-bold uppercase tracking-[0.05em] ${tone}`}
+        >
+          <span className={`grid h-[15px] w-[15px] place-items-center rounded-full ${ok ? 'bg-ok/12' : 'bg-bad/12'}`}>
+            <Icon name={ok ? 'check' : 'alert'} size={10} />
+          </span>
+          {verdict}
+        </span>
+      </div>
+
+      <span className={`${statusPillCls} ${pillTone}`} title={title}>
+        <Icon name={ok ? 'check' : 'alert'} size={10} />
+        {verdict}
+      </span>
+    </>
+  )
+}
+
 /** Page container, shared by the header bar and the working area. */
-const shell = 'mx-auto w-full max-w-[1640px] px-3 sm:px-5'
+/**
+ * The page frame: the header, the workspace, the banners and the footer all use
+ * it, so they line up with each other. It is the full width of the window — no
+ * `max-width` cap, so a wide desktop monitor has no empty gutter down the sides —
+ * with side padding that grows with the window: the content is what gets the
+ * width, not the margin. (Panels are cards on the canvas; the workspace below is
+ * a grid of `minmax(0, …)` tracks, so nothing can overflow the frame.)
+ */
+const shell = 'w-full px-3 sm:px-5 lg:px-6 2xl:px-8'
 
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
@@ -55,12 +154,40 @@ export default function App() {
   const [selCase, setSelCase] = useState<string | null>(state.cases[0]?.id ?? null)
   const [slsSelCase, setSlsSelCase] = useState<string | null>(state.slsCases[0]?.id ?? null)
   const [crackSelCase, setCrackSelCase] = useState<string | null>(state.crackCases[0]?.id ?? null)
+  const [shearSelCase, setShearSelCase] = useState<string | null>(state.shearCases[0]?.id ?? null)
   const [activeFace, setActiveFace] = useState<ActiveFace | null>(null)
-  /** Which top-bar module is open: the ULS interaction check or the SLS stress check. */
-  const [view, setView] = useState<'uls' | 'sls'>('uls')
+  /**
+   * Which top-bar module is open: the ULS interaction check, the SLS stress
+   * check, or the shear design check. Switching tabs never mutates inputs.
+   */
+  const [view, setView] = useState<'uls' | 'sls' | 'shear'>('uls')
   const [importError, setImportError] = useState<string | null>(null)
+  /** Set when the report could not be printed, only handed over as a file. */
+  const [reportNote, setReportNote] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  /**
+   * What the file just read actually contained, group by group — which inputs
+   * were populated from it and which could not be. Shown in the banner beside
+   * the success message, so a field still holding its previous value is named
+   * rather than left to be discovered.
+   */
+  const [importReport, setImportReport] = useState<ImportReport | null>(null)
+  /**
+   * Which of the two header dialogs is open, if either. The appearance choices
+   * themselves live in `useSettings`, which keeps them in step with storage and
+   * with the document element; this is only which panel is on screen.
+   */
+  const [panel, setPanel] = useState<'settings' | 'about' | null>(null)
+  const { settings, update: updateSettings } = useSettings()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /**
+   * Counts completed imports. The circular-reinforcement panel watches it so a
+   * bar table that came from a file is left exactly as the file wrote it until
+   * the arrangement itself is edited.
+   */
+  const [importStamp, setImportStamp] = useState(0)
+  /** The pending auto-clear of the import banner, if one is running. */
+  const importTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
    * Apply input changes and keep automatic reinforcement derived from the
@@ -139,7 +266,11 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string
-        const newAppState = parseProjectFile(text)
+        // A project this app wrote is read exactly as before. Any other JSON
+        // that describes a section is mapped field by field onto the inputs:
+        // everything the file carries is taken, and a field it does not carry
+        // keeps the value it already has.
+        const { state: newAppState, report } = importProjectText(text, state)
         setState(newAppState)
         setCustomizeBarDiameter(!STANDARD_BAR_DIAMETERS.includes(newAppState.barDia))
         if (newAppState.cases.length > 0) {
@@ -151,11 +282,31 @@ export default function App() {
         if (newAppState.crackCases.length > 0) {
           setCrackSelCase(newAppState.crackCases[0].id)
         }
+        if (newAppState.shearCases.length > 0) {
+          setShearSelCase(newAppState.shearCases[0].id)
+        }
+        if (importTimerRef.current) clearTimeout(importTimerRef.current)
         setImportError(null)
-        setImportSuccess(`Successfully imported project from "${file.name}"`)
-        setTimeout(() => setImportSuccess(null), 5000)
+        setImportReport(report)
+        const summary = importSummary(report)
+        setImportSuccess(
+          `Imported ${report.format === 'project' ? 'project' : 'section data'} from "${file.name}" — ` +
+            `${summary.imported.length} input group(s) populated from the file`,
+        )
+        setImportStamp((n) => n + 1)
+        // A complete import clears itself after five seconds, as it always has.
+        // When an input could not be populated the banner stays until it is
+        // dismissed, so the list of them is there to read.
+        if (summary.missing.length === 0 && summary.invalid.length === 0) {
+          importTimerRef.current = setTimeout(() => {
+            setImportSuccess(null)
+            setImportReport(null)
+          }, 5000)
+        }
       } catch (err: any) {
+        if (importTimerRef.current) clearTimeout(importTimerRef.current)
         setImportSuccess(null)
+        setImportReport(null)
         setImportError(err.message || 'Failed to parse project file.')
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = ''
@@ -321,6 +472,44 @@ export default function App() {
   }, [surface, selected, selResult, selNA])
 
   /* ------------------------------------------------------------------ *
+   * Shear design check (IS 456 Cl 40 / IRC 112 Cl 10.3 / IRS CBC Cl 15.4)
+   * — a self-contained module on its own load-case list. Nothing here is
+   * read by (or writes to) the ULS and SLS results above.
+   * ------------------------------------------------------------------ */
+  // Link ring, intermediate legs and cross-ties, resolved once from the section,
+  // the bar table and the entered cover — the drawing, the detailing editor and
+  // the resistance check all read this same layout.
+  const shearCircular = state.shapeClass === 'circ'
+  const shearLayout = useMemo(
+    () => resolveLinkLayout(state.geometry, state.bars, state.cover, state.shear, shearCircular),
+    [state.geometry, state.bars, state.cover, state.shear, shearCircular],
+  )
+  const shearValidation = useMemo(
+    () => validateLinkLayout(shearLayout, state.geometry, state.bars, state.shear),
+    [shearLayout, state.geometry, state.bars, state.shear],
+  )
+  /** The shear engine reads the effective leg count of the drawn arrangement. */
+  const shearSettings = useMemo(() => withResolvedLegs(state.shear, shearLayout), [state.shear, shearLayout])
+
+  const shearSection = useMemo(
+    () => shearSectionData(state.geometry, state.bars, state.cover, shearSettings),
+    [state.geometry, state.bars, state.cover, shearSettings],
+  )
+
+  const shearResults: ShearCaseResult[] = useMemo(() => {
+    if (!valid) return []
+    return state.shearCases.map((lc) =>
+      shearCheck(state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, shearSettings, lc),
+    )
+  }, [valid, state.shearCases, state.code, state.fck, grade.fy, state.geometry, state.bars, state.cover, shearSettings])
+
+  const shearSum = useMemo(() => shearSummary(shearResults), [shearResults])
+
+  const shearSelected = state.shearCases.find((c) => c.id === shearSelCase) ?? state.shearCases[0] ?? null
+  const shearSelResult = shearResults.find((r) => r.loadCase.id === shearSelected?.id) ?? null
+  const shearAnyFail = shearResults.length > 0 && shearSum.anyFail
+
+  /* ------------------------------------------------------------------ *
    * SLS stress check (working-stress method) — shares the same section,
    * materials, reinforcement and load cases as the ULS module; nothing
    * here mutates state, so switching tabs never alters the inputs.
@@ -404,11 +593,16 @@ export default function App() {
 
   const exportPdf = () => {
     if (!surface || !props || results.length === 0) return
+    /**
+     * Capture a figure for the print report: the live element when the current
+     * tab shows it, otherwise the off-screen copy kept mounted for the report
+     * (see `PrintFigures`) so an export from any tab carries every figure.
+     */
     const grab = (id: string, base: string) => {
-      const el = document.getElementById(id)
+      const el = document.getElementById(id) ?? document.getElementById(`print-${id}`)
       return el ? el.outerHTML.replace(/viewBox="[^"]*"/, `viewBox="${base}"`) : '<p><i>figure unavailable</i></p>'
     }
-    exportReport({
+    void exportReport({
       state,
       spec,
       grade,
@@ -421,30 +615,52 @@ export default function App() {
       xuMaxLabel: spec.xuMaxLabel,
       spacing,
       selectedName: selected?.name ?? '',
+      shear: {
+        section: shearSection,
+        settings: shearSettings,
+        results: shearResults,
+        summary: shearSum,
+      },
       svgs: {
         section: grab('fig-section', '0 0 460 340'),
         pm: grab('fig-pm', '0 0 520 400'),
         contour: grab('fig-contour', '0 0 460 420'),
+        shear: grab('fig-shear', '0 0 460 340'),
       },
+    }).then((route) => {
+      // the report prints in a window of its own when the browser allows one,
+      // otherwise from a hidden frame in this page (`src/reportDelivery.ts`);
+      // only when printing is blocked outright does it arrive as a file
+      setReportNote(
+        route === 'download'
+          ? 'This browser blocked the print dialog, so the report was saved as an HTML file instead — open it and print (or "Save as PDF") from there.'
+          : null,
+      )
+    }).catch(() => {
+      setReportNote('The report could not be prepared in this browser.')
     })
   }
 
+  /**
+   * The import banner's detail: the groups the file populated, and the ones it
+   * could not, so the second list can be shown to the user verbatim.
+   */
+  const importDetail = useMemo(() => (importReport ? importSummary(importReport) : null), [importReport])
+  const notPopulated = importDetail ? [...importDetail.missing, ...importDetail.invalid] : []
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
+      <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-header backdrop-blur-md">
         <div className={`${shell} flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5`}>
           <div className="flex min-w-0 items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] bg-ink text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]"
-            >
-              <Icon name="bars" size={15} />
-            </span>
+            {/* Application mark — the same artwork as the browser icon
+                (public/favicon.svg) and the printed report header. */}
+            <AppLogo className="h-[30px] w-[30px]" />
             <div className="min-w-0">
-              <h1 className="truncate font-display text-[16.5px] font-bold leading-none tracking-[-0.01em] text-ink">
+              <h1 className="truncate font-display text-[1.03125rem] font-bold leading-none tracking-[-0.01em] text-ink">
                 RCC Section Check
               </h1>
-              <p className="mt-[5px] truncate text-[11px] leading-none text-ink-3">
+              <p className="mt-[5px] truncate text-[0.6875rem] leading-none text-ink-3">
                 Biaxial P–Mx–My interaction · <span className="text-ink-2">{spec.name}</span>
                 <span className="mx-1 text-edge-strong">|</span>
                 {spec.edition}
@@ -452,145 +668,221 @@ export default function App() {
             </div>
           </div>
 
-          <SegGroup className="shrink-0" aria-label="Check module">
-            <SegButton active={view === 'uls'} onClick={() => setView('uls')} title="Ultimate limit state — P–Mx–My interaction & capacity checks">
+          {/* The three checks read as independent buttons — the same style as
+              the action buttons at the end of the row, with the same spacing —
+              rather than as a segmented control; which one is open is carried by
+              `aria-pressed` and by the view below. The group is a wrapping flex
+              row of its own: below 600 px (`max-[600px]:`, i.e. an
+              `@media (max-width: 600px)` query) it takes a full line under the
+              title and the word "Check" leaves the labels
+              (`max-[600px]:hidden` — `display: none` on a phone), so the
+              three buttons share the line instead of the row spilling out of the
+              header; the action buttons then wrap onto the line below this one.
+              The labels keep their full accessible name either way. */}
+          <SegGroup className="shrink-0 max-[600px]:w-full" gap="gap-1 sm:gap-2" aria-label="Check module">
+            <SegButton variant="button" active={view === 'uls'} onClick={() => setView('uls')} aria-label="ULS Check" title="Ultimate limit state — P–Mx–My interaction & capacity checks">
               <Icon name="target" size={13} />
-              ULS Check
+              <span>ULS<span className="max-[600px]:hidden"> Check</span></span>
             </SegButton>
-            <SegButton active={view === 'sls'} onClick={() => setView('sls')} title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
+            <SegButton variant="button" active={view === 'sls'} onClick={() => setView('sls')} aria-label="SLS Check" title="Serviceability limit state — working-stress concrete & reinforcement stress checks">
               <Icon name="shield" size={13} />
-              SLS Check
+              <span>SLS<span className="max-[600px]:hidden"> Check</span></span>
+            </SegButton>
+            <SegButton variant="button" active={view === 'shear'} onClick={() => setView('shear')} aria-label="Shear Check" title="Shear design check — concrete shear resistance, link design, minimum/maximum limits and spacing per the selected code">
+              <Icon name="link" size={13} />
+              <span>Shear<span className="max-[600px]:hidden"> Check</span></span>
             </SegButton>
           </SegGroup>
 
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".json,.rcc"
-              className="hidden"
-            />
+          {/* The action area is the query container the status readout is gated
+              on, so the readout yields to the buttons rather than the reverse.
+              `min-w-min` keeps its min-content floor — inline-size containment
+              would otherwise zero the automatic minimum size and let the tabs
+              squeeze the buttons — so the header still gives the area a line of
+              its own when the tabs and the buttons cannot share one. */}
+          <div className="@container flex min-w-min flex-1 flex-wrap items-center justify-end gap-1 sm:gap-2">
             {view === 'uls' && surface && props && (
-              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
-                <span title="Pure axial (squash) capacity of the section">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Puz</span>
-                  {(surface.Puz / 1e3).toFixed(0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span title="Tension limit of the section">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">Pt</span>
-                  {(surface.Pt / 1e3).toFixed(0)} kN
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span
-                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
-                    anyFail ? 'text-bad' : 'text-ok'
-                  }`}
-                >
-                  <span
-                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${anyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
-                  >
-                    <Icon name={anyFail ? 'alert' : 'check'} size={10} />
-                  </span>
-                  {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-                </span>
-              </div>
-            )}
-
-            {view === 'sls' && slsList.length > 0 && (
-              <div className="mr-1 hidden items-center gap-3 rounded-lg border border-line bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum lg:flex">
-                <span title="Permissible concrete stress in bending (IS 456 Table 21)">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σcbc</span>
-                  {slsLimits.sigmaCbc.toFixed(1)} N/mm²
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span title="Permissible tensile steel stress (IS 456 Table 22)">
-                  <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">σst</span>
-                  {slsLimits.sigmaSt.toFixed(0)} N/mm²
-                </span>
-                <span className="h-3.5 w-px bg-edge" />
-                <span
-                  className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${
-                    slsAnyFail ? 'text-bad' : 'text-ok'
-                  }`}
-                >
-                  <span
-                    className={`grid h-[15px] w-[15px] place-items-center rounded-full ${slsAnyFail ? 'bg-bad/12' : 'bg-ok/12'}`}
-                  >
-                    <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
-                  </span>
-                  {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
-                </span>
-              </div>
-            )}
-
-            {view === 'uls' && surface && props && (
-              <span
-                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
-                  anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
-                }`}
+              <HeaderStatus
+                ok={!anyFail}
+                verdict={anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
                 title="Compliance verdict across all load cases"
-              >
-                <Icon name={anyFail ? 'alert' : 'check'} size={10} />
-                {anyFail ? 'CHECK FAILS' : 'ALL CHECKS PASS'}
-              </span>
+                items={[
+                  {
+                    label: 'Puz',
+                    value: `${(surface.Puz / 1e3).toFixed(0)} kN`,
+                    title: 'Pure axial (squash) capacity of the section',
+                  },
+                  {
+                    label: 'Pt',
+                    value: `${(surface.Pt / 1e3).toFixed(0)} kN`,
+                    title: 'Tension limit of the section',
+                  },
+                ]}
+              />
+            )}
+
+            {view === 'shear' && shearResults.length > 0 && shearSum.governing && (
+              <HeaderStatus
+                ok={!shearAnyFail}
+                verdict={shearAnyFail ? 'SHEAR FAILS' : 'SHEAR PASSES'}
+                title="Shear design verdict across all shear cases"
+                items={[
+                  {
+                    label: 'Vu gov',
+                    value: `${fmtN(shearSum.governing.loadCase.Vu, 0)} kN`,
+                    title: 'Largest design shear force among the shear cases',
+                  },
+                  {
+                    label: 'VRd',
+                    value: `${fmtN(shearSum.governing.VRd / 1e3, 0)} kN`,
+                    title: 'Shear resistance of the section with the provided links at the governing case',
+                  },
+                ]}
+              />
             )}
 
             {view === 'sls' && slsList.length > 0 && (
-              <span
-                className={`mr-0.5 inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] font-bold uppercase tracking-[0.05em] lg:hidden ${
-                  slsAnyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'
-                }`}
+              <HeaderStatus
+                ok={!slsAnyFail}
+                verdict={slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
                 title="SLS stress verdict across all load cases"
-              >
-                <Icon name={slsAnyFail ? 'alert' : 'check'} size={10} />
-                {slsAnyFail ? 'SLS FAILS' : 'SLS PASSES'}
-              </span>
+                items={[
+                  {
+                    label: 'σcbc',
+                    value: `${slsLimits.sigmaCbc.toFixed(1)} N/mm²`,
+                    title: 'Permissible concrete stress in bending (IS 456 Table 21)',
+                  },
+                  {
+                    label: 'σst',
+                    value: `${slsLimits.sigmaSt.toFixed(0)} N/mm²`,
+                    title: 'Permissible tensile steel stress (IS 456 Table 22)',
+                  },
+                ]}
+              />
             )}
 
-            <button
-              type="button"
-              onClick={handleImportClick}
-              className={btnCls}
-              title="Import a saved project JSON file"
-            >
-              <Icon name="folder" size={13} />
-              <span className="hidden sm:inline">Import project</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportClick}
-              className={btnCls}
-              title="Export current project state to a JSON file"
-            >
-              <Icon name="download" size={13} />
-              <span className="hidden sm:inline">Export project</span>
-            </button>
-            <button
-              type="button"
-              className={btnPrimaryCls}
-              onClick={exportPdf}
-              disabled={!surface || !props}
-              title="Open the full calculation report in a print window — use 'Save as PDF'"
-            >
-              <Icon name="report" size={13} />
-              <span className="hidden sm:inline">PDF report</span>
-            </button>
+            {/* The action buttons keep one row of their own: they never wrap
+                among themselves and never shrink, so nothing shown beside the
+                tabs can push the PDF report button onto a second line. When the
+                row runs out of width they move to the line below the checks
+                (`flex-wrap` on the action area), they do not overlap them. */}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json,.rcc,.txt"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={handleImportClick}
+                className={headerBtnCls}
+                title="Import a saved project JSON file"
+              >
+                <Icon name="folder" size={13} />
+                <span className="hidden sm:inline">Import project</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportClick}
+                className={headerBtnCls}
+                title="Export current project state to a JSON file"
+              >
+                <Icon name="download" size={13} />
+                <span className="hidden sm:inline">Export project</span>
+              </button>
+              <button
+                type="button"
+                className={headerBtnPrimaryCls}
+                onClick={exportPdf}
+                disabled={!surface || !props || results.length === 0}
+                title="Print the full calculation report (ULS, SLS and shear), or 'Save as PDF' in the print dialog"
+              >
+                <Icon name="report" size={13} />
+                <span className="hidden sm:inline">PDF report</span>
+              </button>
+
+              {/* Appearance and about: icon-only, at the end of the row, as
+                  the reference app has them. The header already carries the
+                  three tabs and the three file buttons; a tooltip and an
+                  accessible name are enough for controls opened this rarely. */}
+              <button
+                type="button"
+                onClick={() => setPanel('settings')}
+                className={headerBtnCls}
+                aria-label="Settings"
+                aria-expanded={panel === 'settings'}
+                title="Settings — theme, drafting sheet, accent colour, interface size and the mouse-wheel increment"
+              >
+                <Icon name="gear" size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanel('about')}
+                className={headerBtnCls}
+                aria-label="About"
+                aria-expanded={panel === 'about'}
+                title="About RCC Section Check — version, author and features"
+              >
+                <Icon name="info" size={13} />
+              </button>
+            </div>
+
           </div>
         </div>
 
-        {/* Status Notification Banner for Import Success / Error */}
-        {(importError || importSuccess) && (
-          <div className={`${shell} shrink-0 pb-2`}>
+        {/* Status Notification Banner for Import Success / Error, and for a
+            report that had to come down as a file instead of a print dialog */}
+        {(importError || importSuccess || reportNote) && (
+          <div className={`${shell} shrink-0 flex flex-col gap-1.5 pb-2`}>
             {importError && (
               <Banner tone="error" onDismiss={() => setImportError(null)}>
                 {importError}
               </Banner>
             )}
             {importSuccess && (
-              <Banner tone="ok" onDismiss={() => setImportSuccess(null)}>
-                {importSuccess}
+              <Banner
+                tone={importReport && importReport.counts.invalid > 0 ? 'warn' : 'ok'}
+                onDismiss={() => {
+                  setImportSuccess(null)
+                  setImportReport(null)
+                }}
+              >
+                <div className="font-medium">{importSuccess}</div>
+                {importReport && (
+                  <div className="mt-1 space-y-0.5">
+                    {importDetail!.imported.length > 0 && (
+                      <div className={noteSmCls}>
+                        Populated from the file: {importDetail!.imported.map((f) => f.group).join(' · ')}
+                      </div>
+                    )}
+                    {importDetail!.imported.length === 0 && (
+                      <div className={noteSmCls}>
+                        Nothing in the file could be mapped onto the inputs — every field kept the value it had.
+                      </div>
+                    )}
+                    {notPopulated.length > 0 && (
+                      <div>
+                        <div className={`${noteSmCls} mt-1 font-display uppercase tracking-[0.05em]`}>
+                          Not populated ({notPopulated.length})
+                        </div>
+                        <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                          {notPopulated.map((f, i) => (
+                            <li key={`${f.group}-${i}`}>
+                              <span className="font-medium">{f.group}</span> — {f.detail}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Banner>
+            )}
+            {reportNote && (
+              <Banner tone="warn" onDismiss={() => setReportNote(null)}>
+                {reportNote}
               </Banner>
             )}
           </div>
@@ -603,6 +895,7 @@ export default function App() {
         <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           <CodeMaterialsPanel state={state} update={update} />
           <ClearCoverPanel
+            importStamp={importStamp}
             state={state}
             update={update}
             audit={coverAudit}
@@ -610,12 +903,14 @@ export default function App() {
             setActiveFace={setActiveFace}
           />
           <SectionPanel
+            importStamp={importStamp}
             state={state}
             update={update}
             onBarDiaCustomizeChange={setCustomizeBarDiameter}
           />
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
+              importStamp={importStamp}
               predefined={state.predefined}
               bars={state.bars}
               cover={radialCover(state.cover)}
@@ -644,13 +939,25 @@ export default function App() {
             customizeBarDiameter={customizeBarDiameter}
             update={(bars) => update({ bars, predefined: state.predefined })}
           />
-          <LoadCasesPanel
-            cases={view === 'uls' ? state.cases : state.slsCases}
-            selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
-            update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
-            select={view === 'uls' ? setSelCase : setSlsSelCase}
-            subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
-          />
+          {view === 'shear' ? (
+            <>
+              <ShearInputsPanel state={state} update={update} section={shearSection} layout={shearLayout} />
+              <ShearCasesPanel
+                cases={state.shearCases}
+                selected={shearSelected?.id ?? null}
+                update={(shearCases) => update({ shearCases })}
+                select={setShearSelCase}
+              />
+            </>
+          ) : (
+            <LoadCasesPanel
+              cases={view === 'uls' ? state.cases : state.slsCases}
+              selected={view === 'uls' ? selected?.id ?? null : slsSelected?.id ?? null}
+              update={(cases) => update(view === 'uls' ? { cases } : { slsCases: cases })}
+              select={view === 'uls' ? setSelCase : setSlsSelCase}
+              subtitle={view === 'uls' ? 'factored ULS actions' : 'service (characteristic) SLS actions'}
+            />
+          )}
           {view === 'sls' && (
             <>
               <LoadCasesPanel
@@ -669,7 +976,7 @@ export default function App() {
         <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           {issues.length > 0 && (
             <Banner tone="error">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {issues.map((m, i) => (
                   <li key={i}>{m}</li>
@@ -679,7 +986,7 @@ export default function App() {
           )}
           {coverFitIssues.length > 0 && (
             <Banner tone="warn">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {coverFitIssues.map((issue) => (
                   <li key={issue.axis}>{issue.message} Reduce the face covers, use a smaller bar, or increase the section size.</li>
@@ -738,25 +1045,25 @@ export default function App() {
           <ReinforcementSpacingPanel report={spacing} />
           <CompliancePanel checks={checks} />
 
-          <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+          <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
             <p className="max-w-[92ch]">
               Design aid only — the engineer of record remains responsible for the design, code applicability and
               clause interpretation. Loads must be factored per the load-combination rules of the governing loading
               standard (IS 875/1893, IRC:6 Annex B Table B.2, or IRS Bridge Rules). Second-order / slenderness
               moments are not added by this tool.
             </p>
-            <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+            <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
               Method statement · docs/
             </span>
           </footer>
         </div>
         )}
 
-        {view === 'sls' && (
+        {view === 'shear' && (
           <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
             {issues.length > 0 && (
               <Banner tone="error">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {issues.map((m, i) => (
                     <li key={i}>{m}</li>
@@ -766,7 +1073,88 @@ export default function App() {
             )}
             {coverFitIssues.length > 0 && (
               <Banner tone="warn">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {coverFitIssues.map((issue) => (
+                    <li key={issue.axis}>
+                      {issue.message} Reduce the face covers, use a smaller bar, or increase the section size.
+                    </li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+
+            <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
+              <Card title="Section" subtitle="shared with the ULS and SLS modules">
+                <SectionPreview
+                  geometry={state.geometry}
+                  bars={state.bars}
+                  props={props}
+                  cover={state.cover}
+                  audit={coverAudit}
+                  radialCoverOnly={state.shapeClass === 'circ'}
+                  overlapping={spacing.overlapping}
+                  activeFace={activeFace}
+                  onHoverFace={setActiveFace}
+                  onSelectFace={setActiveFace}
+                />
+              </Card>
+              <ShearSummaryPanel code={state.code} summary={shearSum} />
+            </div>
+
+            <ShearDetailingCard
+              state={state}
+              update={update}
+              geometry={state.geometry}
+              bars={state.bars}
+              section={shearSection}
+              layout={shearLayout}
+              validation={shearValidation}
+              result={shearSelResult ?? shearSum.governing}
+              circular={shearCircular}
+              figureId="fig-shear"
+            />
+
+            <ShearResultsTable
+              code={state.code}
+              results={shearResults}
+              selected={shearSelected?.id ?? null}
+              select={setShearSelCase}
+              section={shearSection}
+            />
+            <ShearStepPanel code={state.code} lc={shearSelected} result={shearSelResult} section={shearSection} />
+
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
+              <p className="max-w-[92ch]">
+                Shear design follows the clauses of the selected code independently of the ULS interaction and SLS
+                stress checks: the concrete shear strength, the design of the links, the minimum and maximum
+                reinforcement limits and the spacing rules are those of <b>{spec.name}</b>. b, d and A
+                <sub>sl</sub> are taken from the section and reinforcement entered on the left; enter them as
+                overrides only when the shear plane differs from the bending plane. The shear load cases are
+                entered separately — they are Vu / Pu pairs, not the ULS P–Mx–My set.
+              </p>
+              <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
+                Shear design · {SHEAR_CODE_INFO[state.code].references[0]?.split(' ')[0] ?? ''}
+              </span>
+            </footer>
+          </div>
+        )}
+
+        {view === 'sls' && (
+          <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
+            {issues.length > 0 && (
+              <Banner tone="error">
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {issues.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
+            {coverFitIssues.length > 0 && (
+              <Banner tone="warn">
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {coverFitIssues.map((issue) => (
                     <li key={issue.axis}>
@@ -827,7 +1215,7 @@ export default function App() {
               result={(crackSelected && crackWidthResults.get(crackSelected.id)) ?? null}
             />
 
-            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">
                 SLS stresses are checked by the working-stress (direct-stress) method of IS 456:2000 Annex C on a
                 cracked transformed section under the service actions of each load case, and crack widths are checked
@@ -835,13 +1223,106 @@ export default function App() {
                 separately from the factored ULS cases and from each other — enter characteristic (unfactored) service
                 moments for a code-consistent SLS check.
               </p>
-              <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                 Serviceability · IS 456 Annex C
               </span>
             </footer>
           </div>
         )}
       </main>
+
+      {/* Copyright line, at the foot of the window: `main` above it is the only
+          scrolling region, so the notice stays visible. The year is the one in
+          the notice itself, not today's date. */}
+      <footer className={`${shell} shrink-0 border-t border-edge py-2 text-center text-[0.6875rem] leading-none text-ink-3`}>
+        © 2025 Arvind Singh Rawat. All Rights Reserved.
+      </footer>
+
+      {/*
+        Figures for the print report that the current tab does not show, kept
+        mounted off-screen so `exportReport` can capture every figure — the
+        section, P–M diagram, capacity contour and shear diagram — from any tab.
+      */}
+      <PrintFigures
+        show={`${view === 'uls' ? '' : 'pm contour '}${view === 'shear' ? '' : 'shear'}`.trim()}
+        surface={surface}
+        cases={state.cases}
+        selected={selected}
+        result={selResult}
+        shearSection={shearSection}
+        shearSettings={shearSettings}
+        shearResult={shearSum.governing}
+        shearGeometry={state.geometry}
+        shearBars={state.bars}
+        shearLayout={shearLayout}
+        shearValidation={shearValidation}
+      />
+
+      {/* The two header dialogs. Each is mounted only while it is open, so a
+          closed panel costs nothing and cannot be reached by the keyboard. */}
+      {panel === 'settings' && (
+        <SettingsPanel settings={settings} onChange={updateSettings} onClose={() => setPanel(null)} />
+      )}
+      {panel === 'about' && <AboutPanel onClose={() => setPanel(null)} />}
+    </div>
+  )
+}
+
+/** Off-screen copies of the report figures the current tab does not render. */
+function PrintFigures({
+  show,
+  surface,
+  cases,
+  selected,
+  result,
+  shearSection,
+  shearSettings,
+  shearResult,
+  shearGeometry,
+  shearBars,
+  shearLayout,
+  shearValidation,
+}: {
+  /** Space-separated figure keys to mount: `pm`, `contour`, `shear`. */
+  show: string
+  surface: InteractionSurface | null
+  cases: AppState['cases']
+  selected: AppState['cases'][number] | null
+  result: CaseResult | null
+  shearSection: ShearSectionData
+  shearSettings: ShearSettings
+  shearResult: ShearCaseResult | null
+  shearGeometry: SectionGeometry
+  shearBars: AppState['bars']
+  shearLayout: LinkLayout
+  shearValidation: LinkValidation
+}) {
+  const keys = new Set(show.split(/\s+/).filter(Boolean))
+  if (keys.size === 0) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed left-[-9999px] top-0 h-px w-px overflow-hidden">
+      {keys.has('pm') && surface && (
+        <div id="print-fig-pm">
+          <PMChart surface={surface} cases={cases} selected={selected} />
+        </div>
+      )}
+      {keys.has('contour') && surface && (
+        <div id="print-fig-contour">
+          <ContourChart surface={surface} result={result} />
+        </div>
+      )}
+      {keys.has('shear') && (
+        <ShearDiagram
+          id="print-fig-shear"
+          geometry={shearGeometry}
+          bars={shearBars}
+          section={shearSection}
+          settings={shearSettings}
+          layout={shearLayout}
+          validation={shearValidation}
+          result={shearResult}
+        />
+      )}
     </div>
   )
 }
