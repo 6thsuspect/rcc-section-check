@@ -151,6 +151,48 @@ tables and result panels expand with it, and the tables scroll inside their card
 page. Every grid track is `minmax(0, …)` and every column is `min-w-0`, so nothing can overflow
 horizontally; `src/components/__tests__/layout.test.tsx` holds all of that.
 
+## Settings and appearance
+
+The header's action row ends in a **gear** (Settings) and an **ⓘ** (About). Both open a panel built
+on the one modal shell (`src/components/Modal.tsx`: backdrop, ✕, Esc, click-outside, focus in and
+back, no page scroll behind), and both are mounted only while they are open.
+
+**Settings** holds the appearance preferences:
+
+| Section | Options |
+| --- | --- |
+| Theme | Dark · Light |
+| Drafting sheet | Paper · Blueprint · Graph · Cream, and the drafting grid on/off |
+| Interface font size | Small (14 px) · Medium (16 px) · Large (18 px) |
+| Accent colour | drafting blue (default) plus blue, green, purple, orange, pink and cyan |
+| Preview | the accent, a sample heading and the sample button style |
+
+- `src/settings.ts` is the whole model — defaults, swatches, size presets, sheet tints, a normaliser
+  that repairs one field at a time, and `applySettings`, which writes `data-theme`, `data-sheet`,
+  `data-grid`, the accent and the root font size onto the document element. `src/useSettings.ts`
+  holds it as state and mirrors it to `localStorage['rcc-section-check-settings']` — the app's only
+  storage key. `main.tsx` applies the stored settings before React renders, so a dark theme never
+  flashes light, and a storage that is missing, blocked or full leaves the app on its defaults.
+- **Dark mode is token overrides**, not a second set of components: Tailwind 4 emits every colour
+  utility as `var(--color-…)`, so `[data-theme='dark']` in `src/index.css` re-lights the panels, the
+  tables and the SVG figures together, restates the `shadow-*` utilities (Tailwind writes those out
+  in full), gives the select chevron a dark rule of its own, and flips `color-scheme` so the native
+  controls and scrollbars follow. The report is a document of its own and always prints on white.
+- **Interface font size is real**: every text size in the app is a `rem` value, and the presets move
+  the root font size (14 / 16 / 18 px) so the whole interface — type, spacing and controls — scales
+  together. Medium (16 px) is the size the app has always had, so nothing moves by default; the
+  figures keep their own user-unit scale.
+- **The accent carries its own shades**: `--color-accent-strong`, `--color-accent-wash` and the
+  button ink are mixed from the one accent colour (and the theme's card), so every swatch is legible
+  in both themes.
+- **About** carries the app mark, the name and tagline, `Version 1.0.0` (the version in
+  `package.json`, pinned by a test), what the app is for, the author card (Arvind Singh Rawat,
+  Bridge & Structural Design Engineer — email and LinkedIn, opened in a new tab with
+  `rel="noopener noreferrer"`), the key features and the © 2025 notice above **Close**.
+
+`src/__tests__/settings.test.ts` and `src/components/__tests__/appPanels.test.tsx` hold the model,
+the storage behaviour, both dialogs and the stylesheet rules they depend on.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest
@@ -192,6 +234,11 @@ src/components/           Editors, section preview, charts, results panels
   CrackWidth.tsx          SLS crack-width inputs, per-case results and calculation panels
   Shear.tsx               Shear inputs, load cases, reinforcement diagram + stirrup editor,
                           results and calculation panels
+  Modal.tsx               Shared dialog shell (Settings, About)
+  SettingsPanel.tsx       Appearance preferences
+  AboutPanel.tsx          Version, author, key features
+src/settings.ts           Appearance settings: defaults, normaliser, apply + storage
+src/useSettings.ts        Those settings as React state, mirrored to localStorage
 src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear modules)
 ```
 
