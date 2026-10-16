@@ -121,7 +121,7 @@ export function ShearInputsPanel({
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Shear direction
           </span>
           <SegGroup>
@@ -140,13 +140,13 @@ export function ShearInputsPanel({
               Along x
             </SegButton>
           </SegGroup>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             The shear plane and the effective depth lie in the {s.axis === 'y' ? 'Mx' : 'My'} bending plane.
           </span>
         </div>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Flexural tension face
           </span>
           <SegGroup>
@@ -161,13 +161,13 @@ export function ShearInputsPanel({
               </SegButton>
             ))}
           </SegGroup>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             Sets the compression fibre, the effective depth d and the tension steel A<sub>sl</sub>.
           </span>
         </div>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Member type
           </span>
           <SegGroup>
@@ -186,13 +186,13 @@ export function ShearInputsPanel({
               Column
             </SegButton>
           </SegGroup>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             Axial compression raises the concrete shear strength under the provisions of the selected code.
           </span>
         </div>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Provided links (stirrups)
           </span>
           {/* ⌀ and the effective leg count share a row: one grid so the two
@@ -238,7 +238,7 @@ export function ShearInputsPanel({
               />
             </div>
           </div>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             A<sub>sv</sub> = {layout.effectiveLegs} × ⌀{fmtN(s.linkDia, 0)} = {fmtN(layout.totalLegArea, 1)} mm² per set of legs ·
             A<sub>sv</sub>/s<sub>v</sub> = {fmtN(layout.asvPerS, 3)} mm²/mm — {layout.intermediate.length} intermediate leg
             {layout.intermediate.length === 1 ? '' : 's'}
@@ -679,13 +679,13 @@ export function ShearSummaryPanel({ code, summary }: { code: DesignCodeId; summa
           >
             <Verdict ok={g.ok} />
             <div className="flex items-baseline gap-2 tnum">
-              <span className={`text-[20px] font-bold ${g.ok ? 'text-ink' : 'text-bad'}`}>{fmtN(g.ratio, 3)}</span>
-              <span className="text-[11.5px] text-ink-3">VEd/VRd at {g.loadCase.name}</span>
-              <span className={`ml-2 text-[13px] font-bold ${g.ok ? 'text-ok' : 'text-bad'}`}>
+              <span className={`text-[1.25rem] font-bold ${g.ok ? 'text-ink' : 'text-bad'}`}>{fmtN(g.ratio, 3)}</span>
+              <span className="text-[0.71875rem] text-ink-3">VEd/VRd at {g.loadCase.name}</span>
+              <span className={`ml-2 text-[0.8125rem] font-bold ${g.ok ? 'text-ok' : 'text-bad'}`}>
                 {fmtN(g.VEd / 1e3, 0)} kN vs {fmtN(g.VRd / 1e3, 0)} kN
               </span>
             </div>
-            <span className="text-[11.5px] text-ink-3">
+            <span className="text-[0.71875rem] text-ink-3">
               concrete {fmtN(g.Vc / 1e3, 0)} kN · links {fmtN(Math.max(g.VRd - g.Vc, 0) / 1e3, 0)} kN
             </span>
           </div>
@@ -1347,7 +1347,7 @@ function MmField({
         onChange={(e) => onChange(parseFloat(e.target.value))}
         aria-label={title}
       />
-      <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+      <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
         mm
       </span>
     </span>
@@ -1542,7 +1542,7 @@ export function ShearDetailingCard({
 
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+            <span className="flex items-center gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
               Link type
               <InfoTooltip
                 content={
@@ -1570,7 +1570,7 @@ export function ShearDetailingCard({
                 </SegButton>
               ))}
             </SegGroup>
-            <span className="text-[9.5px] leading-tight text-ink-3">
+            <span className="text-[0.59375rem] leading-tight text-ink-3">
               Drawn as {layout.ring.shape}
               {layout.ring.auto ? ' (from the section)' : ' (entered)'}; ring inset {fmtN(layout.ring.inset, 0)} mm to
               the ⌀{fmtN(settings.linkDia, 0)} centreline.
@@ -1578,7 +1578,7 @@ export function ShearDetailingCard({
           </div>
 
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+            <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
               Arrangement
             </span>
             <SegGroup>
@@ -1608,7 +1608,7 @@ export function ShearDetailingCard({
                 className="px-1"
               />
             </SegGroup>
-            <span className="text-[9.5px] leading-tight text-ink-3">
+            <span className="text-[0.59375rem] leading-tight text-ink-3">
               {manual
                 ? `${legs.length} entered intermediate leg${legs.length === 1 ? '' : 's'} and ${ties.length} cross-tie${ties.length === 1 ? '' : 's'}. Restoring automatic keeps them until the lists are cleared.`
                 : layout.intermediate.length === 0
@@ -1657,7 +1657,7 @@ export function ShearDetailingCard({
 
           {rows.length > 0 && (
             <div className="flex min-w-0 flex-col gap-1">
-              <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+              <span className="flex items-center gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                 Members on the bar columns
                 <InfoTooltip
                   content={
@@ -1708,7 +1708,7 @@ export function ShearDetailingCard({
                       title={`${label} position — ${r.kind === 'leg' ? 'x' : 'y'} coordinate in mm`}
                     />
                     <span
-                      className="min-w-0 flex-1 truncate text-[9.5px] leading-tight text-ink-3"
+                      className="min-w-0 flex-1 truncate text-[0.59375rem] leading-tight text-ink-3"
                       title={
                         r.member
                           ? `${fmtN(r.member.length, 0)} mm long, ${memberAlignment(r.member).long}${
@@ -1774,7 +1774,7 @@ export function ShearDetailingCard({
 
           {validation.errors.length > 0 && (
             <Banner tone="error">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
                 {validation.errors.length} correction{validation.errors.length === 1 ? '' : 's'} required
               </b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -1786,7 +1786,7 @@ export function ShearDetailingCard({
           )}
           {validation.warnings.length > 0 && (
             <Banner tone="warn">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
                 {validation.warnings.length} item{validation.warnings.length === 1 ? '' : 's'} to verify
               </b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -1827,12 +1827,12 @@ export function ShearDetailingCard({
 function StepRow({ step }: { step: ShearStep }) {
   return (
     <tr className="border-b border-line align-top">
-      <td className={`${tdCls} whitespace-nowrap font-mono text-[11px] text-ink-2`}>{step.clause}</td>
+      <td className={`${tdCls} whitespace-nowrap font-mono text-[0.6875rem] text-ink-2`}>{step.clause}</td>
       <td className={`${tdCls} font-medium`}>
         {step.title}
-        {step.expr && <div className="font-mono text-[10.5px] font-normal leading-snug text-ink-3">{step.expr}</div>}
+        {step.expr && <div className="font-mono text-[0.65625rem] font-normal leading-snug text-ink-3">{step.expr}</div>}
       </td>
-      <td className={`${tdCls} font-mono text-[11.5px]`}>{step.value}</td>
+      <td className={`${tdCls} font-mono text-[0.71875rem]`}>{step.value}</td>
     </tr>
   )
 }
@@ -1863,7 +1863,7 @@ export function ShearStepPanel({
   const info = SHEAR_CODE_INFO[code]
   return (
     <Card title={`Shear calculation — ${lc.name}`} subtitle={CODES[code].name}>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-4">
         <SummaryRow k="Design shear force VEd" v={`${fmtN(result.VEd / 1e3, 1)} kN`} />
         <SummaryRow k="Nominal shear stress τv" v={`${fmtN(result.tauV, 3)} N/mm²`} />
         <SummaryRow k="Concrete strength" v={`${fmtN(result.tauC, 3)} N/mm²`} />
@@ -1906,10 +1906,10 @@ export function ShearStepPanel({
             <tbody>
               {result.checks.map((c, i) => (
                 <tr key={i} className={`border-b border-line align-top ${c.status === 'fail' ? 'bg-bad/6' : ''}`}>
-                  <td className={`${tdCls} whitespace-nowrap font-mono text-[11px] text-ink-2`}>{c.clause}</td>
+                  <td className={`${tdCls} whitespace-nowrap font-mono text-[0.6875rem] text-ink-2`}>{c.clause}</td>
                   <td className={`${tdCls} font-medium`}>
                     {c.title}
-                    {c.note && <div className="mt-0.5 text-[10.5px] font-normal leading-snug text-ink-2">{c.note}</div>}
+                    {c.note && <div className="mt-0.5 text-[0.65625rem] font-normal leading-snug text-ink-2">{c.note}</div>}
                   </td>
                   <td className={`${tdCls} tnum`}>{c.demand}</td>
                   <td className={`${tdCls} tnum text-ink-2`}>{c.limit}</td>
@@ -1946,7 +1946,7 @@ export function ShearStepPanel({
 function SummaryRow({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex min-w-0 flex-col">
-      <span className="font-display text-[9.5px] font-bold uppercase leading-tight tracking-[0.07em] text-ink-3">{k}</span>
+      <span className="font-display text-[0.59375rem] font-bold uppercase leading-tight tracking-[0.07em] text-ink-3">{k}</span>
       <span className="tnum">{v}</span>
     </div>
   )

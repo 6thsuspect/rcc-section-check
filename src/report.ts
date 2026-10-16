@@ -250,6 +250,10 @@ ${notes}`
   /* application mark, on the title line */
   .head { display: flex; align-items: center; gap: 12px; }
   .head .logo { width: 54px; height: 54px; margin: 0; flex: none; }
+  /* The figures are serialised from the app, where a label may be painted with
+     the theme ink. The report is always the light one, so those two tokens are
+     pinned here rather than inherited from the app. */
+  :root { --color-ink: #17222c; --color-card: #ffffff; }
   /* svg theme classes (light palette, matching the app) */
   .fill-concrete{fill:#e9eef3}.fill-paper{fill:#fbfcfd}.fill-capacity{fill:#2a78d6}.fill-demand{fill:#eb6834}
   .fill-ink{fill:#17222c}.fill-ink-2{fill:#485866}.fill-ink-3{fill:#75828e}

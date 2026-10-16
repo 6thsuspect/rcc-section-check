@@ -298,9 +298,9 @@ export function CircularRebarPanel({
               key={k}
               type="button"
               aria-pressed={cfg.kind === k}
-              className={`rounded-field border px-2 py-[5px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
+              className={`rounded-field border px-2 py-[5px] font-display text-[0.6875rem] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
                 cfg.kind === k
-                  ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
                   : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
               }`}
               onClick={() => setKind(k)}
@@ -439,7 +439,7 @@ export function CircularRebarPanel({
               />
               {cfg.kind !== 'bundle' && (
               <label className="flex min-w-0 flex-col gap-[3px]">
-                <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                   Angular spacing (blank = equal)
                 </span>
                 <span className={fieldBoxCls}>
@@ -456,7 +456,7 @@ export function CircularRebarPanel({
                       else patch({ angularSpacingDeg: parseFloat(t) || null })
                     }}
                   />
-                  <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                  <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
                     °
                   </span>
                 </span>
@@ -527,12 +527,12 @@ export function CircularRebarPanel({
                   className="rounded-lg border border-line bg-card p-2 transition-shadow duration-150 ease-ui hover:shadow-card"
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
-                      <span className="grid h-[15px] w-[15px] place-items-center rounded bg-panel text-[9px] text-ink-3">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
+                      <span className="grid h-[15px] w-[15px] place-items-center rounded bg-panel text-[0.5625rem] text-ink-3">
                         {idx + 1}
                       </span>
                       Layer {idx + 1}
-                      <span className="font-mono text-[10px] font-normal normal-case tracking-normal text-ink-3">
+                      <span className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-ink-3">
                         {layer.radius != null
                           ? `r = ${layer.radius.toFixed(0)} mm`
                           : `r ≈ auto (${Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25))).toFixed(0)} mm)`}
@@ -550,12 +550,12 @@ export function CircularRebarPanel({
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                         Radius (mm)
                       </span>
                       <input
                         type="number"
-                        className={`${cellCls} px-2 py-[5px] text-[13px]`}
+                        className={`${cellCls} px-2 py-[5px] text-[0.8125rem]`}
                         value={layer.radius ?? ''}
                         placeholder="auto"
                         step={5}
@@ -589,7 +589,7 @@ export function CircularRebarPanel({
                       onChange={(v) => updateLayer(layer.id, { startAngleDeg: v })}
                     />
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
                         Angular spacing
                       </span>
                       <span className={fieldBoxCls}>
@@ -607,7 +607,7 @@ export function CircularRebarPanel({
                             })
                           }}
                         />
-                        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+                        <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
                           °
                         </span>
                       </span>
@@ -622,7 +622,7 @@ export function CircularRebarPanel({
         {/* Warnings + apply controls */}
         {result.warnings.length > 0 && (
           <Banner tone="warn">
-            <b className="font-display text-[10px] uppercase tracking-[0.07em]">Layout warnings</b>
+            <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Layout warnings</b>
             <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
               {result.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -652,7 +652,7 @@ export function CircularRebarPanel({
                 <span>Apply to table</span>
               </button>
             )}
-            <span className="font-mono text-[11px] text-ink-3 tnum">
+            <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
               {result.bars.length} bar{result.bars.length === 1 ? '' : 's'}
               {lastApplied > 0 && autoApply ? ' · synced' : ''}
             </span>
@@ -679,7 +679,7 @@ function OptionalMmField({
 }) {
   return (
     <label className="flex min-w-0 flex-col gap-[3px]" title={title}>
-      <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
+      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
       <span className={fieldBoxCls}>
         <input
           type="number"
@@ -694,7 +694,7 @@ function OptionalMmField({
             onChange(t === '' || !Number.isFinite(v) || v <= 0 ? null : v)
           }}
         />
-        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+        <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
           mm
         </span>
       </span>

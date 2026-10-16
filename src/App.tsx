@@ -60,6 +60,9 @@ import {
   type ShearSettings,
 } from './engine/shear'
 import { AppLogo } from './components/Logo'
+import { AboutPanel } from './components/AboutPanel'
+import { SettingsPanel } from './components/SettingsPanel'
+import { useSettings } from './useSettings'
 import {
   Banner,
   Card,
@@ -107,7 +110,7 @@ export function HeaderStatus({
           <Fragment key={it.label}>
             {i > 0 && <span className="h-3.5 w-px shrink-0 bg-edge" />}
             <span title={it.title}>
-              <span className="mr-1 font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              <span className="mr-1 font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                 {it.label}
               </span>
               {it.value}
@@ -115,7 +118,7 @@ export function HeaderStatus({
           </Fragment>
         ))}
         <span
-          className={`inline-flex items-center gap-1.5 font-display text-[11px] font-bold uppercase tracking-[0.05em] ${tone}`}
+          className={`inline-flex items-center gap-1.5 font-display text-[0.6875rem] font-bold uppercase tracking-[0.05em] ${tone}`}
         >
           <span className={`grid h-[15px] w-[15px] place-items-center rounded-full ${ok ? 'bg-ok/12' : 'bg-bad/12'}`}>
             <Icon name={ok ? 'check' : 'alert'} size={10} />
@@ -160,6 +163,13 @@ export default function App() {
   /** Set when the report could not be printed, only handed over as a file. */
   const [reportNote, setReportNote] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  /**
+   * Which of the two header dialogs is open, if either. The appearance choices
+   * themselves live in `useSettings`, which keeps them in step with storage and
+   * with the document element; this is only which panel is on screen.
+   */
+  const [panel, setPanel] = useState<'settings' | 'about' | null>(null)
+  const { settings, update: updateSettings } = useSettings()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   /**
@@ -595,17 +605,17 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-[0_1px_2px_rgb(23_34_44/0.04)] backdrop-blur-md">
+      <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-header backdrop-blur-md">
         <div className={`${shell} flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5`}>
           <div className="flex min-w-0 items-center gap-2.5">
             {/* Application mark — the same artwork as the browser icon
                 (public/favicon.svg) and the printed report header. */}
             <AppLogo className="h-[30px] w-[30px]" />
             <div className="min-w-0">
-              <h1 className="truncate font-display text-[16.5px] font-bold leading-none tracking-[-0.01em] text-ink">
+              <h1 className="truncate font-display text-[1.03125rem] font-bold leading-none tracking-[-0.01em] text-ink">
                 RCC Section Check
               </h1>
-              <p className="mt-[5px] truncate text-[11px] leading-none text-ink-3">
+              <p className="mt-[5px] truncate text-[0.6875rem] leading-none text-ink-3">
                 Biaxial P–Mx–My interaction · <span className="text-ink-2">{spec.name}</span>
                 <span className="mx-1 text-edge-strong">|</span>
                 {spec.edition}
@@ -747,6 +757,31 @@ export default function App() {
                 <Icon name="report" size={13} />
                 <span className="hidden sm:inline">PDF report</span>
               </button>
+
+              {/* Appearance and about: icon-only, at the end of the row, as
+                  the reference app has them. The header already carries the
+                  three tabs and the three file buttons; a tooltip and an
+                  accessible name are enough for controls opened this rarely. */}
+              <button
+                type="button"
+                onClick={() => setPanel('settings')}
+                className={headerBtnCls}
+                aria-label="Settings"
+                aria-expanded={panel === 'settings'}
+                title="Settings — theme, drafting sheet, accent colour and interface size"
+              >
+                <Icon name="gear" size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanel('about')}
+                className={headerBtnCls}
+                aria-label="About"
+                aria-expanded={panel === 'about'}
+                title="About RCC Section Check — version, author and features"
+              >
+                <Icon name="info" size={13} />
+              </button>
             </div>
 
           </div>
@@ -859,7 +894,7 @@ export default function App() {
         <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
           {issues.length > 0 && (
             <Banner tone="error">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {issues.map((m, i) => (
                   <li key={i}>{m}</li>
@@ -869,7 +904,7 @@ export default function App() {
           )}
           {coverFitIssues.length > 0 && (
             <Banner tone="warn">
-              <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {coverFitIssues.map((issue) => (
                   <li key={issue.axis}>{issue.message} Reduce the face covers, use a smaller bar, or increase the section size.</li>
@@ -928,14 +963,14 @@ export default function App() {
           <ReinforcementSpacingPanel report={spacing} />
           <CompliancePanel checks={checks} />
 
-          <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+          <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
             <p className="max-w-[92ch]">
               Design aid only — the engineer of record remains responsible for the design, code applicability and
               clause interpretation. Loads must be factored per the load-combination rules of the governing loading
               standard (IS 875/1893, IRC:6 Annex B Table B.2, or IRS Bridge Rules). Second-order / slenderness
               moments are not added by this tool.
             </p>
-            <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+            <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
               Method statement · docs/
             </span>
           </footer>
@@ -946,7 +981,7 @@ export default function App() {
           <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
             {issues.length > 0 && (
               <Banner tone="error">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {issues.map((m, i) => (
                     <li key={i}>{m}</li>
@@ -956,7 +991,7 @@ export default function App() {
             )}
             {coverFitIssues.length > 0 && (
               <Banner tone="warn">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {coverFitIssues.map((issue) => (
                     <li key={issue.axis}>
@@ -1007,7 +1042,7 @@ export default function App() {
             />
             <ShearStepPanel code={state.code} lc={shearSelected} result={shearSelResult} section={shearSection} />
 
-            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">
                 Shear design follows the clauses of the selected code independently of the ULS interaction and SLS
                 stress checks: the concrete shear strength, the design of the links, the minimum and maximum
@@ -1016,7 +1051,7 @@ export default function App() {
                 overrides only when the shear plane differs from the bending plane. The shear load cases are
                 entered separately — they are Vu / Pu pairs, not the ULS P–Mx–My set.
               </p>
-              <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                 Shear design · {SHEAR_CODE_INFO[state.code].references[0]?.split(' ')[0] ?? ''}
               </span>
             </footer>
@@ -1027,7 +1062,7 @@ export default function App() {
           <div className="flex min-w-0 flex-col gap-3.5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1.5 lg:pb-4">
             {issues.length > 0 && (
               <Banner tone="error">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Input errors</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Input errors</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {issues.map((m, i) => (
                     <li key={i}>{m}</li>
@@ -1037,7 +1072,7 @@ export default function App() {
             )}
             {coverFitIssues.length > 0 && (
               <Banner tone="warn">
-                <b className="font-display text-[10px] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Reinforcement fit warning</b>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   {coverFitIssues.map((issue) => (
                     <li key={issue.axis}>
@@ -1098,7 +1133,7 @@ export default function App() {
               result={(crackSelected && crackWidthResults.get(crackSelected.id)) ?? null}
             />
 
-            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[11px] leading-relaxed text-ink-2 shadow-card">
+            <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-card border border-edge bg-card/70 px-3 py-2.5 text-[0.6875rem] leading-relaxed text-ink-2 shadow-card">
               <p className="max-w-[92ch]">
                 SLS stresses are checked by the working-stress (direct-stress) method of IS 456:2000 Annex C on a
                 cracked transformed section under the service actions of each load case, and crack widths are checked
@@ -1106,7 +1141,7 @@ export default function App() {
                 separately from the factored ULS cases and from each other — enter characteristic (unfactored) service
                 moments for a code-consistent SLS check.
               </p>
-              <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+              <span className="shrink-0 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                 Serviceability · IS 456 Annex C
               </span>
             </footer>
@@ -1117,7 +1152,7 @@ export default function App() {
       {/* Copyright line, at the foot of the window: `main` above it is the only
           scrolling region, so the notice stays visible. The year is the one in
           the notice itself, not today's date. */}
-      <footer className={`${shell} shrink-0 border-t border-edge py-2 text-center text-[11px] leading-none text-ink-3`}>
+      <footer className={`${shell} shrink-0 border-t border-edge py-2 text-center text-[0.6875rem] leading-none text-ink-3`}>
         © 2025 Arvind Singh Rawat. All Rights Reserved.
       </footer>
 
@@ -1140,6 +1175,13 @@ export default function App() {
         shearLayout={shearLayout}
         shearValidation={shearValidation}
       />
+
+      {/* The two header dialogs. Each is mounted only while it is open, so a
+          closed panel costs nothing and cannot be reached by the keyboard. */}
+      {panel === 'settings' && (
+        <SettingsPanel settings={settings} onChange={updateSettings} onClose={() => setPanel(null)} />
+      )}
+      {panel === 'about' && <AboutPanel onClose={() => setPanel(null)} />}
     </div>
   )
 }

@@ -43,7 +43,7 @@ export function CrackWidthInputsPanel({
     <Card title="Crack width check — inputs" subtitle={clauseFor(code)}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Exposure class
           </span>
           <select
@@ -58,13 +58,13 @@ export function CrackWidthInputsPanel({
               </option>
             ))}
           </select>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             Sets the permissible crack width for the selected code.
           </span>
         </label>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Load duration
           </span>
           <SegGroup>
@@ -75,7 +75,7 @@ export function CrackWidthInputsPanel({
               Long-term
             </SegButton>
           </SegGroup>
-          <span className="text-[9.5px] leading-tight text-ink-3">
+          <span className="text-[0.59375rem] leading-tight text-ink-3">
             {code === 'IRC112'
               ? 'Sets the load-duration factor k_t in ε_sm − ε_cm.'
               : 'Recorded for reference; the Annex F strain is taken at the service stress.'}
@@ -126,7 +126,7 @@ export function CrackWidthResultsTable({
       subtitle="service actions · crack width in mm"
       action={
         list.length > 0 ? (
-          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-[2px] font-display text-[10px] font-bold uppercase tracking-[0.05em] ${anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'}`}>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-[2px] font-display text-[0.625rem] font-bold uppercase tracking-[0.05em] ${anyFail ? 'border-bad/35 bg-bad/8 text-bad' : 'border-ok/35 bg-ok/8 text-ok'}`}>
             {anyFail ? 'crack width fails' : 'crack width ok'}
           </span>
         ) : undefined
@@ -229,7 +229,7 @@ export function CrackWidthDetailPanel({
   const irc = code === 'IRC112'
   return (
     <Card title={`Crack width calculation — ${lc.name}`} subtitle={result.clause}>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-3">
         <Row k="Tension steel stress σs" v={`${fmtN(result.sigmaS, 1)} N/mm²`} note="cracked transformed section" />
         <Row k="Neutral-axis depth x" v={`${fmtN(d.x, 1)} mm`} note="from extreme compression fibre" />
         <Row k="Effective depth d" v={`${fmtN(d.d, 1)} mm`} note="compression fibre → tension bar" />
@@ -242,18 +242,18 @@ export function CrackWidthDetailPanel({
       </div>
 
       <div className="mt-3 rounded-lg border border-line bg-panel/55 p-2.5">
-        <div className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+        <div className="font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
           {irc ? 'Eurocode w_k = s_r,max · (ε_sm − ε_cm)' : 'Annex F surface crack width'}
         </div>
         {irc ? (
-          <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-1 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-2">
+          <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-1 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-2">
             <Row k="A_c,eff" v={`${fmtN(d.AcEff ?? 0, 0)} mm²`} note="b·min[2.5(h−d), (h−x)/3, h/2]" />
             <Row k="ρ_p,eff" v={fmtN(d.rhoPeff ?? 0, 4)} note="A_s / A_c,eff" />
             <Row k="s_r,max" v={`${fmtN(d.srmax ?? 0, 1)} mm`} note="3.4c + 0.425·k₁·k₂·φ/ρ_p,eff" />
             <Row k="ε_sm − ε_cm" v={(d.epsSmCm ?? 0).toExponential(3)} note={`k_t = ${fmtN(d.kt ?? 0, 1)}, ≥ 0.6σs/Es`} />
           </div>
         ) : (
-          <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-1 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-2">
+          <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-1 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-2">
             <Row k="ε_1 = σs/E_s" v={(result.sigmaS / 200000).toExponential(3)} note="bar strain, cracked section" />
             <Row k="ε_m" v={(d.epsM ?? 0).toExponential(3)} note="with tension stiffening" />
             <Row k="a_cr = c_min = c" v={`${fmtN(d.c, 1)} mm`} note="surface crack over the bar" />
@@ -264,13 +264,13 @@ export function CrackWidthDetailPanel({
       <div className={`mt-3 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5 ${result.ok ? 'border-ok/30 bg-ok/8' : 'border-bad/30 bg-bad/8'}`}>
         <Verdict ok={result.ok} />
         <div className="flex items-baseline gap-2 tnum">
-          <span className={`text-[20px] font-bold ${result.ok ? 'text-ink' : 'text-bad'}`}>{fmtN(result.w, 3)} mm</span>
-          <span className="text-[11.5px] text-ink-3">≤ {fmtN(result.wmax, 2)} mm</span>
-          <span className={`ml-2 text-[13px] font-bold ${result.ok ? 'text-ok' : 'text-bad'}`}>
+          <span className={`text-[1.25rem] font-bold ${result.ok ? 'text-ink' : 'text-bad'}`}>{fmtN(result.w, 3)} mm</span>
+          <span className="text-[0.71875rem] text-ink-3">≤ {fmtN(result.wmax, 2)} mm</span>
+          <span className={`ml-2 text-[0.8125rem] font-bold ${result.ok ? 'text-ok' : 'text-bad'}`}>
             {Number.isFinite(result.ratio) ? `${fmtN(result.ratio * 100, 1)}%` : '—'}
           </span>
         </div>
-        {result.uncracked && <span className="text-[11px] text-ink-3">section uncracked under this service action</span>}
+        {result.uncracked && <span className="text-[0.6875rem] text-ink-3">section uncracked under this service action</span>}
       </div>
 
       <p className={`${noteCls} mt-2.5`}>
@@ -287,10 +287,10 @@ export function CrackWidthDetailPanel({
 function Row({ k, v, note }: { k: string; v: string; note?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
+      <dt className="font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
       <dd className="font-semibold text-ink">
         {v}
-        {note && <span className="ml-1 font-normal text-[10.5px] text-ink-3">{note}</span>}
+        {note && <span className="ml-1 font-normal text-[0.65625rem] text-ink-3">{note}</span>}
       </dd>
     </div>
   )

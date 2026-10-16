@@ -18,13 +18,13 @@ import {
 
 /** Compact input used inside data tables. */
 export const cellCls =
-  'cell-num w-full min-w-0 rounded-field border border-edge bg-card px-1.5 py-[3px] text-[12.5px] tnum text-ink ' +
+  'cell-num w-full min-w-0 rounded-field border border-edge bg-card px-1.5 py-[3px] text-[0.78125rem] tnum text-ink ' +
   'transition-[border-color,background-color,box-shadow] duration-150 ease-ui hover:border-edge-strong ' +
   'focus:border-accent focus:ring-[3px] focus:ring-accent/12'
 
 /** Standard numeric/text field. */
 export const fieldCls =
-  'w-full min-w-0 border-0 bg-transparent px-2 py-[5px] text-[13px] tnum text-ink ' +
+  'w-full min-w-0 border-0 bg-transparent px-2 py-[5px] text-[0.8125rem] tnum text-ink ' +
   'transition-[background-color] duration-150 ease-ui focus:outline-none'
 
 /** Wrapper that carries the border + focus ring for `fieldCls` inputs. */
@@ -35,18 +35,18 @@ export const fieldBoxCls =
 
 /** Dropdown — `sel` supplies the chevron (see index.css). */
 export const selectCls =
-  'sel w-full min-w-0 rounded-field border border-edge bg-card px-2 py-[5px] text-[13px] text-ink ' +
+  'sel w-full min-w-0 rounded-field border border-edge bg-card px-2 py-[5px] text-[0.8125rem] text-ink ' +
   'transition-[border-color,box-shadow] duration-150 ease-ui hover:border-edge-strong focus:border-accent'
 
 /** Inline dropdown that sizes to its content, for toolbars and row labels. */
 export const selectInlineCls =
-  'sel h-[26px] max-w-full shrink-0 rounded-field border border-edge bg-card pl-2 pr-6 text-[11.5px] text-ink ' +
+  'sel h-[26px] max-w-full shrink-0 rounded-field border border-edge bg-card pl-2 pr-6 text-[0.71875rem] text-ink ' +
   'transition-[border-color,box-shadow] duration-150 ease-ui hover:border-edge-strong focus:border-accent'
 
 /** Secondary action: outlined, quiet. */
 export const btnCls =
   'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-field border border-edge bg-card ' +
-  'px-2.5 py-[5px] font-display text-[11px] font-semibold uppercase tracking-[0.06em] leading-none text-ink-2 no-underline ' +
+  'px-2.5 py-[5px] font-display text-[0.6875rem] font-semibold uppercase tracking-[0.06em] leading-none text-ink-2 no-underline ' +
   'transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-ui ' +
   'hover:border-edge-strong hover:bg-panel hover:text-ink active:translate-y-[0.5px] ' +
   'disabled:pointer-events-none disabled:opacity-45'
@@ -54,9 +54,9 @@ export const btnCls =
 /** Primary action: one per view, filled. */
 export const btnPrimaryCls =
   'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-field border border-accent-strong ' +
-  'bg-accent px-3 py-[6px] font-display text-[11px] font-semibold uppercase tracking-[0.06em] leading-none text-white ' +
-  'shadow-[0_1px_2px_rgb(23_34_44/0.16)] transition-[background-color,box-shadow,transform] duration-150 ease-ui ' +
-  'hover:bg-accent-strong hover:shadow-[0_2px_6px_-1px_rgb(28_92_171/0.45)] active:translate-y-[0.5px] ' +
+  'bg-accent px-3 py-[6px] font-display text-[0.6875rem] font-semibold uppercase tracking-[0.06em] leading-none text-accent-ink ' +
+  'shadow-btn transition-[background-color,box-shadow,transform] duration-150 ease-ui ' +
+  'hover:bg-accent-strong hover:shadow-btn-hover active:translate-y-[0.5px] ' +
   'disabled:pointer-events-none disabled:opacity-45'
 
 /**
@@ -69,39 +69,39 @@ export const btnPrimaryCls =
  * tap delay removed. The panels keep `btnCls` / `btnPrimaryCls` as they are.
  */
 export const headerBtnCls =
-  `${btnCls} max-[600px]:gap-1 max-[600px]:px-2 max-[600px]:py-1 max-[600px]:text-[10.5px] ` +
+  `${btnCls} max-[600px]:gap-1 max-[600px]:px-2 max-[600px]:py-1 max-[600px]:text-[0.65625rem] ` +
   'touch-manipulation active:scale-[0.97] active:bg-panel'
 
 export const headerBtnPrimaryCls =
-  `${btnPrimaryCls} max-[600px]:gap-1 max-[600px]:px-2.5 max-[600px]:py-[5px] max-[600px]:text-[10.5px] ` +
+  `${btnPrimaryCls} max-[600px]:gap-1 max-[600px]:px-2.5 max-[600px]:py-[5px] max-[600px]:text-[0.65625rem] ` +
   'touch-manipulation active:scale-[0.97] active:bg-accent-strong'
 
 /** Destructive action: delete, clear, locked state. */
 export const btnDangerCls =
   'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-field border border-bad/30 bg-bad/8 ' +
-  'px-2.5 py-[5px] font-display text-[11px] font-semibold uppercase tracking-[0.06em] leading-none text-bad ' +
+  'px-2.5 py-[5px] font-display text-[0.6875rem] font-semibold uppercase tracking-[0.06em] leading-none text-bad ' +
   'transition-[background-color,border-color,color,transform] duration-150 ease-ui ' +
   'hover:border-bad/55 hover:bg-bad/15 active:translate-y-[0.5px] disabled:pointer-events-none disabled:opacity-45'
 
 /** Remove-row control inside a table cell. */
 export const rowDelCls =
-  'grid h-[21px] w-[21px] place-items-center rounded text-[13px] leading-none text-ink-3 ' +
+  'grid h-[21px] w-[21px] place-items-center rounded text-[0.8125rem] leading-none text-ink-3 ' +
   'transition-[background-color,color] duration-150 ease-ui hover:bg-bad/12 hover:text-bad ' +
   'disabled:pointer-events-none disabled:opacity-40'
 
-export const tblCls = 'w-full border-collapse text-[12.5px] tnum'
+export const tblCls = 'w-full border-collapse text-[0.78125rem] tnum'
 export const thCls =
-  'px-2 py-[6px] text-[10px] font-display font-bold uppercase tracking-[0.07em] text-ink-2 align-bottom'
+  'px-2 py-[6px] text-[0.625rem] font-display font-bold uppercase tracking-[0.07em] text-ink-2 align-bottom'
 export const tdCls = 'px-2 py-[5px] align-top'
 
 /** Inline mini action embedded in a hint strip ("make equal", "clear overrides"). */
 export const btnMiniCls =
-  'inline-flex items-center gap-1 rounded border border-edge bg-card px-1.5 py-px font-display text-[9.5px] ' +
+  'inline-flex items-center gap-1 rounded border border-edge bg-card px-1.5 py-px font-display text-[0.59375rem] ' +
   'font-bold uppercase leading-[1.6] tracking-[0.06em] text-ink-2 transition-colors duration-150 ease-ui ' +
   'hover:border-accent/50 hover:bg-accent-wash hover:text-accent-strong'
 
 /** Keyboard-shortcut chip. */
-export const codeChipCls = 'rounded border border-edge bg-panel px-1 py-px font-mono text-[10px] text-ink-2'
+export const codeChipCls = 'rounded border border-edge bg-panel px-1 py-px font-mono text-[0.625rem] text-ink-2'
 
 /** Grouped micro-controls (font stepper, colour swatches). */
 export const chipGroupCls = 'inline-flex items-center gap-1 rounded border border-edge bg-card px-1 py-[3px]'
@@ -111,14 +111,14 @@ export const readoutCls = 'rounded-field border border-line bg-panel/70 px-2 py-
 
 /** Checkbox / radio row. */
 export const checkCls =
-  'inline-flex cursor-pointer select-none items-center gap-1.5 font-display text-[10.5px] font-semibold ' +
+  'inline-flex cursor-pointer select-none items-center gap-1.5 font-display text-[0.65625rem] font-semibold ' +
   'uppercase tracking-[0.06em] text-ink-2 transition-colors duration-150 hover:text-ink'
 
 /** Muted supporting sentence under a control group. */
-export const noteCls = 'text-[11px] leading-relaxed text-ink-2'
+export const noteCls = 'text-[0.6875rem] leading-relaxed text-ink-2'
 
 /** Tighter variant for hints squeezed under a field or a readout. */
-export const noteSmCls = 'text-[10.5px] leading-snug text-ink-3'
+export const noteSmCls = 'text-[0.65625rem] leading-snug text-ink-3'
 
 export const STANDARD_BAR_DIAMETERS = [8, 10, 12, 16, 20, 25, 28, 32, 36, 40]
 
@@ -148,6 +148,21 @@ const ICONS = {
   cursor: ['m4 4 7 16 2.2-6.8L20 11Z'],
   shield: ['M12 21s7-3.4 7-9V5.5L12 3 5 5.5v6.5c0 5.6 7 9 7 9Z', 'm9 12 2 2 4-4'],
   bars: ['M6 4v16', 'M18 4v16', 'M6 8h12', 'M6 16h12'],
+  // Settings: a ring with six evenly spaced teeth and a hub — reads as a gear
+  // at 13 px without turning into a smudge
+  gear: [
+    'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',
+    'M15.2 12a3.2 3.2 0 1 1-6.4 0 3.2 3.2 0 0 1 6.4 0Z',
+    'M20 12h2.5',
+    'M16 5.07 17.25 2.91',
+    'M16 18.93 17.25 21.09',
+    'M4 12H1.5',
+    'M8 18.93 6.75 21.09',
+    'M8 5.07 6.75 2.91',
+  ],
+  mail: ['M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z', 'm3.5 6.5 8.5 6 8.5-6'],
+  sun: ['M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0Z', 'M12 2v2', 'M12 20v2', 'M4.9 4.9l1.4 1.4', 'M17.7 17.7l1.4 1.4', 'M2 12h2', 'M20 12h2', 'M4.9 19.1l1.4-1.4', 'M17.7 6.3l1.4-1.4'],
+  moon: ['M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7Z'],
   link: ['M9 15 15 9', 'M10.5 6.5 12 5a4.2 4.2 0 0 1 6 6l-1.5 1.5', 'M13.5 17.5 12 19a4.2 4.2 0 0 1-6-6l1.5-1.5'],
 }
 
@@ -193,7 +208,7 @@ export function Card({
   return (
     <section className="rounded-card border border-edge bg-card shadow-card">
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-t-card border-b border-edge bg-panel/80 px-3 py-[7px]">
-        <h2 className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-display text-[11.5px] font-bold uppercase tracking-[0.07em] text-ink">
+        <h2 className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-display text-[0.71875rem] font-bold uppercase tracking-[0.07em] text-ink">
           <span className="flex items-center gap-1.5">{title}</span>
           {subtitle && <span className={`${noteSmCls} font-body font-normal normal-case tracking-normal`}>{subtitle}</span>}
         </h2>
@@ -224,7 +239,7 @@ export function SubCard({
     >
       {(title || action) && (
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+          <span className="flex items-center gap-1.5 font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
             {title}
           </span>
           {action}
@@ -249,8 +264,8 @@ export function Readout({
 }) {
   return (
     <div className={readoutCls} title={title}>
-      <div className="font-display text-[9.5px] font-bold uppercase leading-tight tracking-[0.07em] text-ink-3">{label}</div>
-      <div className={`tnum text-[12.5px] leading-tight text-ink ${className}`}>{value}</div>
+      <div className="font-display text-[0.59375rem] font-bold uppercase leading-tight tracking-[0.07em] text-ink-3">{label}</div>
+      <div className={`tnum text-[0.78125rem] leading-tight text-ink ${className}`}>{value}</div>
     </div>
   )
 }
@@ -262,12 +277,12 @@ export function InfoTooltip({ content }: { content: ReactNode }) {
     <span className="group relative inline-flex items-center align-middle">
       <button
         type="button"
-        className="grid h-[15px] w-[15px] place-items-center rounded-full border border-edge-strong bg-card font-serif text-[10px] font-bold italic leading-none text-ink-3 transition-colors duration-150 ease-ui hover:border-accent hover:bg-accent-wash hover:text-accent-strong"
+        className="grid h-[15px] w-[15px] place-items-center rounded-full border border-edge-strong bg-card font-serif text-[0.625rem] font-bold italic leading-none text-ink-3 transition-colors duration-150 ease-ui hover:border-accent hover:bg-accent-wash hover:text-accent-strong"
         aria-label="Information"
       >
         i
       </button>
-      <span className="invisible absolute left-1/2 top-full z-50 mt-1.5 w-[19rem] max-w-[86vw] -translate-x-1/2 translate-y-[-3px] rounded-lg border border-edge-strong bg-card p-2.5 text-left font-body text-[11.5px] font-normal normal-case leading-relaxed tracking-normal text-ink-2 opacity-0 shadow-pop transition-[opacity,transform,visibility] duration-150 ease-ui group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
+      <span className="invisible absolute left-1/2 top-full z-50 mt-1.5 w-[19rem] max-w-[86vw] -translate-x-1/2 translate-y-[-3px] rounded-lg border border-edge-strong bg-card p-2.5 text-left font-body text-[0.71875rem] font-normal normal-case leading-relaxed tracking-normal text-ink-2 opacity-0 shadow-pop transition-[opacity,transform,visibility] duration-150 ease-ui group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
         <span className="absolute -top-[5px] left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-l border-t border-edge-strong bg-card" />
         <span className="relative block">{content}</span>
       </span>
@@ -289,7 +304,7 @@ export function InfoTooltip({ content }: { content: ReactNode }) {
 /** Wide status readout: appears once the action area can hold it beside the buttons. */
 export const statusReadoutCls =
   'mr-1 hidden flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden rounded-lg border border-line ' +
-  'bg-panel/70 px-3 py-[5px] text-[11.5px] text-ink-2 tnum @min-[860px]:flex'
+  'bg-panel/70 px-3 py-[5px] text-[0.71875rem] text-ink-2 tnum @min-[860px]:flex'
 
 /**
  * The same verdict as a compact pill: shown when the action area is too narrow
@@ -297,7 +312,7 @@ export const statusReadoutCls =
  * — the buttons are never squeezed and never wrap among themselves.
  */
 export const statusPillCls =
-  'mr-0.5 hidden shrink-0 items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[10px] ' +
+  'mr-0.5 hidden shrink-0 items-center gap-1 rounded-full border px-2 py-[3px] font-display text-[0.625rem] ' +
   'font-bold uppercase tracking-[0.05em] @min-[560px]:inline-flex @min-[860px]:hidden'
 
 /* --------------------------------- fields -------------------------------- */
@@ -465,9 +480,9 @@ export function NumField({
       className={`flex min-w-0 flex-col gap-[3px] ${w ?? ''} ${disabled ? 'opacity-55' : ''}`}
       title={title ? (wheel && !disabled ? `${title} ${wheelHint(stepSize, unit)}` : title) : title}
     >
-      <span className="flex items-center gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className="flex items-center gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
         {label}
-        {disabled && <span className="font-body text-[9px] font-normal normal-case tracking-normal text-ink-3">locked</span>}
+        {disabled && <span className="font-body text-[0.5625rem] font-normal normal-case tracking-normal text-ink-3">locked</span>}
       </span>
       <span className={`${fieldBoxCls} ${disabled ? 'bg-panel' : ''}`}>
         <input
@@ -482,12 +497,12 @@ export function NumField({
           onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
         />
         {unit && (
-          <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+          <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
             {unit}
           </span>
         )}
       </span>
-      {hint && <span className="text-[9.5px] leading-tight text-ink-3">{hint}</span>}
+      {hint && <span className="text-[0.59375rem] leading-tight text-ink-3">{hint}</span>}
     </label>
   )
 }
@@ -545,14 +560,14 @@ export function DiameterField({
 
   return (
     <label className={`flex min-w-0 flex-col gap-[3px] ${disabled ? 'opacity-55' : ''}`}>
-      <span className="flex items-center justify-between gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className="flex items-center justify-between gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
         <span>{label}</span>
         <button
           type="button"
           aria-pressed={customized}
           disabled={disabled}
           onClick={toggleCustomization}
-          className={`rounded border px-1.5 py-[1px] font-display text-[9px] font-bold uppercase tracking-[0.05em] leading-[1.5] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
+          className={`rounded border px-1.5 py-[1px] font-display text-[0.5625rem] font-bold uppercase tracking-[0.05em] leading-[1.5] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
             customized
               ? 'border-accent/45 bg-accent-wash text-accent-strong hover:bg-accent/15'
               : 'border-edge bg-card text-ink-3 hover:border-edge-strong hover:text-ink'
@@ -574,7 +589,7 @@ export function DiameterField({
             aria-label={`${label} (custom)`}
             onChange={(e) => setCustomValue(e.target.value)}
           />
-          <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+          <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
             mm
           </span>
         </span>
@@ -609,7 +624,7 @@ const CHIP_TONE = {
 export function Chip({ status }: { status: keyof typeof CHIP_TONE }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-[1px] font-display text-[9.5px] font-bold uppercase leading-[1.5] tracking-[0.07em] ${CHIP_TONE[status]}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-[1px] font-display text-[0.59375rem] font-bold uppercase leading-[1.5] tracking-[0.07em] ${CHIP_TONE[status]}`}
     >
       {status}
     </span>
@@ -637,7 +652,7 @@ export function Banner({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-[11.5px] leading-relaxed ${map.cls} ${className}`}
+      className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-[0.71875rem] leading-relaxed ${map.cls} ${className}`}
     >
       <Icon name={map.icon} size={14} className="mt-[1px]" />
       <div className="min-w-0 flex-1">{children}</div>
@@ -646,7 +661,7 @@ export function Banner({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="grid h-5 w-5 shrink-0 place-items-center rounded opacity-70 transition-opacity duration-150 hover:bg-black/5 hover:opacity-100"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded opacity-70 transition-opacity duration-150 hover:bg-ink/5 hover:opacity-100"
         >
           <Icon name="close" size={12} />
         </button>
@@ -674,8 +689,8 @@ export function EmptyState({
       }`}
     >
       <Icon name={icon} size={17} className={tone === 'alert' ? 'text-bad' : 'text-ink-3'} />
-      <p className="max-w-[46ch] text-[12px] leading-snug">{title}</p>
-      {note && <p className="max-w-[52ch] text-[10.5px] leading-snug text-ink-3">{note}</p>}
+      <p className="max-w-[46ch] text-[0.75rem] leading-snug">{title}</p>
+      {note && <p className="max-w-[52ch] text-[0.65625rem] leading-snug text-ink-3">{note}</p>}
     </div>
   )
 }
@@ -778,9 +793,9 @@ export function SegButton({
       disabled={disabled}
       title={title}
       onClick={onClick}
-      className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-field border px-2 py-[6px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
+      className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-field border px-2 py-[6px] font-display text-[0.6875rem] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
         active
-          ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+          ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
           : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
       } ${className}`}
     >

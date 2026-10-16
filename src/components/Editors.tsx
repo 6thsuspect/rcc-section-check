@@ -63,12 +63,12 @@ export function CodeMaterialsPanel({
           </SegButton>
         ))}
       </SegGroup>
-      <p className="mb-3 text-[11px] leading-snug text-ink-2">
+      <p className="mb-3 text-[0.6875rem] leading-snug text-ink-2">
         {spec.name} — {spec.edition}
       </p>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Concrete grade
           </span>
           <select
@@ -85,7 +85,7 @@ export function CodeMaterialsPanel({
           </select>
         </label>
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
             Steel grade (IS 1786)
           </span>
           <select
@@ -198,9 +198,9 @@ export function SectionPanel({
               key={k}
               disabled={frozen}
               aria-pressed={shape.kind === k}
-              className={`rounded-field border px-2 py-[5px] font-display text-[11px] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
+              className={`rounded-field border px-2 py-[5px] font-display text-[0.6875rem] font-semibold leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui disabled:pointer-events-none disabled:opacity-45 ${
                 shape.kind === k
-                  ? 'border-accent bg-accent-wash text-accent-strong shadow-[inset_0_-2px_0_rgb(37_106_191/0.35)]'
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
                   : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
               }`}
               onClick={() => {
@@ -234,10 +234,10 @@ export function SectionPanel({
         />
 
         <div className="mb-1.5 mt-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t border-line pt-2.5">
-          <span className="flex items-center gap-1.5 font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-2">
+          <span className="flex items-center gap-1.5 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
             <Icon name="ruler" size={12} className="text-ink-3" />
             <span>Boundary coordinates (mm)</span>
-            <span className="font-body text-[10px] font-normal normal-case tracking-normal text-ink-3">
+            <span className="font-body text-[0.625rem] font-normal normal-case tracking-normal text-ink-3">
               {state.predefined ? 'generated, editable' : 'custom'}
             </span>
             {frozen && <span className="font-semibold lowercase text-bad">(frozen)</span>}
@@ -271,7 +271,7 @@ export function SectionPanel({
             <tbody>
               {poly.map((p, i) => (
                 <tr key={i} className="border-t border-line transition-colors duration-150 hover:bg-panel/60">
-                  <td className={`${tdCls} font-mono text-[11px] text-ink-3`}>{i + 1}</td>
+                  <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                   <td className={tdCls}>
                     <input
                       className={cellCls}
@@ -311,7 +311,7 @@ export function SectionPanel({
             <span>Vertex</span>
           </button>
           {frozen && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-bad">
+            <span className="inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-bad">
               <Icon name="lock" size={11} />
               Section geometry is locked
             </span>
@@ -383,7 +383,7 @@ function ShapeParams({
       {shape.kind === 'circle' && (
         <>
           {f('Diameter D', 'D')}
-          <p className="col-span-2 flex items-start gap-1.5 self-end pb-1 text-[10.5px] leading-snug text-ink-2">
+          <p className="col-span-2 flex items-start gap-1.5 self-end pb-1 text-[0.65625rem] leading-snug text-ink-2">
             <Icon name="info" size={12} className="mt-px shrink-0 text-ink-3" />
             <span>Reinforcement layout is configured in the <b className="font-semibold text-ink">Circular reinforcement</b> panel below.</span>
           </p>
@@ -461,7 +461,7 @@ function ShapeParams({
         <>
           {f('Outer Do', 'Do')}
           {f('Inner Di', 'Di')}
-          <p className="col-span-1 flex items-start gap-1.5 self-end pb-1 text-[10.5px] leading-snug text-ink-2">
+          <p className="col-span-1 flex items-start gap-1.5 self-end pb-1 text-[0.65625rem] leading-snug text-ink-2">
             <Icon name="info" size={12} className="mt-px shrink-0 text-ink-3" />
             <span>Use the <b className="font-semibold text-ink">Circular reinforcement</b> panel — choose <b className="font-semibold text-ink">Layered</b> for an inner ring.</span>
           </p>
@@ -485,7 +485,7 @@ function PasteMode({
 }) {
   const opt = (v: 'append' | 'replace', text: string) => (
     <label
-      className={`flex cursor-pointer items-center gap-1.5 rounded-field border px-2 py-1 text-[11px] transition-[background-color,border-color,color] duration-150 ease-ui ${
+      className={`flex cursor-pointer items-center gap-1.5 rounded-field border px-2 py-1 text-[0.6875rem] transition-[background-color,border-color,color] duration-150 ease-ui ${
         mode === v
           ? v === 'replace'
             ? 'border-bad/35 bg-bad/8 text-bad'
@@ -517,7 +517,7 @@ function PasteMode({
         {opt('append', 'Append on paste')}
         {opt('replace', 'Replace all on paste')}
       </div>
-      <p className="mt-1.5 text-[10.5px] leading-snug text-ink-3">
+      <p className="mt-1.5 text-[0.65625rem] leading-snug text-ink-3">
         Copy cells and press{' '}
         <code className={codeChipCls}>Ctrl+V</code>{' '}
         anywhere in the table — rows are added automatically. {replaceHint}
@@ -542,7 +542,7 @@ function ValidateBanner({
   if (status.kind === 'ok') {
     return (
       <Banner tone="ok">
-        <b className="font-display text-[10px] uppercase tracking-[0.07em]">Valid</b>
+        <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">Valid</b>
         <span className="ml-1.5">
           {status.count} {noun}
           {status.count === 1 ? '' : 's'} configured.
@@ -553,11 +553,11 @@ function ValidateBanner({
   if (status.kind === 'empty') return <Banner tone="info">{status.message}</Banner>
   return (
     <Banner tone="error">
-      <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+      <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
         {status.errors.length} invalid {noun}
         {status.errors.length === 1 ? '' : 's'}
       </b>
-      <ul className="mt-0.5 max-h-20 space-y-px overflow-y-auto font-mono text-[11px] tnum">
+      <ul className="mt-0.5 max-h-20 space-y-px overflow-y-auto font-mono text-[0.6875rem] tnum">
         {status.errors.map((err, i) => (
           <li key={i}>
             Row {err.line}: {err.message}
@@ -681,13 +681,13 @@ export function RebarPanel({
               <tr className="border-b border-edge bg-panel/95 backdrop-blur-sm">
                 <th className={`${thCls} w-9 text-left`}>#</th>
                 <th className={`${thCls} text-left`}>
-                  X coordinate <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">x</code>
+                  X coordinate <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">x</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Y coordinate <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">y</code>
+                  Y coordinate <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">y</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Bar diameter <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">⌀</code>
+                  Bar diameter <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">⌀</code>
                 </th>
                 <th className={`${thCls} w-9`}></th>
               </tr>
@@ -696,7 +696,7 @@ export function RebarPanel({
               {bars.length > 0 ? (
                 bars.map((b, i) => (
                   <tr key={i} className="border-t border-line transition-colors duration-150 hover:bg-panel/60">
-                    <td className={`${tdCls} font-mono text-[11px] text-ink-3`}>{i + 1}</td>
+                    <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                     <td className={tdCls}>
                       <input
                         className={cellCls}
@@ -789,7 +789,7 @@ export function RebarPanel({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-4 py-7 text-center text-[11.5px] text-ink-2">
+                  <td colSpan={5} className="px-4 py-7 text-center text-[0.71875rem] text-ink-2">
                     <span className="inline-flex items-center gap-1.5">
                       <Icon name="plus" size={13} className="text-ink-3" />
                       No bars yet — add a row below, or paste rows from Excel with <b>Ctrl+V</b>.
@@ -830,7 +830,7 @@ export function RebarPanel({
               </button>
             )}
           </div>
-          <span className="font-mono text-[11px] text-ink-3 tnum">
+          <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
             {bars.length} {bars.length === 1 ? 'bar' : 'bars'}
           </span>
         </div>
@@ -995,13 +995,13 @@ export function LoadCasesPanel({
                 </th>
                 <th className={`${thCls} text-left`}>Name</th>
                 <th className={`${thCls} text-left`}>
-                  Pu <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN</code>
+                  Pu <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Mux <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN·m</code>
+                  Mux <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN·m</code>
                 </th>
                 <th className={`${thCls} text-left`}>
-                  Muy <code className="font-mono text-[10px] font-normal normal-case tracking-normal text-accent">kN·m</code>
+                  Muy <code className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-accent">kN·m</code>
                 </th>
                 <th className={`${thCls} w-9`}></th>
               </tr>
@@ -1112,7 +1112,7 @@ export function LoadCasesPanel({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-7 text-center text-[11.5px] text-ink-2">
+                  <td colSpan={6} className="px-4 py-7 text-center text-[0.71875rem] text-ink-2">
                     <span className="inline-flex items-center gap-1.5">
                       <Icon name="plus" size={13} className="text-ink-3" />
                       No load cases yet — add one below, or paste rows from Excel with <b>Ctrl+V</b>.
@@ -1153,7 +1153,7 @@ export function LoadCasesPanel({
               </button>
             )}
           </div>
-          <span className="font-mono text-[11px] text-ink-3 tnum">
+          <span className="font-mono text-[0.6875rem] text-ink-3 tnum">
             {cases.length} {cases.length === 1 ? 'case' : 'cases'}
           </span>
         </div>

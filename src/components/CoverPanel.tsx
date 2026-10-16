@@ -177,15 +177,15 @@ export function ClearCoverPanel({
           data-testid="uniform-cover"
         >
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
-            <span className="flex items-center gap-1.5 font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-accent-strong">
+            <span className="flex items-center gap-1.5 font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-accent-strong">
               <Icon name="check" size={11} />
               Uniform cover
-              <span className="rounded-full border border-accent/40 bg-card px-1.5 py-px font-body text-[9px] font-semibold normal-case tracking-normal text-accent">
+              <span className="rounded-full border border-accent/40 bg-card px-1.5 py-px font-body text-[0.5625rem] font-semibold normal-case tracking-normal text-accent">
                 default
               </span>
             </span>
             {!uniform && (
-              <span className="rounded-full border border-warn2/35 bg-warn2/10 px-1.5 py-px text-[9.5px] font-semibold text-warn2">
+              <span className="rounded-full border border-warn2/35 bg-warn2/10 px-1.5 py-px text-[0.59375rem] font-semibold text-warn2">
                 advanced values active · {coverMin}–{coverMax} mm
               </span>
             )}
@@ -208,10 +208,10 @@ export function ClearCoverPanel({
           />
         </div>
 
-        <p className="flex items-start gap-1.5 rounded-field border border-accent/20 bg-accent-wash/45 px-2 py-1.5 text-[10.5px] leading-snug text-ink-2">
+        <p className="flex items-start gap-1.5 rounded-field border border-accent/20 bg-accent-wash/45 px-2 py-1.5 text-[0.65625rem] leading-snug text-ink-2">
           <Icon name="target" size={12} className="mt-px shrink-0 text-accent" />
           <span>
-            <b className="font-display text-[9.5px] uppercase tracking-[0.07em] text-accent-strong">Clear cover → rebar position.</b>{' '}
+            <b className="font-display text-[0.59375rem] uppercase tracking-[0.07em] text-accent-strong">Clear cover → rebar position.</b>{' '}
             Automatic bars maintain cover measured normal/perpendicular to their nearest face.
           </span>
         </p>
@@ -229,14 +229,14 @@ export function ClearCoverPanel({
             <Icon name="ruler" size={12} />
             {showAdvanced ? 'Hide advanced cover' : 'Show advanced cover'}
           </span>
-          <span className="text-[10.5px] font-normal text-ink-3">
+          <span className="text-[0.65625rem] font-normal text-ink-3">
             {faceCount} face{faceCount === 1 ? '' : 's'} {showAdvanced ? '▴' : '▾'}
           </span>
         </button>
 
         {showAdvanced && (
           <div id={advancedId} className="flex flex-col gap-2.5 rounded-lg border border-line bg-card/60 p-2" data-testid="advanced-cover">
-            <span className="font-display text-[10px] font-bold uppercase tracking-[0.07em] text-ink-3">
+            <span className="font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
               Advanced cover — individual face values
             </span>
             {/* --- 1. RECTANGULAR SECTION --- */}
@@ -316,7 +316,7 @@ export function ClearCoverPanel({
             {/* --- 4. POLYGON / IRREGULAR SECTION --- */}
             {(sectionType === 'polygon' || sectionType === 'hollow-polygon') && (
               <div className="flex flex-col gap-2">
-                <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                <span className="font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                   Outer Boundary Faces ({boundaryCount} detected)
                 </span>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
@@ -389,7 +389,7 @@ export function ClearCoverPanel({
                     {state.geometry.voids.map((vPoly, vIdx) => (
                       <div key={`void-${vIdx}`} className="flex flex-col gap-1.5">
                         {state.geometry.voids.length > 1 && (
-                          <span className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">
+                          <span className="font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">
                             Void {vIdx + 1} ({vPoly.length} faces)
                           </span>
                         )}
@@ -453,7 +453,7 @@ export function ClearCoverPanel({
                 activeFace={activeFace}
                 setActiveFace={setActiveFace}
               />
-              <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] uppercase tracking-[0.06em] text-ink-3">
+              <figcaption className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[0.59375rem] uppercase tracking-[0.06em] text-ink-3">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-0 w-4 border-t border-dashed border-ok" aria-hidden="true" /> clear cover met
                 </span>
@@ -473,7 +473,7 @@ export function ClearCoverPanel({
         )}
 
         {circular && (
-          <p className="flex items-start gap-1.5 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[11px] leading-snug text-warn2">
+          <p className="flex items-start gap-1.5 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[0.6875rem] leading-snug text-warn2">
             <Icon name="info" size={12} className="mt-px shrink-0" />
             <span>
               Circular ring: the section is radially symmetric, so the governing (largest) face cover —{' '}
@@ -486,7 +486,7 @@ export function ClearCoverPanel({
         {/* Achieved cover audit list */}
         <Banner tone={minOk ? 'ok' : 'error'}>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <b className="font-display text-[10px] uppercase tracking-[0.07em]">
+            <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
               {minOk ? 'Cover satisfied' : 'Cover short'}
             </b>
             {audit.minAchieved == null ? (
@@ -513,11 +513,11 @@ export function ClearCoverPanel({
                   <span
                     key={face}
                     title={`Smallest achieved cover at the ${FACE_LABELS[face].toLowerCase()} face, against ${st.required.toFixed(0)} mm required`}
-                    className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[10px] tnum ${
+                    className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[0.625rem] tnum ${
                       bad ? 'border-bad/35 bg-bad/10 text-bad' : 'border-line bg-panel/80 text-ink-2'
                     }`}
                   >
-                    <span className="font-display text-[9px] font-bold uppercase tracking-[0.06em] text-ink-3">
+                    <span className="font-display text-[0.5625rem] font-bold uppercase tracking-[0.06em] text-ink-3">
                       {FACE_LABELS[face]}
                     </span>
                     {st.min == null ? '—' : `${st.min.toFixed(1)}`}
@@ -531,7 +531,7 @@ export function ClearCoverPanel({
 
         {note && (
           <p
-            className={`flex items-start gap-1.5 text-[11px] leading-snug ${
+            className={`flex items-start gap-1.5 text-[0.6875rem] leading-snug ${
               note.kind === 'ok' ? 'text-ok' : 'text-warn2'
             }`}
           >
@@ -589,9 +589,9 @@ function InnerCoverField({
   const inherited = value == null
   return (
     <label className="flex min-w-0 flex-col gap-[3px]">
-      <span className="flex items-center justify-between gap-1 font-display text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className="flex items-center justify-between gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
         {FACE_LABELS[face]}
-        {inherited && <span className="font-body text-[9px] font-normal normal-case tracking-normal text-ink-3">inherited</span>}
+        {inherited && <span className="font-body text-[0.5625rem] font-normal normal-case tracking-normal text-ink-3">inherited</span>}
       </span>
       <span className={`${fieldBoxCls} ${inherited ? 'bg-panel/70' : 'border-accent/50'}`}>
         <input
@@ -608,7 +608,7 @@ function InnerCoverField({
             else onChange(Number.isFinite(parseFloat(t)) ? parseFloat(t) : 0)
           }}
         />
-        <span className="shrink-0 pr-2 text-[10.5px] leading-none text-ink-3" aria-hidden="true">
+        <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
           mm
         </span>
       </span>

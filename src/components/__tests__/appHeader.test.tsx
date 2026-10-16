@@ -41,20 +41,35 @@ describe('app header', () => {
     expect(tabsAt).toBeGreaterThan(rowAt)
     expect(areaAt).toBeGreaterThan(tabsAt)
 
-    // the three action buttons sit in one non-shrinking group: nothing shown
-    // beside the tabs can wrap or squeeze them apart
+    // the action buttons sit in one non-shrinking group: nothing shown beside
+    // the tabs can wrap or squeeze them apart. Import, Export and PDF report,
+    // then the two icon-only dialogs — Settings and About — last in the row.
     // the action area keeps a min-content floor: inline-size containment would
     // zero the automatic minimum size and let the tabs squeeze the buttons
     expect(area).toContain('min-w-min')
     const groupAt = area.indexOf('flex shrink-0 items-center gap-1 sm:gap-2')
     expect(groupAt).toBeGreaterThan(-1)
     const group = area.slice(groupAt)
-    expect([...group.matchAll(/<button/g)]).toHaveLength(3)
+    expect([...group.matchAll(/<button/g)]).toHaveLength(5)
     const pdf = group.indexOf('Print the full calculation report')
     expect(pdf).toBeGreaterThan(-1)
     expect(group.indexOf('Import a saved project JSON file')).toBeLessThan(pdf)
     expect(group.indexOf('Export current project state to a JSON file')).toBeLessThan(pdf)
     expect(group).toContain('>PDF report<')
+
+    // the two dialogs come after the report button: what the reader opens
+    // rarely is at the end of the row, where the eye is not looking for it
+    const gear = group.indexOf('aria-label="Settings"')
+    const info = group.indexOf('aria-label="About"')
+    expect(pdf).toBeLessThan(gear)
+    expect(gear).toBeLessThan(info)
+    // each names the panel it opens, in its tooltip and to assistive tech
+    expect(group.slice(gear, info)).toContain('title="Settings — theme, drafting sheet')
+    expect(group.slice(info)).toContain('title="About RCC Section Check — version')
+    // ...and each reports whether its own panel is open
+    for (const label of ['Settings', 'About']) {
+      expect(group).toContain(`aria-label="${label}" aria-expanded="false"`)
+    }
 
     // and the readout of the open tab is rendered before that group, so it is
     // the readout that gives way when the action area is tight
@@ -142,7 +157,7 @@ describe('app header', () => {
     for (const cls of [headerBtnCls, headerBtnPrimaryCls]) {
       expect(cls).toContain('max-[600px]:px-2')
       expect(cls).toContain('max-[600px]:py-')
-      expect(cls).toContain('max-[600px]:text-[10.5px]')
+      expect(cls).toContain('max-[600px]:text-[0.65625rem]')
       expect(cls).toContain('max-[600px]:gap-1')
       expect(cls).toContain('touch-manipulation')
       expect(cls).toContain('active:scale-[0.97]')
@@ -151,13 +166,20 @@ describe('app header', () => {
     expect(btnCls).not.toContain('max-[')
     expect(btnPrimaryCls).not.toContain('max-[')
     expect(btnCls).toContain('active:translate-y-[0.5px]')
-    // and that is what the header renders: six buttons, all of them compact
+    // and that is what the header renders: the three checks, the three file
+    // buttons and the two dialog buttons, all of them compact on a phone
     const headerButtons = [...headerHtml.matchAll(/<button([^>]*)>/g)].map(
       (m) => /class="([^"]*)"/.exec(m[1])?.[1] ?? '',
     )
-    expect(headerButtons).toHaveLength(6)
-    for (const cls of headerButtons) expect(cls).toContain('max-[600px]:text-[10.5px]')
+    expect(headerButtons).toHaveLength(8)
+    for (const cls of headerButtons) expect(cls).toContain('max-[600px]:text-[0.65625rem]')
     expect(headerButtons[5]).toContain('bg-accent') // the PDF button keeps its fill
+    // the two dialog buttons are the shared action style, not a filled one:
+    // neither of them is an action on the project
+    for (const cls of headerButtons.slice(6)) {
+      expect(cls.startsWith(headerBtnCls)).toBe(true)
+      expect(cls).not.toContain('bg-accent ')
+    }
     expect(msgs).toEqual([])
   })
 
