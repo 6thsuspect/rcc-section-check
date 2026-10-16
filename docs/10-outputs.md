@@ -41,6 +41,14 @@ artwork's box from the markup to hold the section centered with equal margins. T
 
 ## 10.1 On-screen results
 
+The page frame — header, workspace, footer — is the **full width of the window**: no `max-width`
+cap, no centred column, and side padding that steps with the window (`px-3 sm:px-5 lg:px-6
+2xl:px-8`). The workspace is a two-track grid whose second track is `minmax(0, 1fr)`, so the
+section diagrams, tables and result panels take all the width the monitor offers; only the input
+panels column is capped (392 px, 430 px from 1536 px) because a form column does not read better
+wider. Every track is `minmax(0, …)` and every column `min-w-0`, so a wide
+table scrolls inside its own card instead of pushing the page sideways.
+
 The header bar carries the three check tabs (ULS / SLS / Shear) in one row together with,
 to their right, the status readout of the open tab and the **Import project**,
 **Export project** and **PDF report** buttons. The readout reports the same tab-specific

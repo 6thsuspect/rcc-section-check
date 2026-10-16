@@ -139,6 +139,18 @@ itself, downloaded. A route counts only when the report document has loaded in i
 waits for the document to lay out; a route that never loads is dropped and the next one takes
 over. `src/components/__tests__/reportDelivery.test.ts` covers that routing.
 
+## Page frame
+
+The header, the workspace and the footer share one frame class (`shell` in `src/App.tsx`): the
+**full width of the window**, with no `max-width` cap and no centred column, and side padding that
+grows with the window (`px-3 sm:px-5 lg:px-6 2xl:px-8`) — so a desktop monitor has no empty gutter
+down the sides, and the content gets the width rather than the margin. Inside it the workspace is a
+two-track grid: the panels column (capped at 392 px, 430 px from 1536 px, so the form stays
+readable) and the **results column on `minmax(0, 1fr)`**, which takes every remaining pixel — the section diagrams,
+tables and result panels expand with it, and the tables scroll inside their cards rather than the
+page. Every grid track is `minmax(0, …)` and every column is `min-w-0`, so nothing can overflow
+horizontally; `src/components/__tests__/layout.test.tsx` holds all of that.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest

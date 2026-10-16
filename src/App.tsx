@@ -133,7 +133,15 @@ export function HeaderStatus({
 }
 
 /** Page container, shared by the header bar and the working area. */
-const shell = 'mx-auto w-full max-w-[1640px] px-3 sm:px-5'
+/**
+ * The page frame: the header, the workspace, the banners and the footer all use
+ * it, so they line up with each other. It is the full width of the window — no
+ * `max-width` cap, so a wide desktop monitor has no empty gutter down the sides —
+ * with side padding that grows with the window: the content is what gets the
+ * width, not the margin. (Panels are cards on the canvas; the workspace below is
+ * a grid of `minmax(0, …)` tracks, so nothing can overflow the frame.)
+ */
+const shell = 'w-full px-3 sm:px-5 lg:px-6 2xl:px-8'
 
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
