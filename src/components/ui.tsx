@@ -148,6 +148,11 @@ const ICONS = {
   cursor: ['m4 4 7 16 2.2-6.8L20 11Z'],
   shield: ['M12 21s7-3.4 7-9V5.5L12 3 5 5.5v6.5c0 5.6 7 9 7 9Z', 'm9 12 2 2 4-4'],
   bars: ['M6 4v16', 'M18 4v16', 'M6 8h12', 'M6 16h12'],
+  // two sheets, the front one off-set — the copy glyph in the same line style
+  copy: [
+    'M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2Z',
+    'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2',
+  ],
   // Settings: a ring with six evenly spaced teeth and a hub — reads as a gear
   // at 13 px without turning into a smudge
   gear: [

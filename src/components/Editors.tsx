@@ -10,6 +10,8 @@ import {
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
 import { isAutomaticBar, repositionAutomaticBars } from '../engine/reinforcement'
+import { barCoordinatesText, sectionCoordinatesText } from '../clipboard'
+import { useCopyFeedback } from '../useCopyFeedback'
 import {
   Banner,
   Card,
@@ -34,6 +36,24 @@ import {
   btnDangerCls,
   codeChipCls,
 } from './ui'
+
+/**
+ * What a copy button reports: the coordinates that went to the clipboard, or
+ * why they did not. One line, the app's small-text size, in the status colours
+ * — so it reads the same in the light and the dark theme.
+ */
+function CopyNoteLine({ note }: { note: { ok: boolean; text: string } | null }) {
+  if (!note) return null
+  return (
+    <p
+      role="status"
+      className={`flex items-start gap-1.5 text-[0.65625rem] leading-snug ${note.ok ? 'text-ok' : 'text-bad'}`}
+    >
+      <Icon name={note.ok ? 'check' : 'alert'} size={12} className="mt-px shrink-0" />
+      <span>{note.text}</span>
+    </p>
+  )
+}
 
 export function CodeMaterialsPanel({
   state,
@@ -182,6 +202,13 @@ export function SectionPanel({
   // The table always shows something: after an import the selected void may not
   // exist (the file has fewer openings or none at all).
   const poly = (loop === 0 ? state.geometry.boundary : state.geometry.voids[loop - 1]) ?? []
+
+  // Copy every coordinate of the section — the boundary and each opening in it
+  // — as the tab-separated rows beside the button show them.
+  const { note: copyNote, copy } = useCopyFeedback(
+    'section point',
+    'No section coordinates to copy — the boundary needs at least three points.',
+  )
   const setPoly = (p: { x: number; y: number }[]) => {
     if (frozen) return
     const geometry: SectionGeometry =
@@ -264,22 +291,38 @@ export function SectionPanel({
             </span>
             {frozen && <span className="font-semibold lowercase text-bad">(frozen)</span>}
           </span>
-          {state.geometry.voids.length > 0 && (
-            <select
-              className={selectInlineCls}
-              value={loop}
-              disabled={frozen}
-              onChange={(e) => setLoop(Number(e.target.value))}
+          <span className="flex flex-wrap items-center gap-1.5">
+            {state.geometry.voids.length > 0 && (
+              <select
+                className={selectInlineCls}
+                value={loop}
+                disabled={frozen}
+                onChange={(e) => setLoop(Number(e.target.value))}
+              >
+                <option value={0}>outer boundary</option>
+                {state.geometry.voids.map((_, i) => (
+                  <option key={i} value={i + 1}>
+                    void {i + 1}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              className={btnCls}
+              onClick={() => copy(sectionCoordinatesText(state.geometry))}
+              title={
+                'Copy every section coordinate — the boundary and each opening (void, hole, cutout) — as ' +
+                'tab-separated rows with headers, ready to paste into Excel, AutoCAD or STAAD. ' +
+                "The values are the ones shown here, in the section's own coordinate system."
+              }
             >
-              <option value={0}>outer boundary</option>
-              {state.geometry.voids.map((_, i) => (
-                <option key={i} value={i + 1}>
-                  void {i + 1}
-                </option>
-              ))}
-            </select>
-          )}
+              <Icon name="copy" size={12} />
+              <span>Copy coordinates</span>
+            </button>
+          </span>
         </div>
+        <CopyNoteLine note={copyNote} />
         <div className="max-h-56 overflow-auto rounded-lg border border-line">
           <table className={tblCls}>
             <thead className="sticky top-0 z-10">
@@ -612,6 +655,13 @@ export function RebarPanel({
     | { kind: 'errors'; errors: { line: number; message: string }[] }
   >({ kind: 'idle' })
 
+  // Copy the whole table — every bar with its number, coordinates, diameter and
+  // face — in the same coordinate system as the section, for Excel/CAD/STAAD.
+  const { note: copyNote, copy } = useCopyFeedback(
+    'bar coordinate',
+    'No bar coordinates to copy — the reinforcement table is empty.',
+  )
+
   // Excel paste handler that automatically expands rows and populates values
   const handleExcelPaste = (e: React.ClipboardEvent) => {
     const rawText = e.clipboardData.getData('text')
@@ -828,6 +878,19 @@ export function RebarPanel({
         {/* Table Toolbar & Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
           <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              className={btnCls}
+              onClick={() => copy(barCoordinatesText(bars))}
+              title={
+                'Copy every bar in this table — number, X, Y, diameter, face, surface and placement — as ' +
+                'tab-separated rows with headers, ready to paste into Excel, AutoCAD or STAAD. ' +
+                "The coordinates are the ones in the table, in the section's own coordinate system."
+              }
+            >
+              <Icon name="copy" size={12} />
+              <span>Copy bar coordinates</span>
+            </button>
             <button className={btnCls} onClick={validate}>
               <Icon name="shield" size={12} />
               <span>Validate</span>
@@ -856,6 +919,8 @@ export function RebarPanel({
             {bars.length} {bars.length === 1 ? 'bar' : 'bars'}
           </span>
         </div>
+
+        <CopyNoteLine note={copyNote} />
       </div>
     </Card>
   )

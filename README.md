@@ -261,6 +261,69 @@ boundary table and the drawn figure, the openings (with the calculated area of t
 leave), the properties (area, centroid, Ixx/Iyy) and the app's own analysis — interaction surface,
 utilisation and compliance checks — running on the imported section.
 
+## Copying coordinates
+
+Two buttons put the geometry and the reinforcement on the clipboard as a **tab-separated table with a
+header row**, so the numbers paste straight into Excel, AutoCAD, STAAD or any other software that
+reads a column of coordinates — no retyping, no rounding, no separate spreadsheet to keep in step
+with the screen.
+
+- **Copy coordinates** sits in the coordinate-display header of the **Section geometry** panel, on the
+  same row as the boundary/opening selector, under the drawing.
+- **Copy bar coordinates** sits in the toolbar of the **Reinforcement bars** table, beside the row
+  count and the table's own actions.
+
+What the first button writes:
+
+```
+Section coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)
+Part	Point	X (mm)	Y (mm)
+Boundary	1	0	0
+Boundary	2	450	0
+…
+Void 1	1	100	100
+…
+```
+
+The boundary first, then each opening as its own numbered block (`Void 1`, `Void 2`, …) — so a bolt
+hole, a duct or a cutout can be fed to a drawing as a closed polyline of its own instead of being
+mixed into the outer ring. The second button writes one row per longitudinal bar, in table order:
+
+```
+Reinforcement bar coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)
+Bar	X (mm)	Y (mm)	Dia (mm)	Face	Surface	Placement
+1	61	61	25	bottom	outer	automatic
+…
+```
+
+Bar numbers, diameters, the face the bar belongs to, whether it is on an outer or an inner (void)
+surface and whether the app placed it or the user did all travel with the coordinates, so the row
+means the same thing in the spreadsheet as it does on screen.
+
+Both tables are built from the state the panels are already showing — **the values the app holds,
+copied verbatim**: the same `x`, `y` and `dia` the diagram and the bar table are drawn from, signs
+kept, `-0` written as `0`, decimals not rounded and not re-derived. A circle the app generated is
+copied as the polygon it analyses (a 64-vertex ring), so the paste is the geometry on screen. No engineering calculation runs
+for a copy, and the mm/`(0, 0)` frame is the section's own — the one the figure and the coordinate
+tables use, so a paste lands in the same place as the drawing.
+
+Each click reports itself in a note beside its button: *Copied 68 section points to the clipboard.*
+(or *Copied 12 bar coordinates…*), with a count of anything unusable that was left out of the table.
+The note clears itself after seven seconds. When there is nothing to copy — a boundary with fewer
+than three points, a boundary vertex that is not a finite number, an empty bar table — the button
+**says so instead of copying a partial or wrong table**, and when the browser refuses the clipboard
+(paste is unavailable, a permission was denied) the note says that too and points at the alternative:
+select the cells in the panel and press Ctrl+C. A void whose ring has fewer than three usable points
+is dropped rather than written as a half block.
+
+The whole feature is three small modules: `src/clipboard.ts` (the two table builders and one
+clipboard writer, `navigator.clipboard.writeText` with the off-screen-textarea `execCommand` fallback
+for pages where the Clipboard API is not granted), `src/useCopyFeedback.ts` (the note and its timer)
+and the two buttons in `src/components/Editors.tsx`. Tests: `src/__tests__/clipboard.test.ts` pins the
+formats, the signs and the precision, the opening blocks, a circular arrangement and the empty cases;
+`src/components/__tests__/copyCoordinates.test.tsx` checks the two buttons are where they belong, that
+the copied rows match the rows on screen, and that the untouched panels around them still render.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest

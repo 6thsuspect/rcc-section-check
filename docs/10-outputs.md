@@ -180,7 +180,45 @@ below the workspace and outside its scrolling region, so it stays visible whatev
 The year is the one in the notice, not today's date (a plain string in `src/App.tsx`; it is not
 derived from the clock).
 
-## 10.3 Report
+## 10.3 Copying coordinates to the clipboard
+
+Two buttons export coordinates as **tab-separated tables with a header row**, ready to paste into
+Excel, AutoCAD, STAAD or any other consumer of column-wise coordinates. Both are in the input column,
+next to the information they copy: **Copy coordinates** in the coordinate-display header of the
+Section geometry panel (the row that also carries the boundary/opening selector), **Copy bar
+coordinates** in the toolbar of the Reinforcement bars table. Neither button changes anything else in
+the app — no panel moves, no field is touched, and the copy runs no engineering calculation: the
+tables are built from the state the panels are already rendering.
+
+| Button | Writes | Where the numbers come from |
+|---|---|---|
+| **Copy coordinates** | `Section coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)`, the header `Part\tPoint\tX (mm)\tY (mm)`, then one row per boundary vertex (`Boundary`), then one numbered block per opening (`Void 1`, `Void 2`, …), each numbered from 1 | `state.geometry` — the boundary and voids the figure and the coordinate table are drawn from |
+| **Copy bar coordinates** | `Reinforcement bar coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)`, the header `Bar\tX (mm)\tY (mm)\tDia (mm)\tFace\tSurface\tPlacement`, then one row per bar numbered 1…n in table order | `state.bars` — the rows of the reinforcement table, with the bar's diameter, face, outer/inner surface and automatic-or-manual placement |
+
+Values are written exactly as the app holds them: signs kept, decimals not rounded, `-0` written
+`0`, unit mm, and the origin that of the section itself (the same frame as the diagram and both
+coordinate tables). A generated circular boundary or opening is therefore written as the polygon the
+app itself analyses — a 64-vertex ring for a circle, a bolt hole included — because that is the
+geometry on screen, and a consumer that wants the centre and radius has them in the panel's input
+echo. Separate blocks for the openings keep a bolt hole, a duct or a cutout usable as a
+closed polyline on its own, instead of merging it into the outer boundary.
+
+Feedback is a note beside the clicked button, in the app's status colours for dark and light mode:
+*Copied N section points to the clipboard.* / *Copied N bar coordinates to the clipboard*, followed by
+*K unusable entry/entries left out.* when something could not be written; it clears itself after seven
+seconds (`CLEAR_AFTER_MS`). A boundary with fewer than three finite points, or a bar table with no
+usable row, is **reported rather than copied** — the button states that there is nothing to copy, so
+an incomplete or wrong table never reaches the clipboard; a void whose ring has fewer than three
+usable points is dropped instead of written as a half block. When the clipboard itself is refused
+(no `navigator.clipboard.writeText`, or a denied permission in an embedded preview) the note says so
+and points at the alternative: select the cells in the panel and press Ctrl+C.
+
+Implementation: `src/clipboard.ts` (`cell`, `sectionCoordinatesText`, `barCoordinatesText`,
+`copyToClipboard` — the Clipboard API with an off-screen-textarea `execCommand('copy')` fallback),
+`src/useCopyFeedback.ts` (the note, its wording and its timer, cleared on unmount), and the two
+buttons in `src/components/Editors.tsx` (`SectionPanel`, `RebarPanel`).
+
+## 10.4 Report
 
 The **PDF report** button (header bar) builds a self-contained print document — all figures
 embedded as inline SVG at fit-to-view scale — and opens the print dialog ("Save as PDF"
