@@ -71,10 +71,20 @@ export function CircularRebarPanel({
   setBarDia,
   onBarDiaCustomizeChange,
   onApply,
+  importStamp = 0,
 }: {
   predefined: PredefinedSection | null
   /** Existing rows are inspected so an intentionally manual layout is not replaced on mount. */
   bars?: Rebar[]
+  /**
+   * Bumped by the app every time a file is imported. A bar table read from a
+   * file is the user's own data: it is left exactly as the file wrote it — and
+   * shown as it is — until the arrangement in this panel is edited, `Apply
+   * layout` is pressed, or the section changes underneath it. Without this,
+   * the live generator would quietly replace an imported arrangement with this
+   * panel's default one on the first render after the import.
+   */
+  importStamp?: number
   cover: number
   tieDia: number
   barDia: number
@@ -90,6 +100,20 @@ export function CircularRebarPanel({
   const [autoApply, setAutoApply] = useState(() => bars.length === 0 || bars.some(isAutomaticBar))
   const [lastApplied, setLastApplied] = useState(0)
   const lastKeyRef = useRef('')
+  /** The rows a file brought in, held until the arrangement is touched. */
+  const importedBarsRef = useRef<Rebar[] | null>(null)
+  const importStampRef = useRef(importStamp)
+
+  // An import writes a complete bar table; the live generator takes its hands
+  // off it until the user changes something in this panel. The baseline is set
+  // to the imported arrangement so an unchanged section is still skipped by the
+  // key check below.
+  useEffect(() => {
+    if (importStamp === importStampRef.current) return
+    importStampRef.current = importStamp
+    importedBarsRef.current = bars
+    lastKeyRef.current = barsKey(bars)
+  }, [importStamp, bars])
 
   // A manual table edit is an explicit opt-out from live regeneration. The
   // user can still press Apply layout or turn the live checkbox back on.
@@ -150,6 +174,8 @@ export function CircularRebarPanel({
   }, [predefined?.kind])
 
   const patch = (p: Partial<CircularRebarConfig>) => {
+    // An edit here is the user's own arrangement taking over from the file's.
+    importedBarsRef.current = null
     setCfg((prev) => sanitizeCircularConfig({ ...prev, ...p }))
   }
 
@@ -191,6 +217,8 @@ export function CircularRebarPanel({
   // Live-update the bar table while auto-apply is on (keyed so identical layouts skip).
   useEffect(() => {
     if (!autoApply || R == null) return
+    // The table still holds exactly what the file brought: leave it alone.
+    if (importedBarsRef.current === bars) return
     applyBars(result.bars)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.key, autoApply, R, Ri])
@@ -204,6 +232,7 @@ export function CircularRebarPanel({
   const bundleCheck = spacingReport(result.bars)
 
   const setKind = (kind: CircularArrangementKind) => {
+    importedBarsRef.current = null
     const next = defaultCircularRebarConfig(kind, R, cover, tieDia, cfg.barDia || barDia)
     // Preserve shared fields the user already set.
     next.startAngleDeg = cfg.startAngleDeg
@@ -634,7 +663,11 @@ export function CircularRebarPanel({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
           <Check
             checked={autoApply}
-            onChange={setAutoApply}
+            onChange={(v) => {
+              // Switching the live generator on by hand is a request for it.
+              importedBarsRef.current = null
+              setAutoApply(v)
+            }}
             label="Live-update bar table"
             title="Keep the reinforcement table in sync with these settings"
           />

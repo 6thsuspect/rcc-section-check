@@ -46,6 +46,57 @@ export function exportProjectFile(state: AppState, customFilename?: string) {
 }
 
 /**
+ * Coerce a persisted reinforcement coordinate table into valid `Rebar` rows.
+ * A row that carries no usable diameter keeps the 20 mm the app has always
+ * used for such a file; every other field is kept only when it is valid.
+ */
+export function sanitizeBarRows(raw: readonly any[]): Rebar[] {
+  return raw.map((b: any) => {
+    const validFaces: RebarFace[] = ['bottom', 'right', 'top', 'left']
+    const faces = Array.isArray(b?.faces) ? b.faces.filter((f: any): f is RebarFace => validFaces.includes(f)) : undefined
+    const positioning: RebarPositioningMode | undefined =
+      b?.positioning === 'automatic' || b?.positioning === 'manual' ? b.positioning : undefined
+    const surface: RebarSurface | undefined = b?.surface === 'inner' || b?.surface === 'outer' ? b.surface : undefined
+    const bar: Rebar = {
+      x: Number.isFinite(b?.x) ? Number(b.x) : 0,
+      y: Number.isFinite(b?.y) ? Number(b.y) : 0,
+      dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
+    }
+    if (positioning) bar.positioning = positioning
+    const face = validFaces.includes(b?.face) ? (b.face as RebarFace) : faces?.[0]
+    if (face) bar.face = face
+    if (faces?.length) bar.faces = faces
+    if (surface) bar.surface = surface
+    if (Number.isInteger(b?.voidIndex) && b.voidIndex >= 0) bar.voidIndex = Number(b.voidIndex)
+    if (Number.isInteger(b?.layer) && b.layer >= 0) bar.layer = Number(b.layer)
+    if (typeof b?.groupId === 'string') bar.groupId = b.groupId
+    if (b?.axis === 'x' || b?.axis === 'y') bar.axis = b.axis
+    if (Number.isFinite(b?.u)) bar.u = Math.max(0, Math.min(1, Number(b.u)))
+    if (b?.radial === true) bar.radial = true
+    return bar
+  })
+}
+
+/**
+ * Normalised 0…1 member positions, deduped and sorted. Slightly out-of-range
+ * entries are kept: the editor reports them instead of quietly moving the
+ * user's link layout. Anything that is not a number (or a numeric string) is
+ * not a position and is dropped.
+ */
+export function sanitizeLinkPositions(v: any): number[] {
+  if (!Array.isArray(v)) return []
+  const out: number[] = []
+  for (const raw of v) {
+    if (typeof raw !== 'number' && typeof raw !== 'string') continue
+    const n = Number(raw)
+    if (!Number.isFinite(n)) continue
+    const u = Math.min(Math.max(n, -1), 2)
+    if (out.every((x) => Math.abs(x - u) > 1e-6)) out.push(u)
+  }
+  return out.sort((a, b) => a - b)
+}
+
+/**
  * Parses and validates JSON text from an imported project file.
  * Returns a sanitized AppState or throws an Error.
  */
@@ -136,22 +187,7 @@ export function parseProjectFile(jsonText: string): AppState {
       )
 
   const rawShear = rawState.shear && typeof rawState.shear === 'object' ? rawState.shear : {}
-  /** Normalised 0…1 member positions, deduped and sorted. */
-  const sanitiserPositions = (v: any): number[] => {
-    if (!Array.isArray(v)) return []
-    const out: number[] = []
-    for (const raw of v) {
-      // only numbers (or numeric strings) count — null / booleans are not positions
-      if (typeof raw !== 'number' && typeof raw !== 'string') continue
-      const n = Number(raw)
-      if (!Number.isFinite(n)) continue
-      // keep slightly out-of-range entries: the editor reports them instead of
-      // quietly moving the user's link layout
-      const u = Math.min(Math.max(n, -1), 2)
-      if (out.every((x) => Math.abs(x - u) > 1e-6)) out.push(u)
-    }
-    return out.sort((a, b) => a - b)
-  }
+  const sanitiserPositions = sanitizeLinkPositions
   const shearAxis: ShearAxis = rawShear.axis === 'x' ? 'x' : 'y'
   const faceOptions = tensionFaceOptions(shearAxis)
   const shear: ShearSettings = {
@@ -195,30 +231,7 @@ export function parseProjectFile(jsonText: string): AppState {
           )
         : [],
     },
-    bars: rawState.bars.map((b: any) => {
-      const validFaces: RebarFace[] = ['bottom', 'right', 'top', 'left']
-      const faces = Array.isArray(b?.faces) ? b.faces.filter((f: any): f is RebarFace => validFaces.includes(f)) : undefined
-      const positioning: RebarPositioningMode | undefined =
-        b?.positioning === 'automatic' || b?.positioning === 'manual' ? b.positioning : undefined
-      const surface: RebarSurface | undefined = b?.surface === 'inner' || b?.surface === 'outer' ? b.surface : undefined
-      const bar: Rebar = {
-        x: Number.isFinite(b?.x) ? Number(b.x) : 0,
-        y: Number.isFinite(b?.y) ? Number(b.y) : 0,
-        dia: Number.isFinite(b?.dia) && b.dia > 0 ? Number(b.dia) : 20,
-      }
-      if (positioning) bar.positioning = positioning
-      const face = validFaces.includes(b?.face) ? (b.face as RebarFace) : faces?.[0]
-      if (face) bar.face = face
-      if (faces?.length) bar.faces = faces
-      if (surface) bar.surface = surface
-      if (Number.isInteger(b?.voidIndex) && b.voidIndex >= 0) bar.voidIndex = Number(b.voidIndex)
-      if (Number.isInteger(b?.layer) && b.layer >= 0) bar.layer = Number(b.layer)
-      if (typeof b?.groupId === 'string') bar.groupId = b.groupId
-      if (b?.axis === 'x' || b?.axis === 'y') bar.axis = b.axis
-      if (Number.isFinite(b?.u)) bar.u = Math.max(0, Math.min(1, Number(b.u)))
-      if (b?.radial === true) bar.radial = true
-      return bar
-    }),
+    bars: sanitizeBarRows(rawState.bars),
     predefined: rawState.predefined ?? null,
     shapeClass: ['rect', 'circ'].includes(rawState.shapeClass) ? rawState.shapeClass : defState.shapeClass,
     fck: Number.isFinite(rawState.fck) && rawState.fck > 0 ? Number(rawState.fck) : defState.fck,

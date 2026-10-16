@@ -9,7 +9,8 @@ import { complianceChecks } from './engine/checks'
 import { auditCovers, radialCover } from './engine/cover'
 import { isAutomaticBar, repositionAutomaticBars, validateOuterCoverFit } from './engine/reinforcement'
 import { exportReport } from './report'
-import { exportProjectFile, parseProjectFile } from './projectFile'
+import { exportProjectFile } from './projectFile'
+import { importProjectText, importSummary, type ImportReport } from './importFile'
 import { fmtN, initialState, type AppState } from './state'
 import { SectionPreview, type NAInfo, type StressOverlay } from './components/SectionPreview'
 import { PMChart, ContourChart } from './components/Charts'
@@ -73,6 +74,7 @@ import {
   STANDARD_BAR_DIAMETERS,
   headerBtnCls,
   headerBtnPrimaryCls,
+  noteSmCls,
   statusPillCls,
   statusReadoutCls,
 } from './components/ui'
@@ -164,6 +166,13 @@ export default function App() {
   const [reportNote, setReportNote] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   /**
+   * What the file just read actually contained, group by group — which inputs
+   * were populated from it and which could not be. Shown in the banner beside
+   * the success message, so a field still holding its previous value is named
+   * rather than left to be discovered.
+   */
+  const [importReport, setImportReport] = useState<ImportReport | null>(null)
+  /**
    * Which of the two header dialogs is open, if either. The appearance choices
    * themselves live in `useSettings`, which keeps them in step with storage and
    * with the document element; this is only which panel is on screen.
@@ -171,6 +180,14 @@ export default function App() {
   const [panel, setPanel] = useState<'settings' | 'about' | null>(null)
   const { settings, update: updateSettings } = useSettings()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /**
+   * Counts completed imports. The circular-reinforcement panel watches it so a
+   * bar table that came from a file is left exactly as the file wrote it until
+   * the arrangement itself is edited.
+   */
+  const [importStamp, setImportStamp] = useState(0)
+  /** The pending auto-clear of the import banner, if one is running. */
+  const importTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
    * Apply input changes and keep automatic reinforcement derived from the
@@ -249,7 +266,11 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string
-        const newAppState = parseProjectFile(text)
+        // A project this app wrote is read exactly as before. Any other JSON
+        // that describes a section is mapped field by field onto the inputs:
+        // everything the file carries is taken, and a field it does not carry
+        // keeps the value it already has.
+        const { state: newAppState, report } = importProjectText(text, state)
         setState(newAppState)
         setCustomizeBarDiameter(!STANDARD_BAR_DIAMETERS.includes(newAppState.barDia))
         if (newAppState.cases.length > 0) {
@@ -264,11 +285,28 @@ export default function App() {
         if (newAppState.shearCases.length > 0) {
           setShearSelCase(newAppState.shearCases[0].id)
         }
+        if (importTimerRef.current) clearTimeout(importTimerRef.current)
         setImportError(null)
-        setImportSuccess(`Successfully imported project from "${file.name}"`)
-        setTimeout(() => setImportSuccess(null), 5000)
+        setImportReport(report)
+        const summary = importSummary(report)
+        setImportSuccess(
+          `Imported ${report.format === 'project' ? 'project' : 'section data'} from "${file.name}" — ` +
+            `${summary.imported.length} input group(s) populated from the file`,
+        )
+        setImportStamp((n) => n + 1)
+        // A complete import clears itself after five seconds, as it always has.
+        // When an input could not be populated the banner stays until it is
+        // dismissed, so the list of them is there to read.
+        if (summary.missing.length === 0 && summary.invalid.length === 0) {
+          importTimerRef.current = setTimeout(() => {
+            setImportSuccess(null)
+            setImportReport(null)
+          }, 5000)
+        }
       } catch (err: any) {
+        if (importTimerRef.current) clearTimeout(importTimerRef.current)
         setImportSuccess(null)
+        setImportReport(null)
         setImportError(err.message || 'Failed to parse project file.')
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = ''
@@ -603,6 +641,13 @@ export default function App() {
     })
   }
 
+  /**
+   * The import banner's detail: the groups the file populated, and the ones it
+   * could not, so the second list can be shown to the user verbatim.
+   */
+  const importDetail = useMemo(() => (importReport ? importSummary(importReport) : null), [importReport])
+  const notPopulated = importDetail ? [...importDetail.missing, ...importDetail.invalid] : []
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <header className="shrink-0 sticky top-0 z-40 border-b border-edge bg-card/90 shadow-header backdrop-blur-md">
@@ -726,7 +771,7 @@ export default function App() {
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
-                accept=".json,.rcc"
+                accept=".json,.rcc,.txt"
                 className="hidden"
               />
               <button
@@ -797,8 +842,42 @@ export default function App() {
               </Banner>
             )}
             {importSuccess && (
-              <Banner tone="ok" onDismiss={() => setImportSuccess(null)}>
-                {importSuccess}
+              <Banner
+                tone={importReport && importReport.counts.invalid > 0 ? 'warn' : 'ok'}
+                onDismiss={() => {
+                  setImportSuccess(null)
+                  setImportReport(null)
+                }}
+              >
+                <div className="font-medium">{importSuccess}</div>
+                {importReport && (
+                  <div className="mt-1 space-y-0.5">
+                    {importDetail!.imported.length > 0 && (
+                      <div className={noteSmCls}>
+                        Populated from the file: {importDetail!.imported.map((f) => f.group).join(' · ')}
+                      </div>
+                    )}
+                    {importDetail!.imported.length === 0 && (
+                      <div className={noteSmCls}>
+                        Nothing in the file could be mapped onto the inputs — every field kept the value it had.
+                      </div>
+                    )}
+                    {notPopulated.length > 0 && (
+                      <div>
+                        <div className={`${noteSmCls} mt-1 font-display uppercase tracking-[0.05em]`}>
+                          Not populated ({notPopulated.length})
+                        </div>
+                        <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                          {notPopulated.map((f, i) => (
+                            <li key={`${f.group}-${i}`}>
+                              <span className="font-medium">{f.group}</span> — {f.detail}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Banner>
             )}
             {reportNote && (
@@ -829,6 +908,7 @@ export default function App() {
           />
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
+              importStamp={importStamp}
               predefined={state.predefined}
               bars={state.bars}
               cover={radialCover(state.cover)}
