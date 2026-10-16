@@ -149,6 +149,8 @@ export default function App() {
    */
   const [view, setView] = useState<'uls' | 'sls' | 'shear'>('uls')
   const [importError, setImportError] = useState<string | null>(null)
+  /** Set when the report could not be printed, only handed over as a file. */
+  const [reportNote, setReportNote] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -544,7 +546,7 @@ export default function App() {
       const el = document.getElementById(id) ?? document.getElementById(`print-${id}`)
       return el ? el.outerHTML.replace(/viewBox="[^"]*"/, `viewBox="${base}"`) : '<p><i>figure unavailable</i></p>'
     }
-    exportReport({
+    void exportReport({
       state,
       spec,
       grade,
@@ -569,6 +571,17 @@ export default function App() {
         contour: grab('fig-contour', '0 0 460 420'),
         shear: grab('fig-shear', '0 0 460 340'),
       },
+    }).then((route) => {
+      // the report prints in a window of its own when the browser allows one,
+      // otherwise from a hidden frame in this page (`src/reportDelivery.ts`);
+      // only when printing is blocked outright does it arrive as a file
+      setReportNote(
+        route === 'download'
+          ? 'This browser blocked the print dialog, so the report was saved as an HTML file instead — open it and print (or "Save as PDF") from there.'
+          : null,
+      )
+    }).catch(() => {
+      setReportNote('The report could not be prepared in this browser.')
     })
   }
 
@@ -721,7 +734,7 @@ export default function App() {
                 className={headerBtnPrimaryCls}
                 onClick={exportPdf}
                 disabled={!surface || !props || results.length === 0}
-                title="Open the full calculation report (ULS, SLS and shear) in a print window — use 'Save as PDF'"
+                title="Print the full calculation report (ULS, SLS and shear), or 'Save as PDF' in the print dialog"
               >
                 <Icon name="report" size={13} />
                 <span className="hidden sm:inline">PDF report</span>
@@ -731,9 +744,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Status Notification Banner for Import Success / Error */}
-        {(importError || importSuccess) && (
-          <div className={`${shell} shrink-0 pb-2`}>
+        {/* Status Notification Banner for Import Success / Error, and for a
+            report that had to come down as a file instead of a print dialog */}
+        {(importError || importSuccess || reportNote) && (
+          <div className={`${shell} shrink-0 flex flex-col gap-1.5 pb-2`}>
             {importError && (
               <Banner tone="error" onDismiss={() => setImportError(null)}>
                 {importError}
@@ -742,6 +756,11 @@ export default function App() {
             {importSuccess && (
               <Banner tone="ok" onDismiss={() => setImportSuccess(null)}>
                 {importSuccess}
+              </Banner>
+            )}
+            {reportNote && (
+              <Banner tone="warn" onDismiss={() => setReportNote(null)}>
+                {reportNote}
               </Banner>
             )}
           </div>

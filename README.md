@@ -129,6 +129,16 @@ favicon against the component shape by shape, measures the drawing's box from th
 check the section is centred with equal margins (and that the bars mirror about its axes), and
 checks the rasteriser still carries the same placement, bar centres and hooks.
 
+## Report
+
+The header's **PDF report** button prints a self-contained calculation report (§10.2 of
+`docs/10-outputs.md`) — figures embedded as inline SVG — for "Save as PDF". `src/reportDelivery.ts`
+delivers it by the first route the browser allows: a window of its own, else a hidden frame in
+the page (no popup permission needed, so it works in an embedded preview), else the report file
+itself, downloaded. A route counts only when the report document has loaded in it, and the print
+waits for the document to lay out; a route that never loads is dropped and the next one takes
+over. `src/components/__tests__/reportDelivery.test.ts` covers that routing.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest

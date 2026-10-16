@@ -133,10 +133,18 @@ they were.
 
 ## 10.2 Report
 
-The **PDF report** button (header bar) builds a self-contained print document in a new
-window — all figures embedded as inline SVG at fit-to-view scale — and opens the print
-dialog ("Save as PDF" produces the file). Contents, so an independent reviewer can
-follow the check without the software:
+The **PDF report** button (header bar) builds a self-contained print document — all figures
+embedded as inline SVG at fit-to-view scale — and opens the print dialog ("Save as PDF"
+produces the file). *How* it gets there is the job of `src/reportDelivery.ts`, because a print
+window is not always available and is refused silently: the report goes to a window of its own
+when the browser allows one, otherwise to a hidden 0 × 0 frame in this page (no permission
+needed — this is what makes the button work inside an embedded preview, where a popup is never
+granted), and only if printing is blocked outright does it arrive as a downloaded HTML file,
+with a note in the header saying so. A route is only used once the report document has really
+loaded in it (a fresh window loads `about:blank` first) and the print waits for the document to
+lay out; a route that never loads is dropped — the window closed, the frame removed — and the
+next one takes over. Contents, so an independent reviewer can follow the check without the
+software:
 
 1. Header: selected code and edition, date, method statement line.
 2. Input echo: materials, the nominal cover of each concrete face (outer faces, and the

@@ -50,7 +50,7 @@ describe('app header', () => {
     expect(groupAt).toBeGreaterThan(-1)
     const group = area.slice(groupAt)
     expect([...group.matchAll(/<button/g)]).toHaveLength(3)
-    const pdf = group.indexOf('Open the full calculation report')
+    const pdf = group.indexOf('Print the full calculation report')
     expect(pdf).toBeGreaterThan(-1)
     expect(group.indexOf('Import a saved project JSON file')).toBeLessThan(pdf)
     expect(group.indexOf('Export current project state to a JSON file')).toBeLessThan(pdf)

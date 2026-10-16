@@ -15,6 +15,7 @@ import {
 import { contourAtP, pmCurve } from './engine/surface'
 import type { AppState } from './state'
 import { logoSvgMarkup } from './components/Logo'
+import { REPORT_MARKER, deliverReport, type ReportDelivery } from './reportDelivery'
 import type { NeutralAxisResult } from './engine/flexure'
 import type { SpacingReport } from './engine/barSpacing'
 import type {
@@ -256,7 +257,7 @@ ${notes}`
   .stroke-edge{stroke:#dde4ea}.stroke-edge-strong{stroke:#b9c4cd}
   .disclaimer { margin-top: 18px; padding-top: 8px; border-top: 1.5px solid #17222c; font-size: 10px; color: #485866; }
   @media print { body { padding: 0; } }
-</style></head><body>
+</style></head><body ${REPORT_MARKER}>
 
 <div class="head">
   ${logoSvgMarkup('rep', 'class="logo" width="54" height="54" role="img" aria-label="RCC Section Check"')}
@@ -370,21 +371,15 @@ ${shearSectionHtml}
   return html
 }
 
-/** Build the report and open it in a print window ("Save as PDF" produces the file). */
-export function exportReport(ctx: ReportContext): void {
-  const html = reportHtml(ctx)
-  const win = window.open('', '_blank')
-  if (!win) {
-    window.alert('Popup blocked — allow popups for this site to export the PDF report.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-  win.document.title = 'RCC-Section-Check-Report'
-  window.setTimeout(() => {
-    win.focus()
-    win.print()
-  }, 450)
+/**
+ * Build the report and send it to the print dialog ("Save as PDF" produces the
+ * file). Resolves with the route the report actually took: a window of its own,
+ * a hidden frame in this page (when popups are refused, as in an embedded
+ * preview), or the file itself. The routing and the print timing live in
+ * `src/reportDelivery.ts`.
+ */
+export function exportReport(ctx: ReportContext): Promise<ReportDelivery> {
+  return deliverReport(reportHtml(ctx))
 }
 
 /** Neutral axis, xu,max, classification and Mu per case, plus the physical spacing / overlap audit. */

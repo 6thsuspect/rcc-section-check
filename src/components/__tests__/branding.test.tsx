@@ -149,7 +149,15 @@ describe('application logo', () => {
     // the title block lays the mark out beside the heading, not centred above it
     expect(styles).toContain('.head { display: flex; align-items: center; gap: 12px')
     expect(styles).toContain('.head .logo { width: 54px; height: 54px')
-    const body = report.slice(report.indexOf('<body>'), report.indexOf('Input data'))
+    // the body carries the marker the delivery looks for when it checks that a
+    // window or frame really holds the report before printing it
+    const body = report.slice(report.indexOf('<body'), report.indexOf('Input data'))
+    expect(report).toContain('<body data-report>')
+    // and it is self-contained — it reaches the print dialog as a document of
+    // its own (a blob URL in a window or a hidden frame), so it must not need
+    // anything fetched from the network
+    expect(report).toContain('<title>RCC Section Check — Calculation Report</title>')
+    expect(report).not.toMatch(/<(link|img|script)\b|url\(https?:/)
     // the mark sits on the title line, ahead of the title itself
     const logoAt = body.indexOf('class="logo"')
     const titleAt = body.indexOf('Calculation Report')
