@@ -1,14 +1,26 @@
 /**
- * Mouse-wheel editing of numeric fields — the shared stepping rule and the
- * native listener the detailing fields attach to themselves.
+ * Mouse-wheel editing of numeric fields — the shared stepping rule, the
+ * increment the app takes from the Settings panel, and the native listener
+ * every numeric field attaches to itself.
  *
  * The listener is exercised through a fake element that provides only the
  * listener pair (`addEventListener` / `removeEventListener`) and a `wheel`
  * dispatcher, because the suite runs without a DOM; everything else in these
  * tests is the production code path.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { attachWheelStep, wheelNotches, wheelStepValue, type WheelStepOpts } from '../ui'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_SETTINGS, liveWheelStep, setWheelStep } from '../../settings'
+import {
+  attachWheelStep,
+  wheelBase,
+  wheelNotches,
+  wheelRef,
+  wheelStepValue,
+  type WheelStepOpts,
+} from '../ui'
+
+/** Every test starts, and ends, on the increment the app opens with. */
+afterEach(() => setWheelStep(DEFAULT_SETTINGS.wheelStep))
 
 interface FakeWheelEvent {
   deltaY: number
@@ -45,12 +57,16 @@ function fakeEl() {
 const one = { value: 180, step: 10 }
 
 describe('wheel step rule', () => {
-  it('moves one field step per notch, up for a wheel up and down for a wheel down', () => {
+  it('moves by the increment it is given per notch, up for a wheel up and down for a wheel down', () => {
     expect(wheelStepValue(one, 1)).toBe(190)
     expect(wheelStepValue(one, -1)).toBe(170)
-    // and several notches at once move several steps
+    // and several notches at once move several increments
     expect(wheelStepValue(one, 3)).toBe(210)
     expect(wheelStepValue(one, -2)).toBe(160)
+    // the same field at the app's default increment of one
+    expect(wheelStepValue({ value: 180, step: 1 }, 1)).toBe(181)
+    expect(wheelStepValue({ value: 180, step: 1 }, -1)).toBe(179)
+    expect(wheelStepValue({ value: 180, step: 0.5 }, 1)).toBe(180.5)
   })
 
   it('moves by the step from the value on screen, so no notch can be rounded away', () => {
@@ -104,11 +120,89 @@ describe('wheel step rule', () => {
   })
 })
 
+describe('the increment comes from the Settings panel', () => {
+  /** A field of the app's own kind: a value and a callback, no step of its own. */
+  const field = (value: number, onChange: (v: number) => void): WheelStepOpts => ({ value, onChange })
+
+  it('steps by the increment in force — 1 out of the box, 5 once the panel says so', () => {
+    const { el, wheel } = fakeEl()
+    const onChange = vi.fn()
+    attachWheelStep(el, () => field(150, onChange))
+
+    // the default: one notch, one unit — the reported bundle spacing goes 150 → 151
+    expect(liveWheelStep()).toBe(1)
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(151)
+    wheel(100)
+    expect(onChange).toHaveBeenLastCalledWith(149)
+
+    // the user sets 5 in the Settings panel: the very next notch moves 5 — no
+    // re-render, no reload, the same field
+    setWheelStep(5)
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(155)
+    wheel(100)
+    expect(onChange).toHaveBeenLastCalledWith(145)
+
+    // 0.1 for a fine dimension: the value keeps its tenth of a millimetre
+    setWheelStep(0.1)
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(150.1)
+  })
+
+  it('reads the increment on every notch, so a change never waits for a render', () => {
+    const { el, wheel } = fakeEl()
+    const seen: number[] = []
+    attachWheelStep(el, () => field(10, (v) => seen.push(v)))
+    setWheelStep(10)
+    wheel(-100) // 20
+    setWheelStep(1)
+    wheel(-100) // 11 — the value on screen plus one
+    expect(seen).toEqual([20, 11])
+  })
+
+  it('ignores an increment that would not move the field', () => {
+    const { el, wheel } = fakeEl()
+    const onChange = vi.fn()
+    attachWheelStep(el, () => field(150, onChange))
+    setWheelStep(0) // a hand-edited storage entry
+    expect(liveWheelStep()).toBe(1)
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(151)
+  })
+
+  it('starts a blank (automatic) field from the value the app is using', () => {
+    // the bundle/triple spacing fields take a blank as "use the automatic
+    // spacing": a notch must nudge that number, not drop the field to zero
+    expect(wheelBase(150, 61)).toBe(150)
+    expect(wheelBase(null, 61)).toBe(61)
+    expect(wheelBase(undefined, 61)).toBe(61)
+    expect(wheelBase(NaN, 61)).toBe(61)
+    expect(wheelBase(null)).toBe(0)
+
+    const { el, wheel } = fakeEl()
+    const onChange = vi.fn()
+    let value: number | null = null
+    // what the panel writes back: the entered number, so the field is no longer
+    // automatic and the next notch starts from what it now holds
+    const write = (v: number) => {
+      value = v
+      onChange(v)
+    }
+    attachWheelStep(el, () => field(wheelBase(value, 61), write))
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(62)
+    wheel(-100)
+    expect(onChange).toHaveBeenLastCalledWith(63)
+    wheel(100)
+    expect(onChange).toHaveBeenLastCalledWith(62)
+  })
+})
+
 describe('wheel listener on a field', () => {
   const opts = (over: Partial<WheelStepOpts> = {}): WheelStepOpts => ({
     value: 180,
     onChange: () => {},
-    step: 10,
     ...over,
   })
 
@@ -124,9 +218,10 @@ describe('wheel listener on a field', () => {
     expect(e.defaultPrevented).toBe(true)
   })
 
-  it('steps the value up and down by the field step and updates on every notch', () => {
+  it('steps the value up and down by the increment in force, and updates on every notch', () => {
     const { el, wheel } = fakeEl()
     const onChange = vi.fn()
+    setWheelStep(10)
     attachWheelStep(el, () => opts({ onChange }))
     wheel(-100)
     expect(onChange).toHaveBeenLastCalledWith(190)
@@ -138,23 +233,25 @@ describe('wheel listener on a field', () => {
   it('steps from the value on screen, one notch per event', () => {
     const { el, wheel } = fakeEl()
     const onChange = vi.fn()
+    setWheelStep(10)
     let value = 180
-    const field = () => opts({ value, onChange: (v: number) => { value = v; onChange(v) } })
-    attachWheelStep(el, field)
+    const one = () => opts({ value, onChange: (v: number) => { value = v; onChange(v) } })
+    attachWheelStep(el, one)
     wheel(-100) // 190, and the parent renders it
     wheel(-100) // 200
     wheel(100) // 190
     expect(onChange.mock.calls.map((c) => c[0])).toEqual([190, 200, 190])
   })
 
-  it('asks for one step from the value on screen, so a field that clamps cannot drift', () => {
+  it('asks for one increment from the value on screen, so a field that clamps cannot drift', () => {
     // the leg count is capped at 10: each notch asks the panel for one more leg
     // than the value shown, and the panel decides. No notch is banked up, so the
     // first wheel down after a wheel up at the cap moves the count straight away.
     const { el, wheel } = fakeEl()
     const onChange = vi.fn()
     let value = 10
-    attachWheelStep(el, () => opts({ step: 1, value, min: 2, onChange: (v) => { value = Math.min(10, v); onChange(v) } }))
+    // (the default increment of one is the leg count's own step)
+    attachWheelStep(el, () => opts({ value, min: 2, onChange: (v) => { value = Math.min(10, v); onChange(v) } }))
     wheel(-100)
     wheel(-100)
     expect(value).toBe(10)
@@ -190,5 +287,35 @@ describe('wheel listener on a field', () => {
     expect(listeners).toHaveLength(0)
     wheel(-100)
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('the ref an inline field carries', () => {
+  it('attaches on mount, reads its numbers live, and detaches the way React asks', () => {
+    const { el, wheel, listeners } = fakeEl()
+    let value = 150
+    const seen: number[] = []
+    // what a table cell writes: `ref={wheelRef(() => ({ value: p.x, … }))}`
+    const attach = wheelRef<HTMLElement>(() => ({
+      value,
+      onChange: (v) => {
+        value = v
+        seen.push(v)
+      },
+    }))
+    const detach = attach(el)
+    expect(listeners).toHaveLength(1)
+    wheel(-100)
+    expect(seen).toEqual([151])
+    wheel(-100)
+    expect(seen).toEqual([151, 152])
+    // React 19 takes the function a ref returns as its cleanup, and calls the
+    // ref with null when the element goes away: nothing is left listening
+    expect(typeof detach).toBe('function')
+    detach?.()
+    expect(listeners).toHaveLength(0)
+    wheel(-100)
+    expect(seen).toEqual([151, 152])
+    expect(attach(null)).toBeUndefined()
   })
 })

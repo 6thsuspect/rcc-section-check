@@ -84,9 +84,10 @@ The shear tab carries its own reinforcement diagram and stirrup editor, next to 
   member between the two orientations, distributes positions evenly, shows the clear spacing
   between members and the resulting `Asv`, `Asv/sv` and code minimum. A position is adjustable
   by typing it or by **scrolling the wheel over the field** — one notch moves the member by the
-  field's own 10 mm step (the leg count by one leg), the drawing and the checks follow the notch
-  immediately, and the page is held still while the wheel is over the field; the field's own
-  limits and validation are the ones that apply, and keyboard entry is untouched; and
+  wheel increment set in **Settings** (1 mm by default; the field's spinner arrows keep their own
+  10 mm step), the drawing and the checks follow the notch immediately, and the page is held still
+  while the wheel is over the field; the field's own limits and validation are the ones that apply,
+  and keyboard entry is untouched; and
 - every arrangement is **validated, never silently changed**: positions outside the section, a
   leg or tie that does not cross the ring, a member duplicating one of the ring's own legs, too
   small a clear gap, a ring that does not fit inside the section with the entered cover, and any
@@ -131,7 +132,7 @@ checks the rasteriser still carries the same placement, bar centres and hooks.
 
 ## Report
 
-The header's **PDF report** button prints a self-contained calculation report (§10.3 of
+The header's **PDF report** button prints a self-contained calculation report (§10.5 of
 `docs/10-outputs.md`) — figures embedded as inline SVG — for "Save as PDF". `src/reportDelivery.ts`
 delivers it by the first route the browser allows: a window of its own, else a hidden frame in
 the page (no popup permission needed, so it works in an embedded preview), else the report file
@@ -157,7 +158,8 @@ The header's action row ends in a **gear** (Settings) and an **ⓘ** (About). Bo
 on the one modal shell (`src/components/Modal.tsx`: backdrop, ✕, Esc, click-outside, focus in and
 back, no page scroll behind), and both are mounted only while they are open.
 
-**Settings** holds the appearance preferences:
+**Settings** holds the appearance preferences and the one input preference — how far a wheel notch
+moves a numeric field:
 
 | Section | Options |
 | --- | --- |
@@ -165,6 +167,7 @@ back, no page scroll behind), and both are mounted only while they are open.
 | Drafting sheet | Paper · Blueprint · Graph · Cream, and the drafting grid on/off |
 | Interface font size | Small (14 px) · Medium (16 px) · Large (18 px) |
 | Accent colour | drafting blue (default) plus blue, green, purple, orange, pink and cyan |
+| Mouse-wheel increment | 0.1 · **1 (default)** · 5 · 10, or any number from 0.001 to 1000 |
 | Preview | the accent, a sample heading and the sample button style |
 
 - `src/settings.ts` is the whole model — defaults, swatches, size presets, sheet tints, a normaliser
@@ -182,6 +185,20 @@ back, no page scroll behind), and both are mounted only while they are open.
   the root font size (14 / 16 / 18 px) so the whole interface — type, spacing and controls — scales
   together. Medium (16 px) is the size the app has always had, so nothing moves by default; the
   figures keep their own user-unit scale.
+- **The mouse-wheel increment is one setting for the whole app**: with the pointer over any numeric
+  field — a section dimension, a cover, a bar position or ⌀, a load case, a shear member, a bundle or
+  triple-bar spacing, an angular spacing — one wheel notch moves the value by this much in the
+  field's own unit, wheel up increasing and wheel down decreasing. 1 is the default, so a 150 mm
+  bundle spacing becomes 151 mm and then 152 mm. It is read at the moment of the notch, so changing
+  it in the panel applies to the next wheel movement of the field already on screen — no reload, no
+  re-entry — and each field's tooltip names the increment in force. A field's **spinner arrows keep
+  their own step** (10 mm on the member positions, 5 mm on the cover and spacing fields) and the
+  field's `min`/`max`, decimals and validation are untouched, so nothing about what a field accepts
+  has changed. Where a blank field means "automatic" — the bundle and triple-bar spacings — a notch
+  starts from the value the app is using and takes the field over from it, rather than dropping it to
+  zero. The increment is stored with the other preferences, and the wheel is attached to every
+  numeric input in the app, so the page is held still while the pointer is over one (everywhere else
+  it scrolls as usual, and a locked/frozen field stays inert).
 - **The accent carries its own shades**: `--color-accent-strong`, `--color-accent-wash` and the
   button ink are mixed from the one accent colour (and the theme's card), so every swatch is legible
   in both themes.
@@ -191,7 +208,12 @@ back, no page scroll behind), and both are mounted only while they are open.
   `rel="noopener noreferrer"`), the key features and the © 2025 notice above **Close**.
 
 `src/__tests__/settings.test.ts` and `src/components/__tests__/appPanels.test.tsx` hold the model,
-the storage behaviour, both dialogs and the stylesheet rules they depend on.
+the storage behaviour, both dialogs and the stylesheet rules they depend on;
+`src/components/__tests__/wheelStep.test.ts` pins the stepping rule and
+`src/components/__tests__/wheelIncrement.test.tsx` mounts the app in a DOM (jsdom, for that file
+only) and turns the wheel over the fields the user reported — the bundle and triple-bar spacings
+first among them — checking that the value moves by the configured increment, that the setting takes
+effect on the next notch, and that every enabled numeric field on screen answers the wheel.
 
 ## Importing a file
 

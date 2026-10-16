@@ -334,18 +334,19 @@ describe('stirrup detailing editor', () => {
     expect(msgs).toEqual([])
   })
 
-  it('makes every member position field wheel-editable, on the fields own step', () => {
+  it('makes every member position field wheel-editable, on the configured increment', () => {
     const { html, layout } = detailing()
     expect(layout.members).toHaveLength(2) // the fixture's two internal legs
-    // one wheel notch moves a member by the step its spinner arrows use, and the
-    // field says so — the value, the drawing and the checks follow the notch
+    // the spinner arrows keep the field's own 10 mm step...
     const memberFields = [...html.matchAll(/<input[^>]*type="number"[^>]*step="10"[^>]*aria-label="(Leg|Cross-tie) position[^"]*"/g)]
     expect(memberFields).toHaveLength(layout.members.length)
-    expect(html).toContain('scroll the wheel over the field to step it by 10 mm')
+    // ...while one wheel notch moves the member by the increment set in the
+    // Settings panel, which the field names in its own tooltip
+    expect(html).toContain('scroll the wheel over the field to step it by 1 mm')
     expect(html).toContain('click it and use the arrow keys')
     // the section heading explains the convention next to the positions
     expect(html).toContain('the diagram and the checks follow every notch')
-    // the leg count is wheel-editable too, with its own step of one leg
+    // the leg count is wheel-editable too, by the same increment
     expect(html).toContain('Scroll the wheel over the field to step it by 1.')
     expect(msgs).toEqual([])
   })

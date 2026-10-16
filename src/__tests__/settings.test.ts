@@ -12,7 +12,7 @@
  *    dark palette, the sheet tints, the dark shadows and the grid switch are
  *    all read back out of `src/index.css`, which vitest cannot import.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
@@ -21,14 +21,24 @@ import {
   FONT_SIZES,
   SETTINGS_KEY,
   SHEET_THEMES,
+  WHEEL_STEP_MAX,
+  WHEEL_STEP_MIN,
+  WHEEL_STEPS,
   accentInk,
   applySettings,
   fontSizePx,
+  liveWheelStep,
   normalizeSettings,
+  normalizeWheelStep,
   readSettings,
+  setWheelStep,
+  subscribeWheelStep,
   writeSettings,
   type AppSettings,
 } from '../settings'
+
+/** No test may leave the app stepping by anything but the default. */
+afterEach(() => setWheelStep(DEFAULT_SETTINGS.wheelStep))
 
 const css = readFileSync(fileURLToPath(new URL('../index.css', import.meta.url)), 'utf8')
 
@@ -73,6 +83,7 @@ describe('settings defaults', () => {
       accentColor: '#256abf',
       sheet: 'paper',
       grid: true,
+      wheelStep: 1,
     })
     // the accent the app ships with is the first swatch, so the panel shows one
     // selection rather than six unselected colours
@@ -84,6 +95,17 @@ describe('settings defaults', () => {
       ['medium', 16],
       ['large', 18],
     ])
+  })
+
+  it('opens with a wheel increment of one, offered by the presets', () => {
+    expect(DEFAULT_SETTINGS.wheelStep).toBe(1)
+    // the presets include the default, so the panel shows one selection rather
+    // than a row of unselected buttons beside the number it is stepping by
+    expect(WHEEL_STEPS.map((s) => s.value)).toContain(DEFAULT_SETTINGS.wheelStep)
+    expect(WHEEL_STEPS.map((s) => s.value)).toEqual([0.1, 1, 5, 10])
+    // and the bounds leave room for a fine ⌀ or a coarse walk over a big value
+    expect(WHEEL_STEP_MIN).toBeLessThan(0.1)
+    expect(WHEEL_STEP_MAX).toBeGreaterThan(10)
   })
 
   it('offers the four drafting sheets, each with the swatch the CSS paints', () => {
@@ -105,6 +127,7 @@ describe('normalizeSettings', () => {
       accentColor: '#8b5cf6',
       sheet: 'cream',
       grid: false,
+      wheelStep: 5,
     }
     expect(normalizeSettings(s)).toEqual(s)
   })
@@ -133,6 +156,7 @@ describe('normalizeSettings', () => {
         accentColor: '#22C55E', // upper case is still a hex
         sheet: 'graph',
         grid: false,
+        wheelStep: '2.5', // a string from a hand-edited entry is still a number
       }),
     ).toEqual({
       theme: 'dark',
@@ -140,12 +164,62 @@ describe('normalizeSettings', () => {
       accentColor: '#22c55e',
       sheet: 'graph',
       grid: false,
+      wheelStep: 2.5,
     })
   })
 
   it('drops unknown keys instead of carrying them around', () => {
     const s = normalizeSettings({ theme: 'dark', dimensionFontScale: 1.5, canvasTheme: 'grasshopper' })
-    expect(Object.keys(s).sort()).toEqual(['accentColor', 'fontSize', 'grid', 'sheet', 'theme'])
+    expect(Object.keys(s).sort()).toEqual(['accentColor', 'fontSize', 'grid', 'sheet', 'theme', 'wheelStep'])
+  })
+})
+
+describe('the wheel increment', () => {
+  it('falls back to the default for anything that would not move a field', () => {
+    // a notch that moved the value nowhere would read as a broken field
+    for (const junk of [undefined, null, 0, -5, NaN, Infinity, '', 'abc', {}, [], false]) {
+      expect(normalizeWheelStep(junk)).toBe(DEFAULT_SETTINGS.wheelStep)
+    }
+  })
+
+  it('keeps an entered increment, within the bounds', () => {
+    expect(normalizeWheelStep(1)).toBe(1)
+    expect(normalizeWheelStep(5)).toBe(5)
+    expect(normalizeWheelStep(0.5)).toBe(0.5)
+    expect(normalizeWheelStep(0.001)).toBe(0.001)
+    expect(normalizeWheelStep('0.25')).toBe(0.25)
+    // more precision than a notch can mean is trimmed, not carried around
+    expect(normalizeWheelStep(0.123456)).toBe(0.123)
+    // out of bounds is brought to the nearest end, not dropped
+    expect(normalizeWheelStep(1e6)).toBe(WHEEL_STEP_MAX)
+    expect(normalizeWheelStep(1e-9)).toBe(WHEEL_STEP_MIN)
+  })
+
+  it('is published as it is applied, so a field steps by it on its next notch', () => {
+    const { el } = stubRoot()
+    expect(liveWheelStep()).toBe(1) // the default the app opens on
+    applySettings({ ...DEFAULT_SETTINGS, wheelStep: 5 }, el)
+    expect(liveWheelStep()).toBe(5)
+    // a value that arrives from storage unreadable never reaches the store
+    applySettings({ ...DEFAULT_SETTINGS, wheelStep: -1 }, el)
+    expect(liveWheelStep()).toBe(1)
+  })
+
+  it('notifies subscribers on a change, and only on a change', () => {
+    const seen = vi.fn()
+    const stop = subscribeWheelStep(seen)
+    setWheelStep(5)
+    expect(seen).toHaveBeenCalledTimes(1)
+    expect(liveWheelStep()).toBe(5)
+    setWheelStep(5) // same value: nothing to re-render
+    expect(seen).toHaveBeenCalledTimes(1)
+    setWheelStep(2)
+    expect(seen).toHaveBeenCalledTimes(2)
+    stop()
+    setWheelStep(3)
+    expect(seen).toHaveBeenCalledTimes(2)
+    // the value itself keeps changing whether or not anyone is listening
+    expect(liveWheelStep()).toBe(3)
   })
 })
 
@@ -182,7 +256,10 @@ describe('storage', () => {
 describe('applySettings', () => {
   it('writes the theme, sheet and grid attributes plus the accent and the root size', () => {
     const { el, props } = stubRoot()
-    applySettings({ theme: 'dark', fontSize: 'large', accentColor: '#ec4899', sheet: 'graph', grid: false }, el)
+    applySettings(
+      { theme: 'dark', fontSize: 'large', accentColor: '#ec4899', sheet: 'graph', grid: false, wheelStep: 2 },
+      el,
+    )
     expect(el.dataset.theme).toBe('dark')
     expect(el.dataset.sheet).toBe('graph')
     expect(el.dataset.grid).toBe('off')

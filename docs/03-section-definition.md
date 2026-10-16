@@ -31,7 +31,7 @@ Vertex   x (mm)   y (mm)
 
 The `x`, `y` of every boundary vertex — and of every opening, in its own block — can be taken
 off the screen as a tab-separated table with the panel's **Copy coordinates** button
-([§10.3](10-outputs.md)); the values are the vertices as entered, in the section's own frame.
+([§10.4](10-outputs.md)); the values are the vertices as entered, in the section's own frame.
 
 ## 3.2 Openings and voids
 

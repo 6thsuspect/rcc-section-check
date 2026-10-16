@@ -14,6 +14,13 @@
  * of `@theme`, and Tailwind 4 emits those tokens as `var(--color-…)` in its
  * utilities. Overriding the tokens for one attribute is therefore enough to
  * flip the whole interface, including the SVG figures.
+ *
+ * One preference here is not about looks: `wheelStep`, the increment a wheel
+ * notch moves a numeric field by. It is stored and normalized like the rest,
+ * and `applySettings` publishes it to the small live store at the foot of this
+ * file, because the wheel listeners are native ones attached to the inputs —
+ * outside the React tree the settings live in — and each of them must step by
+ * the value in force at the moment of the notch.
  */
 
 /** Which way the interface is lit. */
@@ -33,6 +40,13 @@ export type AppSettings = {
   sheet: SheetName
   /** Faint drafting grid behind the panels. */
   grid: boolean
+  /**
+   * How far one mouse-wheel notch moves a numeric field, in that field's own
+   * unit — millimetres for a dimension, kN for a load, mm for a bar position.
+   * Default 1 (`DEFAULT_SETTINGS`). A field's own spinner arrows and typed
+   * validation keep their own step; this is the wheel only.
+   */
+  wheelStep: number
 }
 
 /** The one key this app writes to `localStorage`. */
@@ -74,9 +88,27 @@ export const SHEET_THEMES = [
 ] as const satisfies readonly { id: SheetName; label: string; note: string; swatch: string }[]
 
 /**
+ * Mouse-wheel increment presets for the Settings panel — the values most
+ * engineering inputs want: a tenth of a unit for a fine ⌀ or a small spacing,
+ * one for a millimetre dimension, five or ten for a coarse walk over a large
+ * value. Any other positive number can be typed into the field beside them.
+ */
+export const WHEEL_STEPS = [
+  { value: 0.1, label: '0.1' },
+  { value: 1, label: '1' },
+  { value: 5, label: '5' },
+  { value: 10, label: '10' },
+] as const
+
+/** Bounds of a typed wheel increment: a notch must move the value, not jump it. */
+export const WHEEL_STEP_MIN = 0.001
+export const WHEEL_STEP_MAX = 1000
+
+/**
  * Defaults. The theme and the interface size are the values the app opened
  * with before this panel existed — light and the 16 px root — so a first visit
- * (and a cleared storage) looks exactly like the published app.
+ * (and a cleared storage) looks exactly like the published app. The wheel
+ * increment starts at 1: one notch, one unit.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
@@ -84,6 +116,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accentColor: ACCENT_COLORS[0].hex,
   sheet: 'paper',
   grid: true,
+  wheelStep: 1,
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/
@@ -113,6 +146,19 @@ function pick<T extends string>(value: unknown, allowed: readonly { id: T }[], f
 }
 
 /**
+ * A wheel increment from anywhere (storage, a preset button, a typed string, a
+ * hand-edited blob) as a positive number within the bounds. Zero, a negative, a
+ * blank or anything unreadable falls back to the default — a notch that moved
+ * nothing would read as a broken field — and a value out of bounds is brought
+ * to the nearest end rather than dropped, so a large entry still works.
+ */
+export function normalizeWheelStep(raw: unknown): number {
+  const v = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseFloat(raw) : NaN
+  if (!Number.isFinite(v) || v <= 0) return DEFAULT_SETTINGS.wheelStep
+  return Math.min(WHEEL_STEP_MAX, Math.max(WHEEL_STEP_MIN, Math.round(v * 1000) / 1000))
+}
+
+/**
  * Coerce anything (a half-written storage entry, a value from an older build,
  * a hand-edited JSON blob) to a complete, valid settings object. Unknown keys
  * are dropped and a bad field falls back to its default on its own, so one
@@ -129,6 +175,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
         : DEFAULT_SETTINGS.accentColor,
     sheet: pick(o.sheet, SHEET_THEMES, DEFAULT_SETTINGS.sheet),
     grid: typeof o.grid === 'boolean' ? o.grid : DEFAULT_SETTINGS.grid,
+    wheelStep: normalizeWheelStep(o.wheelStep),
   }
 }
 
@@ -171,6 +218,11 @@ export function writeSettings(s: AppSettings, storage?: Storage | null): void {
  * is the one token written here; the derived `--color-accent-strong` and
  * `--color-accent-wash` are `color-mix()` of it in the stylesheet, so they
  * follow the accent — and the theme — on their own.
+ *
+ * The wheel increment is published to the live store below at the same moment,
+ * so a field starts stepping by the new value on its very next notch — the
+ * listeners are native and read it when the wheel turns, not when the panel
+ * re-renders.
  */
 export function applySettings(s: AppSettings, root: HTMLElement): void {
   root.dataset.theme = s.theme
@@ -179,4 +231,46 @@ export function applySettings(s: AppSettings, root: HTMLElement): void {
   root.style.setProperty('--color-accent', s.accentColor)
   root.style.setProperty('--color-accent-ink', accentInk(s.accentColor))
   root.style.fontSize = `${fontSizePx(s.fontSize)}px`
+  setWheelStep(s.wheelStep)
+}
+
+/* ---------------------------- the live wheel step -------------------------- */
+
+/**
+ * The increment one wheel notch moves a numeric field by, right now.
+ *
+ * The wheel listeners the inputs carry are native ones, attached long before —
+ * and outside — the React tree the settings state lives in, and they must see a
+ * change the instant the Settings panel writes one, without waiting for that
+ * field to re-render. Publishing the value here keeps `settings.ts` the one
+ * place that knows what the preferences are, in the same spirit as
+ * `applySettings` writing the theme onto the document element for the
+ * stylesheet: the interface is told, and so is the code that cannot ask React.
+ * A field's tooltip reads it too (`useWheelStepSize`), so what a field promises
+ * and what it does cannot drift apart.
+ */
+let wheelStep = DEFAULT_SETTINGS.wheelStep
+const wheelStepListeners = new Set<() => void>()
+
+/** The wheel increment in force — read by every wheel listener when a notch turns. */
+export function liveWheelStep(): number {
+  return wheelStep
+}
+
+/** Publish a new increment; the next notch of every field uses it. */
+export function setWheelStep(v: number): void {
+  const next = normalizeWheelStep(v)
+  if (next === wheelStep) return
+  wheelStep = next
+  // a listener that unsubscribes from inside its own notification is fine: the
+  // set iterates what is still in it
+  for (const notify of wheelStepListeners) notify()
+}
+
+/** Subscribe to changes in the built-in store protocol (`useSyncExternalStore`). */
+export function subscribeWheelStep(notify: () => void): () => void {
+  wheelStepListeners.add(notify)
+  return () => {
+    wheelStepListeners.delete(notify)
+  }
 }

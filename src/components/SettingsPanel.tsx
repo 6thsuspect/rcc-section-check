@@ -12,15 +12,92 @@
  * than as a dialog bolted on. There is no canvas-theme colour editor here: this
  * app's figures draw their palette from the design tokens, so the figure colours
  * follow the theme instead of being chosen one by one.
+ *
+ * **Mouse-wheel increment** is the one section that is not about looks: it sets
+ * how far one wheel notch moves a numeric field, everywhere in the app. The
+ * change takes effect on the very next notch of every field, because the value
+ * is published to the live store in `src/settings.ts` as it is applied — the
+ * fields' wheel listeners are native ones and read it when the wheel turns.
  */
+import { useEffect, useState } from 'react'
 import {
   ACCENT_COLORS,
   FONT_SIZES,
   SHEET_THEMES,
+  WHEEL_STEP_MAX,
+  WHEEL_STEP_MIN,
+  WHEEL_STEPS,
+  normalizeWheelStep,
   type AppSettings,
 } from '../settings'
-import { Check, Icon, SegButton, SegGroup, SubCard, btnPrimaryCls, noteSmCls } from './ui'
+import {
+  Check,
+  fieldBoxCls,
+  fieldCls,
+  Icon,
+  SegButton,
+  SegGroup,
+  SubCard,
+  btnPrimaryCls,
+  noteSmCls,
+  useWheelStep,
+} from './ui'
 import { Modal } from './Modal'
+
+/**
+ * The custom increment box beside the presets.
+ *
+ * What is being typed is held as a draft, so a half-typed value ("0.", "") does
+ * not snap the box back to the old number mid-keystroke — and the wheel, which
+ * reads the applied setting, keeps stepping by the last good one until the
+ * entry is a number. Anything outside the bounds is brought to the nearest end,
+ * and the box shows the value that was actually stored as soon as it is left.
+ */
+function CustomWheelStep({
+  value,
+  onChange,
+}: {
+  value: number
+  onChange: (v: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+  const wheelInput = useWheelStep<HTMLInputElement>({
+    value,
+    min: WHEEL_STEP_MIN,
+    onChange: (v) => onChange(v),
+  })
+  // a preset click (or a wheel notch) writes the setting: show what it wrote
+  useEffect(() => setDraft(String(value)), [value])
+
+  return (
+    <label
+      className={`${fieldBoxCls} min-w-[7.5rem] flex-1`}
+      title={`Type any increment from ${WHEEL_STEP_MIN} to ${WHEEL_STEP_MAX}, or scroll the wheel over the field to step it by ${value}.`}
+    >
+      <input
+        ref={wheelInput}
+        type="number"
+        className={fieldCls}
+        value={draft}
+        min={WHEEL_STEP_MIN}
+        max={WHEEL_STEP_MAX}
+        step={0.1}
+        aria-label="Mouse-wheel increment per notch"
+        onChange={(e) => {
+          const text = e.target.value
+          setDraft(text)
+          const v = parseFloat(text)
+          // only a positive number is committed; a half-typed entry waits
+          if (Number.isFinite(v) && v > 0) onChange(normalizeWheelStep(v))
+        }}
+        onBlur={() => setDraft(String(value))}
+      />
+      <span className="shrink-0 pr-2 text-[0.65625rem] leading-none text-ink-3" aria-hidden="true">
+        per notch
+      </span>
+    </label>
+  )
+}
 
 export function SettingsPanel({
   settings,
@@ -146,6 +223,31 @@ export function SettingsPanel({
           </div>
           <p className={`${noteSmCls} mt-2`}>
             {accent ? `Current accent: ${accent.name} (${accent.hex}).` : `Current accent: ${settings.accentColor}.`}
+          </p>
+        </SubCard>
+
+        {/* -------------------------------------------------- mouse wheel */}
+        <SubCard title="Mouse-wheel increment">
+          <div className="flex flex-wrap items-center gap-2">
+            <SegGroup gap="gap-1.5" aria-label="Mouse-wheel increment">
+              {WHEEL_STEPS.map((s) => (
+                <SegButton
+                  key={s.value}
+                  active={settings.wheelStep === s.value}
+                  onClick={() => onChange({ wheelStep: s.value })}
+                  title={`One wheel notch moves a field by ${s.label}`}
+                >
+                  {s.label}
+                </SegButton>
+              ))}
+            </SegGroup>
+            <CustomWheelStep value={settings.wheelStep} onChange={(v) => onChange({ wheelStep: v })} />
+          </div>
+          <p className={`${noteSmCls} mt-2`}>
+            One wheel notch over a numeric field moves it by this much, in the field's own unit — millimetres for a
+            dimension, kN for a load. It applies to every numeric field in the app as you scroll, including the
+            bundle and triple-bar spacings in the circular reinforcement panel, and it takes effect at once: no
+            reload, no re-entry. The spinner arrows keep the field's own step. Default <b>1</b>.
           </p>
         </SubCard>
 

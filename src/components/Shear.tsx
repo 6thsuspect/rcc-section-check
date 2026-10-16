@@ -54,6 +54,8 @@ import {
   tdCls,
   thCls,
   useWheelStep,
+  useWheelStepSize,
+  wheelRef,
 } from './ui'
 
 /** Normalised positions are kept to the entered precision. */
@@ -489,6 +491,10 @@ export function ShearCasesPanel({
                 </td>
                 <td className="px-1 py-[3px]">
                   <input
+                    ref={wheelRef<HTMLInputElement>(() => ({
+                      value: Number.isFinite(c.Vu) ? c.Vu : 0,
+                      onChange: (v) => setRow(c.id, { Vu: v }),
+                    }))}
                     className={`${cellCls} w-full text-right`}
                     type="number"
                     value={Number.isFinite(c.Vu) ? c.Vu : 0}
@@ -498,6 +504,10 @@ export function ShearCasesPanel({
                 </td>
                 <td className="px-1 py-[3px]">
                   <input
+                    ref={wheelRef<HTMLInputElement>(() => ({
+                      value: Number.isFinite(c.Pu) ? c.Pu : 0,
+                      onChange: (v) => setRow(c.id, { Pu: v }),
+                    }))}
                     className={`${cellCls} w-full text-right`}
                     type="number"
                     value={Number.isFinite(c.Pu) ? c.Pu : 0}
@@ -1308,14 +1318,19 @@ export function ShearDiagram({
 /* Detailing editor                                                    */
 /* ------------------------------------------------------------------ */
 
-/** One wheel notch on a member position — the step its spinner arrows use. */
+/**
+ * The step this field's spinner arrows take, and the value it is written to a
+ * tenth of. One wheel notch moves the member by the increment set in the
+ * Settings panel (1 mm by default) — see `attachWheelStep`.
+ */
 const MEMBER_STEP_MM = 10
 
 /**
  * Compact inline millimetre field for the member rows. Editable with the wheel
- * as well as the keyboard: a notch moves the member by `MEMBER_STEP_MM`, the
- * diagram and the validation follow immediately, and the entered value is never
- * clamped — an arrangement that cannot be built is reported below it.
+ * as well as the keyboard: a notch moves the member by the wheel increment from
+ * the Settings panel, the diagram and the validation follow immediately, and the
+ * entered value is never clamped — an arrangement that cannot be built is
+ * reported below it.
  */
 function MmField({
   value,
@@ -1328,18 +1343,15 @@ function MmField({
   title: string
   w?: string
 }) {
-  const wheelRef = useWheelStep<HTMLInputElement>({
-    value,
-    onChange,
-    step: MEMBER_STEP_MM,
-  })
+  const increment = useWheelStepSize()
+  const wheelInput = useWheelStep<HTMLInputElement>({ value, onChange })
   return (
     <span
       className={`${fieldBoxCls} ${w}`}
-      title={`${title} — scroll the wheel over the field to step it by ${MEMBER_STEP_MM} mm, or click it and use the arrow keys.`}
+      title={`${title} — scroll the wheel over the field to step it by ${increment} mm, or click it and use the arrow keys.`}
     >
       <input
-        ref={wheelRef}
+        ref={wheelInput}
         type="number"
         step={MEMBER_STEP_MM}
         className={fieldCls}
@@ -1386,6 +1398,8 @@ export function ShearDetailingCard({
   figureId?: string
 }) {
   const settings = state.shear
+  /** Named in the paragraph under the member rows — the increment in force. */
+  const wheelStepMm = useWheelStepSize()
   const [selected, setSelected] = useState<string | null>(null)
   const [symmetry, setSymmetry] = useState(true)
   const setShear = (patch: Partial<ShearSettings>) => update({ shear: { ...settings, ...patch } })
@@ -1624,7 +1638,6 @@ export function ShearDetailingCard({
               value={manual ? 2 + legs.length : layout.effectiveLegs}
               min={2}
               step={1}
-              wheel
               onChange={setLegCount}
               title="Total legs crossing the shear plane: the 2 legs of the closed link plus the intermediate legs. In manual mode this adds or removes intermediate legs."
             />
@@ -1667,7 +1680,7 @@ export function ShearDetailingCard({
                       <b>columns of the longitudinal bars</b>, so a leg runs from the bottom reinforcement to the top
                       reinforcement and a cross-tie is hooked around bars on its level. Positions are section
                       coordinates in mm along the axis the member cuts: legs across the width, cross-ties across the
-                      depth. Type a position, or scroll the wheel over the field to step it by {MEMBER_STEP_MM} mm —
+                      depth. Type a position, or scroll the wheel over the field to step it by {wheelStepMm} mm —
                       the diagram and the checks follow every notch, and a position that cannot be built is reported
                       rather than corrected.
                       {legColumns.length > 0 && (

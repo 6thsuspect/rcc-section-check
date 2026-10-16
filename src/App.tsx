@@ -813,7 +813,7 @@ export default function App() {
                 className={headerBtnCls}
                 aria-label="Settings"
                 aria-expanded={panel === 'settings'}
-                title="Settings — theme, drafting sheet, accent colour and interface size"
+                title="Settings — theme, drafting sheet, accent colour, interface size and the mouse-wheel increment"
               >
                 <Icon name="gear" size={13} />
               </button>

@@ -17,7 +17,14 @@ import { AboutPanel, APP_VERSION } from '../AboutPanel'
 import { SettingsPanel } from '../SettingsPanel'
 import { Modal } from '../Modal'
 import App from '../../App'
-import { ACCENT_COLORS, DEFAULT_SETTINGS, FONT_SIZES, SHEET_THEMES, type AppSettings } from '../../settings'
+import {
+  ACCENT_COLORS,
+  DEFAULT_SETTINGS,
+  FONT_SIZES,
+  SHEET_THEMES,
+  WHEEL_STEPS,
+  type AppSettings,
+} from '../../settings'
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const modalSource = read('../Modal.tsx')
@@ -38,7 +45,14 @@ function pressed(markup: string): string[] {
 describe('settings panel', () => {
   it('renders every section of the reference dialog', () => {
     const html = panel()
-    for (const section of ['Theme', 'Drafting sheet', 'Interface font size', 'Accent colour', 'Preview']) {
+    for (const section of [
+      'Theme',
+      'Drafting sheet',
+      'Interface font size',
+      'Accent colour',
+      'Mouse-wheel increment',
+      'Preview',
+    ]) {
       expect(html).toContain(section)
     }
     expect(html).toContain('role="dialog"')
@@ -54,17 +68,20 @@ describe('settings panel', () => {
 
   it('marks the stored choices, not the first option of each row', () => {
     const html = panel({
+      ...DEFAULT_SETTINGS,
       theme: 'dark',
       fontSize: 'large',
       accentColor: '#8b5cf6',
       sheet: 'cream',
       grid: false,
+      wheelStep: 5,
     })
     const chosen = pressed(html)
     expect(chosen).toContain('Dark')
     expect(chosen).toContain('Large')
     expect(chosen).toContain('Cream')
     expect(chosen).toContain('Accent colour Purple')
+    expect(chosen).toContain('5')
     for (const other of ['Light', 'Small', 'Medium', 'Paper', 'Blueprint', 'Graph']) {
       expect(chosen).not.toContain(other)
     }
@@ -84,8 +101,37 @@ describe('settings panel', () => {
 
   it('shows the defaults selected on a first visit', () => {
     const chosen = pressed(panel())
-    expect(chosen).toEqual(expect.arrayContaining(['Light', 'Medium', 'Paper', 'Accent colour Drafting blue']))
-    expect(chosen).toHaveLength(4)
+    expect(chosen).toEqual(
+      expect.arrayContaining(['Light', 'Medium', 'Paper', 'Accent colour Drafting blue', '1']),
+    )
+    expect(chosen).toHaveLength(5)
+  })
+
+  it('offers the mouse-wheel increment: presets, a box for any other, and how it applies', () => {
+    const html = panel()
+    // every preset is a button, and the one in force is the pressed one
+    for (const s of WHEEL_STEPS) {
+      expect(html).toContain(`title="One wheel notch moves a field by ${s.label}"`)
+    }
+    expect(pressed(html)).toContain('1')
+    // any other increment can be typed, in the field's own bounds
+    const box = /<input[^>]*aria-label="Mouse-wheel increment per notch"[^>]*>/.exec(html)?.[0] ?? ''
+    expect(box).toContain('type="number"')
+    expect(box).toContain('min="0.001"')
+    expect(box).toContain('max="1000"')
+    expect(box).toContain('value="1"')
+    expect(html).toContain('>per notch<')
+    // the section says what the setting does, and where the default came from
+    expect(html).toContain('One wheel notch over a numeric field moves it by this much')
+    expect(html).toContain('bundle and triple-bar spacings')
+    expect(html).toContain('takes effect at once: no reload, no re-entry')
+    expect(html).toContain('spinner arrows keep the field')
+    expect(html).toContain('<b>1</b>')
+    // the box shows the stored increment, not a placeholder
+    const custom = /<input[^>]*aria-label="Mouse-wheel increment per notch"[^>]*value="([^"]*)"/.exec(
+      panel({ ...DEFAULT_SETTINGS, wheelStep: 2.5 }),
+    )
+    expect(custom?.[1]).toBe('2.5')
   })
 })
 

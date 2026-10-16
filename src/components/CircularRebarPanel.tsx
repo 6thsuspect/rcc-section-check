@@ -33,6 +33,10 @@ import {
   rowDelCls,
   SubCard,
   noteSmCls,
+  useWheelStepSize,
+  wheelBase,
+  wheelHint,
+  wheelRef,
 } from './ui'
 
 const KINDS: CircularArrangementKind[] = ['uniform', 'alternate', 'bundle', 'triple', 'layered']
@@ -250,6 +254,25 @@ export function CircularRebarPanel({
 
   const outerPitch = pitchRadius(R, cover, tieDia, cfg.barDia)
   const liveCfg = sanitizeCircularConfig({ ...cfg, sectionRadius: R, innerRadius: Ri > 0 ? Ri : undefined, cover, tieDia })
+  /**
+   * The values the blank (automatic) fields are standing in for. A wheel notch
+   * over such a field starts from the number the app is using — shown in the
+   * field's placeholder and in the readouts — so nudging an "auto" spacing
+   * takes over from the automatic value instead of dropping the field to zero.
+   */
+  const bundleSpacingAuto = bundleSpacingUsed({ ...cfg, bundleSpacing: null })
+  const bundleInnerAuto = bundleInnerSpacingUsed({ ...cfg, bundleInnerSpacing: null })
+  const groupCount = cfg.kind === 'triple' ? cfg.nGroups : cfg.nBars
+  const angularAuto = groupCount > 0 ? 360 / groupCount : 0
+  /**
+   * The pitch radius a layer falls back on while its own radius is blank: the
+   * ring less one bar and its clearance for every layer in front of it. The
+   * caption prints it and a wheel notch on the blank field starts from it.
+   */
+  const layerRadiusAuto = (layer: CircularLayerDef, idx: number) =>
+    Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25)))
+  /** The wheel increment in force, named under the form. */
+  const wheelStep = useWheelStepSize()
   const bundleDias = bundleDiameters(liveCfg)
   const bundleEq = Math.sqrt(bundleDias.reduce((a, d) => a + d * d, 0))
   const bundleCheck = spacingReport(result.bars)
@@ -417,14 +440,16 @@ export function CircularRebarPanel({
               <OptionalMmField
                 label="Bundle spacing (c/c)"
                 value={cfg.bundleSpacing ?? null}
-                placeholder={`equal · ${bundleSpacingUsed({ ...cfg, bundleSpacing: null }).toFixed(0)}`}
+                auto={bundleSpacingAuto}
+                placeholder={`equal · ${bundleSpacingAuto.toFixed(0)}`}
                 title="Centre-to-centre distance between adjacent bundles on the pitch circle. Blank = bundles equally spaced around the ring."
                 onChange={(v) => patch({ bundleSpacing: v, angularSpacingDeg: null })}
               />
               <OptionalMmField
                 label="Bar spacing in bundle (c/c)"
                 value={cfg.bundleInnerSpacing ?? null}
-                placeholder={`auto · ${bundleInnerSpacingUsed({ ...cfg, bundleInnerSpacing: null }).toFixed(0)}`}
+                auto={bundleInnerAuto}
+                placeholder={`auto · ${bundleInnerAuto.toFixed(0)}`}
                 title="Centre-to-centre distance between bars inside one bundle — independent of the bundle spacing. Enter the bar diameter for bars in contact."
                 onChange={(v) => patch({ bundleInnerSpacing: v })}
               />
@@ -496,6 +521,11 @@ export function CircularRebarPanel({
                 </span>
                 <span className={fieldBoxCls}>
                   <input
+                    ref={wheelRef<HTMLInputElement>(() => ({
+                      value: wheelBase(cfg.angularSpacingDeg, angularAuto),
+                      min: 0,
+                      onChange: (v) => patch({ angularSpacingDeg: v > 0 ? v : null }),
+                    }))}
                     type="number"
                     className={fieldCls}
                     value={cfg.angularSpacingDeg ?? ''}
@@ -559,7 +589,9 @@ export function CircularRebarPanel({
         )}
         <p className={`${noteSmCls} -mt-0.5`}>
           Pitch radius = R − cover − ⌀tie − ⌀bar/2, using the governing face cover from the cover panel. Generated
-          bars fill the reinforcement table and stay individually editable.
+          bars fill the reinforcement table and stay individually editable. A wheel notch over any field here — a
+          spacing left blank included, which starts from the automatic value — moves it by {wheelStep}, the
+          increment set in Settings.
         </p>
 
         {cfg.kind === 'layered' && (
@@ -587,7 +619,7 @@ export function CircularRebarPanel({
                       <span className="font-mono text-[0.625rem] font-normal normal-case tracking-normal text-ink-3">
                         {layer.radius != null
                           ? `r = ${layer.radius.toFixed(0)} mm`
-                          : `r ≈ auto (${Math.max(0, outerPitch - idx * (layer.barDia + Math.max(layer.barDia, 25))).toFixed(0)} mm)`}
+                          : `r ≈ auto (${layerRadiusAuto(layer, idx).toFixed(0)} mm)`}
                       </span>
                     </span>
                     <button
@@ -606,6 +638,11 @@ export function CircularRebarPanel({
                         Radius (mm)
                       </span>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: wheelBase(layer.radius, layerRadiusAuto(layer, idx)),
+                          min: 0,
+                          onChange: (v) => updateLayer(layer.id, { radius: v > 0 ? v : null }),
+                        }))}
                         type="number"
                         className={`${cellCls} px-2 py-[5px] text-[0.8125rem]`}
                         value={layer.radius ?? ''}
@@ -646,6 +683,11 @@ export function CircularRebarPanel({
                       </span>
                       <span className={fieldBoxCls}>
                         <input
+                          ref={wheelRef<HTMLInputElement>(() => ({
+                            value: wheelBase(layer.angularSpacingDeg, layer.nBars > 0 ? 360 / layer.nBars : 0),
+                            min: 0,
+                            onChange: (v) => updateLayer(layer.id, { angularSpacingDeg: v > 0 ? v : null }),
+                          }))}
                           type="number"
                           className={fieldCls}
                           value={layer.angularSpacingDeg ?? ''}
@@ -723,21 +765,30 @@ export function CircularRebarPanel({
 function OptionalMmField({
   label,
   value,
+  auto,
   placeholder,
   title,
   onChange,
 }: {
   label: string
   value: number | null
+  /** The value the app uses while the field is blank — the wheel starts there. */
+  auto: number
   placeholder: string
   title?: string
   onChange: (v: number | null) => void
 }) {
+  const step = useWheelStepSize()
   return (
-    <label className="flex min-w-0 flex-col gap-[3px]" title={title}>
+    <label className="flex min-w-0 flex-col gap-[3px]" title={title ? `${title} ${wheelHint(step, 'mm')}` : title}>
       <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
       <span className={fieldBoxCls}>
         <input
+          ref={wheelRef<HTMLInputElement>(() => ({
+            value: wheelBase(value, auto),
+            min: 0,
+            onChange,
+          }))}
           type="number"
           className={fieldCls}
           value={value ?? ''}

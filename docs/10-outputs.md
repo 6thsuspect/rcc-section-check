@@ -159,12 +159,14 @@ they were.
   clear spacing, so it always passes the detailing validation it is checked against.
 
   Every numeric field in the editor — each member position and the leg count — is editable
-  with the **mouse wheel** as well as the keyboard: one notch steps the value by the field's own
-  step (10 mm for a member position, one leg for the leg count), the step is taken from the
+  with the **mouse wheel** as well as the keyboard: one notch steps the value by the wheel
+  increment set in the Settings panel (1 by default, see below), the step is taken from the
   value on screen so no notch can be rounded away, the field's own limits and validation are
   the ones that apply, the diagram and the check results follow the notch immediately, and the
   page is held still while the wheel is over the field (elsewhere it scrolls as usual, and
-  keyboard typing is untouched).
+  keyboard typing is untouched). A field's spinner arrows keep their own step — 10 mm on a
+  member position, one leg on the leg count — which is now only the arrows' step, not the
+  wheel's.
 
   The drawing is a detailing view: it never by itself certifies compliance. The values shown
   (Asv, Asv/sv, sv,max, VEd/VRd) all come from the selected code's check run on the same
@@ -180,7 +182,39 @@ below the workspace and outside its scrolling region, so it stays visible whatev
 The year is the one in the notice, not today's date (a plain string in `src/App.tsx`; it is not
 derived from the clock).
 
-## 10.3 Copying coordinates to the clipboard
+## 10.3 Mouse-wheel increment
+
+One setting, in the header's **Settings** panel, decides how far a mouse-wheel notch moves a
+numeric field: **1** by default, offered as 0.1 / 1 / 5 / 10 presets plus a box for any number from
+0.001 to 1000. It applies to **every numeric input in the app** — the section dimensions and bar
+counts, the boundary-vertex and bar-table cells, the load cases, the covers, the shear inputs and
+member positions, and the circular arrangement's spacings and angles, including the blank (automatic)
+bundle and triple-bar spacing fields the user reported. Wheel up increases, wheel down decreases,
+and one notch moves the value by exactly the increment in the field's own unit (mm, kN, °).
+
+- **Read at the moment of the notch.** The value is published to a small live store
+  (`src/settings.ts`, `liveWheelStep`/`setWheelStep`/`subscribeWheelStep`) as it is applied, so a
+  change in the panel is in force on the very next wheel movement of the field already on screen —
+  no reload and no re-entry — and every field that names the increment (its tooltip) re-renders with
+  it (`useWheelStepSize`).
+- **The arrows are not the wheel.** A field keeps its own `step` for the spinner arrows, its
+  `min`/`max`, its decimals and its validation; the wheel takes its increment from the setting
+  only. A notch steps from the value on screen rather than snapping to a grid, so no notch can be
+  rounded away, and a field that refuses a value (locked/frozen, or a count already at its cap) is
+  left alone rather than drifting.
+- **A blank field starts from what it stands in for.** Where empty means "automatic" — the bundle
+  spacing, the bar spacing in a bundle, an angular spacing, a void-face cover inheriting its outer
+  face, a layer radius — a notch starts from the value the app is using and writes it into the
+  field, so the entry takes over from the automatic value instead of dropping to zero.
+- **Held page, elsewhere untouched.** While the pointer is over a numeric field the wheel belongs to
+  the field and the page does not scroll (a native, non-passive listener — React's `onWheel` at the
+  root is passive, where `preventDefault()` is ignored); anywhere else, and over a locked field, the
+  page scrolls as it always did.
+- **Stored.** The increment lives in `localStorage['rcc-section-check-settings']` with the other
+  preferences, normalized on read (zero, negative, blank or unreadable falls back to 1; out of bounds
+  is brought to the nearest end).
+
+## 10.4 Copying coordinates to the clipboard
 
 Two buttons export coordinates as **tab-separated tables with a header row**, ready to paste into
 Excel, AutoCAD, STAAD or any other consumer of column-wise coordinates. Both are in the input column,
@@ -218,7 +252,7 @@ Implementation: `src/clipboard.ts` (`cell`, `sectionCoordinatesText`, `barCoordi
 `src/useCopyFeedback.ts` (the note, its wording and its timer, cleared on unmount), and the two
 buttons in `src/components/Editors.tsx` (`SectionPanel`, `RebarPanel`).
 
-## 10.4 Report
+## 10.5 Report
 
 The **PDF report** button (header bar) builds a self-contained print document — all figures
 embedded as inline SVG at fit-to-view scale — and opens the print dialog ("Save as PDF"

@@ -37,6 +37,7 @@ import {
   NumField,
   SubCard,
   noteSmCls,
+  useWheelStep,
 } from './ui'
 
 /** Stable fingerprint of a bar list — used to detect an out-of-date layout. */
@@ -602,6 +603,13 @@ function InnerCoverField({
   onChange: (v: number | null) => void
 }) {
   const inherited = value == null
+  // A notch on a blank field starts from the outer-face cover it is inheriting,
+  // so nudging a void face pins the value it was already using.
+  const wheelInput = useWheelStep<HTMLInputElement>({
+    value: value ?? inherit,
+    min: 0,
+    onChange: (v) => onChange(v),
+  })
   return (
     <label className="flex min-w-0 flex-col gap-[3px]">
       <span className="flex items-center justify-between gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
@@ -610,6 +618,7 @@ function InnerCoverField({
       </span>
       <span className={`${fieldBoxCls} ${inherited ? 'bg-panel/70' : 'border-accent/50'}`}>
         <input
+          ref={wheelInput}
           type="number"
           className={fieldCls}
           value={value ?? ''}

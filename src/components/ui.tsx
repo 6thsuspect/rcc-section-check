@@ -3,10 +3,12 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type HTMLAttributes,
   type PointerEvent,
   type ReactNode,
 } from 'react'
+import { liveWheelStep, subscribeWheelStep } from '../settings'
 
 /* ------------------------------------------------------------------ *
  * Shared presentation vocabulary.
@@ -325,24 +327,33 @@ export const statusPillCls =
 /* ------------------------------------------------------------------ *
  * Mouse-wheel stepping for numeric fields
  *
- * One convention for every wheel-editable field in the app: with the pointer
- * over the field (or the caret in it) one wheel notch moves the value by the
- * field's own step — its `min`/`max`, its decimals and the validation the field
- * already runs are untouched, and keyboard typing keeps working exactly as it
- * did. The page is held still while the wheel is over the field; everywhere
- * else it scrolls as usual.
+ * One convention for every numeric field in the app: with the pointer over the
+ * field (or the caret in it) one wheel notch moves the value by the wheel
+ * increment the user set in the Settings panel (1 by default, see
+ * `src/settings.ts`). The field's `min`/`max`, its decimals and the validation
+ * it already runs are untouched, keyboard typing and the spinner arrows keep
+ * working exactly as they did — the arrows keep the field's own `step`, the
+ * wheel takes the increment from the setting. The page is held still while the
+ * wheel is over a field; everywhere else it scrolls as usual.
+ *
+ * The increment is read from the live store at the moment of the notch, so a
+ * change in the Settings panel applies to the next wheel movement of every
+ * field, on every tab, with no re-render and no reload.
  * ------------------------------------------------------------------ */
 
-/** The numbers a wheel notch works on: the value, its step and its limits. */
+/** The numbers a wheel notch works on: the value and the field's own limits. */
 export interface WheelStepRange {
   value: number
-  /** One notch — the field's own step, the one its spinner arrows use. */
-  step?: number
   min?: number
   max?: number
 }
 
-/** A wheel-editable field: its numbers plus what to do with the new value. */
+/**
+ * A wheel-editable field: its numbers plus what to do with the new value. There
+ * is deliberately **no step here** — the increment one notch moves by is the
+ * user's, from the Settings panel, and is read from the live store on every
+ * notch, so no field can hardcode an increment of its own.
+ */
 export interface WheelStepOpts extends WheelStepRange {
   onChange: (v: number) => void
   /** `false` leaves the field inert, so the wheel scrolls the page as usual. */
@@ -363,8 +374,11 @@ export function wheelNotches(deltaY: number): number {
 
 /**
  * The value a wheel-editable field must take after `notches` wheel notches: one
- * notch moves the value by exactly the field's step, so 170.2 mm becomes
- * 180.2 mm and the leg count 4 becomes 5.
+ * notch moves the value by exactly the increment it is given — the app's own,
+ * the one set in the Settings panel — so at the default increment of 1 a member
+ * position 170.2 mm becomes 171.2 mm, and at an increment of 10 it becomes
+ * 180.2 mm. The increment is also what the decimals are measured against, so a
+ * fraction of a millimetre survives a whole-millimetre notch.
  *
  * Stepping the value the field is showing — rather than snapping it to a grid —
  * is deliberate: a member position is stored as a thousandth of the section
@@ -377,7 +391,13 @@ export function wheelNotches(deltaY: number): number {
  * not clamped here, because the detailing editor reports a position outside the
  * section instead of silently pulling it back.
  */
-export function wheelStepValue(o: WheelStepRange, notches: number): number {
+export function wheelStepValue(
+  o: WheelStepRange & {
+    /** The increment a notch moves by — the app's own, from the Settings panel. */
+    step?: number
+  },
+  notches: number,
+): number {
   const step = Math.abs(o.step ?? 1) || 1
   const base = Number.isFinite(o.value) ? o.value : 0
   const decimals = Math.max(decimalsOf(step), Math.min(3, decimalsOf(base)))
@@ -391,11 +411,13 @@ export function wheelStepValue(o: WheelStepRange, notches: number): number {
 /**
  * Make a numeric field wheel-editable. Returns the detach function.
  *
- * One wheel event is one notch, stepped from the value the field is showing —
- * so the value, the diagram and the validation move together on every notch and
- * a field that refuses a value (a locked one, or a count already at its cap) is
- * simply left alone rather than drifting. Wheel up increases, wheel down
- * decreases, as the spinner arrows and every other scrolling numeric control do.
+ * One wheel event is one notch, moved by the increment the user set in the
+ * Settings panel (read at the moment of the notch) and stepped from the value
+ * the field is showing — so the value, the diagram and the validation move
+ * together on every notch and a field that refuses a value (a locked one, or a
+ * count already at its cap) is simply left alone rather than drifting. Wheel up
+ * increases, wheel down decreases, as the spinner arrows and every other
+ * scrolling numeric control do.
  *
  * The listener is native and non-passive on purpose: React registers `onWheel`
  * at the root as a *passive* listener, where `preventDefault()` is ignored — the
@@ -409,7 +431,9 @@ export function attachWheelStep(el: HTMLElement, opts: () => WheelStepOpts): () 
     const notches = wheelNotches(e.deltaY)
     if (notches === 0) return // a sideways gesture is not this field's
     e.preventDefault() // while the wheel is over the field it belongs to the field
-    o.onChange(wheelStepValue(o, notches))
+    // the increment is the user's, read now: a value changed in the Settings
+    // panel is in force on this notch, not on some later re-render
+    o.onChange(wheelStepValue({ ...o, step: liveWheelStep() }, notches))
   }
   el.addEventListener('wheel', onWheel, { passive: false })
   return () => el.removeEventListener('wheel', onWheel)
@@ -431,6 +455,35 @@ export function useWheelStep<T extends HTMLElement>(opts: WheelStepOpts) {
   return attach
 }
 
+/**
+ * The ref a wheel-editable input needs when the component builds it inline — a
+ * cell of the boundary or bar table, a field inside a list — where a hook
+ * cannot be called. The numbers are read from the callback on every notch, and
+ * React calls the detach the callback returns when the element goes away.
+ */
+export function wheelRef<T extends HTMLElement>(opts: () => WheelStepOpts) {
+  return (el: T | null) => (el ? attachWheelStep(el, opts) : undefined)
+}
+
+/**
+ * The wheel increment in force, as a value the interface re-renders with — so a
+ * field that names it (in its tooltip, say) names the number the wheel is
+ * actually stepping by, the moment the Settings panel changes it.
+ */
+export function useWheelStepSize(): number {
+  return useSyncExternalStore(subscribeWheelStep, liveWheelStep, liveWheelStep)
+}
+
+/**
+ * The value a notch starts from on a field that may be left blank. A field
+ * whose blank state means "automatic" carries the value the app is using while
+ * it is blank (`auto`), so a notch nudges that value instead of dropping the
+ * field to zero; a field with a number in it starts from the number.
+ */
+export function wheelBase(value: number | null | undefined, auto = 0): number {
+  return value != null && Number.isFinite(value) ? value : auto
+}
+
 /** One-line hint naming the wheel, added to a field's tooltip when it has one. */
 export function wheelHint(step: number, unit?: string): string {
   return `Scroll the wheel over the field to step it by ${step}${unit ? ` ${unit}` : ''}.`
@@ -444,7 +497,6 @@ export function NumField({
   unit,
   step,
   min,
-  wheel,
   w,
   disabled,
   hint,
@@ -462,8 +514,6 @@ export function NumField({
   unit?: string
   step?: number
   min?: number
-  /** Opt in to mouse-wheel editing (see `useWheelStep`). */
-  wheel?: boolean
   w?: string
   disabled?: boolean
   /** One-line explanation under the field. */
@@ -471,19 +521,18 @@ export function NumField({
   title?: string
 }) {
   const stepSize = step ?? 1
-  const wheelRef = useWheelStep<HTMLInputElement>({
+  const increment = useWheelStepSize()
+  const wheelInput = useWheelStep<HTMLInputElement>({
     value,
     onChange,
-    step: stepSize,
     min,
-    // a locked field must not respond, and a field that has not opted in keeps
-    // the page scrolling normally
-    enabled: wheel === true && !disabled,
+    // a locked field must not respond — its value is not the user's to change
+    enabled: !disabled,
   })
   return (
     <label
       className={`flex min-w-0 flex-col gap-[3px] ${w ?? ''} ${disabled ? 'opacity-55' : ''}`}
-      title={title ? (wheel && !disabled ? `${title} ${wheelHint(stepSize, unit)}` : title) : title}
+      title={title ? (disabled ? title : `${title} ${wheelHint(increment, unit)}`) : title}
     >
       <span className="flex items-center gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
         {label}
@@ -492,7 +541,7 @@ export function NumField({
       <span className={`${fieldBoxCls} ${disabled ? 'bg-panel' : ''}`}>
         <input
           id={id}
-          ref={wheelRef}
+          ref={wheelInput}
           type="number"
           disabled={disabled}
           className={fieldCls}
@@ -556,12 +605,18 @@ export function DiameterField({
     }
   }
 
-  const setCustomValue = (raw: string) => {
-    const parsed = parseFloat(raw)
+  /**
+   * The one path a custom diameter takes, typed or wheeled: rounded to four
+   * decimals and floored at 0.0001 mm, so the wheel cannot write a value the
+   * keyboard could not.
+   */
+  const commitCustom = (parsed: number) => {
     if (!Number.isFinite(parsed)) return
     const rounded = Math.round(parsed * 10000) / 10000
     onChange(Math.max(0.0001, rounded))
   }
+
+  const setCustomValue = (raw: string) => commitCustom(parseFloat(raw))
 
   return (
     <label className={`flex min-w-0 flex-col gap-[3px] ${disabled ? 'opacity-55' : ''}`}>
@@ -585,6 +640,12 @@ export function DiameterField({
       {customized ? (
         <span className={`${fieldBoxCls} border-accent/60`}>
           <input
+            ref={wheelRef<HTMLInputElement>(() => ({
+              value: Number.isFinite(value) ? value : 0,
+              min: 0.0001,
+              onChange: commitCustom,
+              enabled: !disabled,
+            }))}
             type="number"
             className={fieldCls}
             value={Number.isFinite(value) ? value : ''}

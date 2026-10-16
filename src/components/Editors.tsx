@@ -35,6 +35,7 @@ import {
   btnCls,
   btnDangerCls,
   codeChipCls,
+  wheelRef,
 } from './ui'
 
 /**
@@ -339,6 +340,11 @@ export function SectionPanel({
                   <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                   <td className={tdCls}>
                     <input
+                      ref={wheelRef<HTMLInputElement>(() => ({
+                        value: p.x,
+                        onChange: (v) => setPoly(poly.map((q, j) => (j === i ? { ...q, x: v } : q))),
+                        enabled: !frozen,
+                      }))}
                       className={cellCls}
                       type="number"
                       value={p.x}
@@ -348,6 +354,11 @@ export function SectionPanel({
                   </td>
                   <td className={tdCls}>
                     <input
+                      ref={wheelRef<HTMLInputElement>(() => ({
+                        value: p.y,
+                        onChange: (v) => setPoly(poly.map((q, j) => (j === i ? { ...q, y: v } : q))),
+                        enabled: !frozen,
+                      }))}
                       className={cellCls}
                       type="number"
                       value={p.y}
@@ -643,6 +654,19 @@ export function RebarPanel({
   customizeBarDiameter: boolean
 }) {
   const num = (v: string) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0)
+  /**
+   * One row edited — by a typed cell or by a wheel notch, which take the same
+   * path: the row is marked manual and the validate banner is cleared.
+   */
+  const setBarAt = (i: number, patch: Partial<Rebar>) => {
+    setStatus({ kind: 'idle' })
+    update(bars.map((q, j) => (j === i ? { ...q, ...patch } : q)))
+  }
+  /** A custom ⌀, rounded to four decimals and floored at 0.0001 mm. */
+  const setBarDia = (i: number, raw: number) => {
+    if (!Number.isFinite(raw) || raw <= 0) return
+    setBarAt(i, { dia: Math.max(0.0001, Math.round(raw * 10000) / 10000) })
+  }
   const DIAS = STANDARD_BAR_DIAMETERS
   const diameterOptions = (value: number) =>
     DIAS.includes(value) ? DIAS : [...DIAS, value].sort((a, b) => a - b)
@@ -771,58 +795,49 @@ export function RebarPanel({
                     <td className={`${tdCls} font-mono text-[0.6875rem] text-ink-3`}>{i + 1}</td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: b.x,
+                          // a wheel edit is an edit like a typed one: the row
+                          // becomes manual and the validate banner is cleared
+                          onChange: (v) => setBarAt(i, { x: v, positioning: 'manual' }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={b.x}
                         placeholder="0"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            bars.map((q, j) =>
-                              j === i ? { ...q, x: num(e.target.value), positioning: 'manual' as const } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setBarAt(i, { x: num(e.target.value), positioning: 'manual' })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: b.y,
+                          onChange: (v) => setBarAt(i, { y: v, positioning: 'manual' }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={b.y}
                         placeholder="0"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            bars.map((q, j) =>
-                              j === i ? { ...q, y: num(e.target.value), positioning: 'manual' as const } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setBarAt(i, { y: num(e.target.value), positioning: 'manual' })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       {customizeBarDiameter ? (
                         <input
+                          ref={wheelRef<HTMLInputElement>(() => ({
+                            value: b.dia,
+                            min: 0.0001,
+                            onChange: (v) => setBarDia(i, v),
+                          }))}
                           className={cellCls}
                           type="number"
                           value={b.dia}
                           min={0.0001}
                           step={0.0001}
                           aria-label={`Bar ${i + 1} diameter (custom)`}
-                          onChange={(e) => {
-                            const raw = parseFloat(e.target.value)
-                            if (!Number.isFinite(raw) || raw <= 0) return
-                            const dia = Math.max(0.0001, Math.round(raw * 10000) / 10000)
-                            setStatus({ kind: 'idle' })
-                            update(
-                              bars.map((q, j) =>
-                                j === i ? { ...q, dia } : q
-                              )
-                            )
-                          }}
+                          onChange={(e) => setBarDia(i, parseFloat(e.target.value))}
                         />
                       ) : (
                         <select
@@ -949,6 +964,12 @@ export function LoadCasesPanel({
     | { kind: 'empty'; message: string }
     | { kind: 'errors'; errors: { line: number; message: string }[] }
   >({ kind: 'idle' })
+
+  /** One case edited — typed or wheeled, the same path: values, banner cleared. */
+  const setCaseAt = (i: number, patch: Partial<LoadCase>) => {
+    setStatus({ kind: 'idle' })
+    update(cases.map((q, j) => (j === i ? { ...q, ...patch } : q)))
+  }
 
   // Excel paste handler that automatically expands rows and populates 4 columns
   const handleExcelPaste = (e: React.ClipboardEvent) => {
@@ -1130,52 +1151,43 @@ export function LoadCasesPanel({
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Pu,
+                          onChange: (v) => setCaseAt(i, { Pu: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Pu}
                         placeholder="1000"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Pu: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Pu: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Mux,
+                          onChange: (v) => setCaseAt(i, { Mux: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Mux}
                         placeholder="100"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Mux: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Mux: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
                     <td className={tdCls}>
                       <input
+                        ref={wheelRef<HTMLInputElement>(() => ({
+                          value: c.Muy,
+                          onChange: (v) => setCaseAt(i, { Muy: v }),
+                        }))}
                         className={cellCls}
                         type="number"
                         value={c.Muy}
                         placeholder="50"
-                        onChange={(e) => {
-                          setStatus({ kind: 'idle' })
-                          update(
-                            cases.map((q, j) =>
-                              j === i ? { ...q, Muy: num(e.target.value) } : q
-                            )
-                          )
-                        }}
+                        onChange={(e) => setCaseAt(i, { Muy: num(e.target.value) })}
                         onPaste={handleExcelPaste}
                       />
                     </td>
