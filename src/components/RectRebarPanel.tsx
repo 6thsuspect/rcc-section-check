@@ -38,7 +38,6 @@ import {
   rowDelCls,
   SegButton,
   SegGroup,
-  SubCard,
   useWheelStepSize,
   wheelBase,
   wheelHint,
@@ -68,6 +67,7 @@ function OptionalMmField({
   placeholder,
   title,
   allowZero = false,
+  className = '',
   onChange,
 }: {
   label: string
@@ -76,12 +76,16 @@ function OptionalMmField({
   placeholder: string
   title?: string
   allowZero?: boolean
+  className?: string
   onChange: (v: number | null) => void
 }) {
   const step = useWheelStepSize()
   return (
-    <label className="flex min-w-0 flex-col gap-[3px]" title={title ? `${title} ${wheelHint(step, 'mm')}` : title}>
-      <span className={fieldLabelCls}>
+    <label
+      className={`flex min-w-0 flex-col gap-[3px] ${className}`}
+      title={title ? `${title} ${wheelHint(step, 'mm')}` : title}
+    >
+      <span className={`${fieldLabelCls} whitespace-nowrap`}>
         {label}
       </span>
       <span className={fieldBoxCls}>
@@ -314,10 +318,9 @@ export function RectRebarPanel({
         </div>
 
         {/* Active Face Header & Controls */}
-        <SubCard
-          tone="accent"
-          title={
-            <span className="flex items-center gap-2">
+        <div className="rounded-lg border border-accent/25 bg-accent-wash/45 p-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
               <Check
                 checked={faceCfg.enabled}
                 onChange={(enabled) => updateFace(activeFace, { enabled })}
@@ -325,8 +328,6 @@ export function RectRebarPanel({
                 title={`Enable or disable longitudinal reinforcement along the ${FACE_LABELS[activeFace].toLowerCase()} concrete face`}
               />
             </span>
-          }
-          action={
             <div className="flex flex-wrap items-center gap-1">
               <button
                 type="button"
@@ -347,8 +348,7 @@ export function RectRebarPanel({
                 <span>Add layer</span>
               </button>
             </div>
-          }
-        >
+          </div>
           {!faceCfg.enabled ? (
             <p className={noteSmCls}>
               No reinforcement bars placed on the <b>{FACE_LABELS[activeFace]}</b> face. Tick the checkbox above or click{' '}
@@ -412,7 +412,7 @@ export function RectRebarPanel({
               </div>
             </div>
           )}
-        </SubCard>
+        </div>
 
         {/* Validation Diagnostics — never silently mutates user inputs */}
         {errorIssues.length > 0 && (
@@ -550,7 +550,7 @@ function LayerCard({
   return (
     <div
       data-testid={`rect-layer-${face}-${layerIdx + 1}`}
-      className="rounded-lg border border-line bg-card p-2.5 shadow-2xs"
+      className="rounded-lg border border-line bg-card px-2 py-2.5 shadow-2xs [&_input]:px-1.5 [&_select]:pl-1.5 [&_label>span:first-child]:whitespace-nowrap [&_label>span:first-child]:text-[0.59375rem] [&_label>span:first-child]:tracking-[0.03em]"
     >
       {/* Layer header */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-1.5">
@@ -623,7 +623,7 @@ function LayerCard({
               </SegButton>
             </SegGroup>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 items-end gap-2">
             <OptionalMmField
               label="Layer spacer ⌀"
               value={layer.spacerDiaOverride}
@@ -649,7 +649,10 @@ function LayerCard({
       {/* --- MODE 1: UNIFORM SINGLE BARS --- */}
       {layer.kind === 'uniform' && (
         <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
+          <div
+            data-testid={`rect-layer-fields-${face}-${layerIdx + 1}`}
+            className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-end gap-x-1.5 gap-y-2 min-[480px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.24fr)_minmax(0,0.96fr)]"
+          >
             <NumField
               label="Number of bars"
               value={layer.nBars}
@@ -664,6 +667,7 @@ function LayerCard({
               onCustomizeChange={onBarDiaCustomizeChange}
             />
             <OptionalMmField
+              className="col-span-2 min-[480px]:col-span-1"
               label="Bar spacing (c/c)"
               value={layer.spacing}
               auto={autoSpacing}
@@ -694,7 +698,7 @@ function LayerCard({
       {/* --- MODE 2: ALTERNATE BARS WITH REPEATING DIAMETER SEQUENCE --- */}
       {layer.kind === 'alternate' && (
         <div className="flex flex-col gap-2.5">
-          <div className="grid grid-cols-2 gap-x-2 gap-y-2">
+          <div className="grid grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] items-end gap-x-2 gap-y-2">
             <NumField
               label="Number of bars"
               value={layer.nBars}
@@ -746,7 +750,7 @@ function LayerCard({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-2 items-end gap-2">
               {layer.patternDias.map((d, sIdx) => (
                 <div key={sIdx} className="relative flex items-end gap-1">
                   <div className="min-w-0 flex-1">
@@ -817,7 +821,7 @@ function LayerCard({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-2 gap-y-2">
+          <div className="grid grid-cols-2 items-end gap-x-2 gap-y-2">
             <NumField
               label="Bars per bundle"
               value={layer.barsPerBundle}
@@ -897,7 +901,7 @@ function LayerCard({
             </div>
 
             {layer.bundleMixedDia && (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 items-end gap-2">
                 {bundleDias.map((d, k) => (
                   <DiameterField
                     key={k}
@@ -1072,7 +1076,7 @@ function LayerCard({
                     />
                   ) : (
                     <div className="flex flex-col gap-2">
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] items-end gap-2">
                         <NumField
                           label="Bars in bundle"
                           value={u.barsPerBundle}
@@ -1099,7 +1103,7 @@ function LayerCard({
                           onChange={(v) => updateUnit(u.id, { innerClear: v })}
                         />
                       </div>
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      <div className="grid grid-cols-2 items-end gap-2">
                         {uDias.map((d, k) => (
                           <DiameterField
                             key={k}
@@ -1124,7 +1128,7 @@ function LayerCard({
             })}
           </div>
 
-          <div className="grid grid-cols-2 gap-x-2 gap-y-2 border-t border-line pt-2">
+          <div className="grid grid-cols-2 items-end gap-x-2 gap-y-2 border-t border-line pt-2">
             <OptionalMmField
               label="Group spacing (c/c)"
               value={layer.spacing}

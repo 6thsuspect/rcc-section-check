@@ -1,21 +1,22 @@
 /**
  * @vitest-environment jsdom
  *
- * UI alignment invariants for Section Geometry:
- *  1. Bar Diameter input box aligns horizontally at the exact same vertical level
- *     and shares the exact control height as Width B and Depth D (in both standard
- *     dropdown and custom numeric modes).
- *  2. Input labels above Width B, Depth D, and Bar ⌀ share the exact same label
- *     header height, bottom alignment, gap, and font styling.
- *  3. The Customize / Use standard button sits inside the bottom-aligned label row
- *     without expanding the label row height beyond adjacent labels.
- *  4. Uniform input heights and label spacing apply across all fields in Section Geometry.
+ * UI alignment invariants for Section Geometry & Advanced Reinforcement Layer Configuration:
+ *  - Width B, Depth D, and Bar ⌀ (standard dropdown & custom numeric mode) share
+ *    identical label strip height, bottom-aligned labels, gap, and control height.
+ *  - Under Advanced Reinforcement → Layer Configuration across all 4 faces (Top,
+ *    Bottom, Left, Right) and multiple layers (Layer 1, Layer 2, ...), Number of Bars,
+ *    Bar Diameter, and Bar Spacing (c/c) use a narrower proportional count track,
+ *    spacious Bar Diameter & Bar Spacing tracks, single-line aligned labels, and
+ *    identical `h-[1.875rem]` input box heights.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SectionPanel } from '../Editors'
+import { RectRebarPanel } from '../RectRebarPanel'
 import { fieldBoxCls, fieldLabelCls, selectCls } from '../ui'
+import { RECT_FACES, rectConfigFromSection } from '../../engine/rectRebar'
 import { initialState } from '../../state'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -34,8 +35,8 @@ afterEach(async () => {
   host.remove()
 })
 
-describe('Section Geometry field alignment', () => {
-  it('gives Width B, Depth D, Bar ⌀ (standard & custom), Bars/face (x), and Side bars (y) identical label heights, bottom-aligned headers, gap, and control height', async () => {
+describe('Section Geometry & Advanced Reinforcement UI alignment', () => {
+  it('aligns Width B, Depth D, Bar ⌀ (standard & custom), Bars/face (x), and Side bars (y) across Section Geometry', async () => {
     const state = initialState()
     await act(async () => {
       root.render(<SectionPanel state={state} update={() => {}} />)
@@ -47,39 +48,96 @@ describe('Section Geometry field alignment', () => {
     const labels = [...grid.querySelectorAll('label')]
     expect(labels).toHaveLength(5)
 
-    // Every label wrapper uses identical flex column + 3px label-to-input gap
     for (const lbl of labels) {
       expect(lbl.className).toContain('flex min-w-0 flex-col gap-[3px]')
-    }
-
-    // Every label header row shares `fieldLabelCls` (`min-h-[0.875rem] items-end ...`)
-    const headerRows = labels.map((l) => l.firstElementChild as HTMLElement)
-    for (const hdr of headerRows) {
+      const hdr = lbl.firstElementChild as HTMLElement
       for (const token of fieldLabelCls.split(' ')) {
         expect(hdr.classList.contains(token), `missing class "${token}" on ${hdr.textContent}`).toBe(true)
       }
-    }
-
-    // Customize button sits inside the 0.875rem bottom-aligned header row without overflowing its height
-    const customizeBtn = labels[2].querySelector('button')!
-    expect(customizeBtn.textContent).toBe('Customize')
-    expect(customizeBtn.className).toContain('h-[0.8125rem]')
-    expect(customizeBtn.className).toContain('leading-none')
-
-    // All 5 control boxes (Width B, Depth D, Bar ⌀ <select>, Bars/face (x), Side bars (y)) share exact h-[1.875rem]
-    for (const lbl of labels) {
       const control = lbl.children[1] as HTMLElement
       expect(control.className).toContain('h-[1.875rem]')
     }
     expect(fieldBoxCls).toContain('h-[1.875rem]')
     expect(selectCls).toContain('h-[1.875rem]')
 
-    // Switching Bar ⌀ to custom mode keeps the exact same label header & control height
+    const customizeBtn = labels[2].querySelector('button')!
+    expect(customizeBtn.textContent).toBe('Customize')
+    expect(customizeBtn.className).toContain('h-[0.8125rem]')
+    expect(customizeBtn.className).toContain('leading-none')
+
     await act(async () => {
       customizeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(customizeBtn.textContent).toBe('Use standard')
-    const customControl = labels[2].children[1] as HTMLElement
-    expect(customControl.className).toContain('h-[1.875rem]')
+    expect((labels[2].children[1] as HTMLElement).className).toContain('h-[1.875rem]')
+  })
+
+  it('aligns Number of bars, Bar diameter, and Bar spacing (c/c) consistently across all faces and multiple layers with narrower Number of bars column', async () => {
+    const base = initialState()
+    let cfg = rectConfigFromSection(base.predefined, base.barDia, true)
+
+    // Add a second inner layer on every face so all 4 faces × 2 layers are verified
+    for (const face of RECT_FACES) {
+      cfg = {
+        ...cfg,
+        faces: {
+          ...cfg.faces,
+          [face]: {
+            ...cfg.faces[face],
+            layers: [
+              cfg.faces[face].layers[0],
+              { ...cfg.faces[face].layers[0], id: `${face}-layer-2`, nBars: 2 },
+            ],
+          },
+        },
+      }
+    }
+
+    for (const face of RECT_FACES) {
+      const faceCfg = { ...cfg, activeFace: face }
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => {
+        root.render(
+          <RectRebarPanel
+            config={faceCfg}
+            geometry={base.geometry}
+            cover={base.cover}
+            tieDia={base.tieDia}
+            onChange={(next) => {
+              cfg = next
+            }}
+            onDisable={() => {}}
+          />,
+        )
+      })
+
+      for (const layerNum of [1, 2]) {
+        const row = host.querySelector(`[data-testid="rect-layer-fields-${face}-${layerNum}"]`)!
+        expect(row, `missing field grid for ${face} layer ${layerNum}`).toBeTruthy()
+        expect(row.className).toContain('items-end')
+        // Proportional column sizing: Number of bars (0.8fr) is narrower than Bar diameter (1.24fr) & Bar spacing (0.96fr)
+        expect(row.className).toContain('min-[480px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.24fr)_minmax(0,0.96fr)]')
+
+        const fields = [...row.querySelectorAll('label')]
+        expect(fields).toHaveLength(3)
+        expect(fields[0].textContent).toContain('Number of bars')
+        expect(fields[1].textContent).toContain('Bar diameter')
+        expect(fields[2].textContent).toContain('Bar spacing (c/c)')
+
+        for (const f of fields) {
+          expect(f.className).toContain('flex min-w-0 flex-col gap-[3px]')
+          const hdr = f.firstElementChild as HTMLElement
+          for (const token of fieldLabelCls.split(' ')) {
+            expect(hdr.classList.contains(token)).toBe(true)
+          }
+          const control = f.children[1] as HTMLElement
+          expect(control.className).toContain('h-[1.875rem]')
+        }
+
+        // Responsive adaptation for narrower (<480px) containers
+        expect(fields[2].className).toContain('col-span-2')
+        expect(fields[2].className).toContain('min-[480px]:col-span-1')
+      }
+    }
   })
 })

@@ -502,6 +502,7 @@ export function NumField({
   step,
   min,
   w,
+  className,
   disabled,
   hint,
   title,
@@ -520,6 +521,8 @@ export function NumField({
   min?: number
   w?: string
   disabled?: boolean
+  /** Optional extra classes on the outer `<label>` wrapper (e.g. grid column span). */
+  className?: string
   /** One-line explanation under the field. */
   hint?: ReactNode
   title?: string
@@ -535,7 +538,7 @@ export function NumField({
   })
   return (
     <label
-      className={`flex min-w-0 flex-col gap-[3px] ${w ?? ''} ${disabled ? 'opacity-55' : ''}`}
+      className={`flex min-w-0 flex-col gap-[3px] ${w ?? ''} ${className ?? ''} ${disabled ? 'opacity-55' : ''}`}
       title={title ? (disabled ? title : `${title} ${wheelHint(increment, unit)}`) : title}
     >
       <span className={fieldLabelCls}>
@@ -582,12 +585,14 @@ export function DiameterField({
   onChange,
   disabled,
   onCustomizeChange,
+  className,
 }: {
   label: string
   value: number
   onChange: (v: number) => void
   disabled?: boolean
   onCustomizeChange?: (enabled: boolean) => void
+  className?: string
 }) {
   const [customized, setCustomized] = useState(() => !STANDARD_BAR_DIAMETERS.includes(value))
 
@@ -623,15 +628,15 @@ export function DiameterField({
   const setCustomValue = (raw: string) => commitCustom(parseFloat(raw))
 
   return (
-    <label className={`flex min-w-0 flex-col gap-[3px] ${disabled ? 'opacity-55' : ''}`}>
+    <label className={`flex min-w-0 flex-col gap-[3px] ${className ?? ''} ${disabled ? 'opacity-55' : ''}`}>
       <span className={`${fieldLabelCls} justify-between`}>
-        <span>{label}</span>
+        <span className="whitespace-nowrap">{label}</span>
         <button
           type="button"
           aria-pressed={customized}
           disabled={disabled}
           onClick={toggleCustomization}
-          className={`inline-flex h-[0.8125rem] shrink-0 items-center rounded border px-1.5 py-0 font-display text-[0.5625rem] font-bold uppercase leading-none tracking-[0.05em] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
+          className={`inline-flex h-[0.8125rem] shrink-0 items-center whitespace-nowrap rounded border px-1 py-0 font-display text-[0.5625rem] font-bold uppercase leading-none tracking-[0.04em] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
             customized
               ? 'border-accent/45 bg-accent-wash text-accent-strong hover:bg-accent/15'
               : 'border-edge bg-card text-ink-3 hover:border-edge-strong hover:text-ink'
