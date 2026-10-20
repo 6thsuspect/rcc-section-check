@@ -4,6 +4,7 @@ import { defaultPredefined, generateSection, type PredefinedSection } from './en
 import { uniformCover, type CoverSpec } from './engine/cover'
 import { DEFAULT_EXPOSURE, type CrackWidthSettings } from './engine/crackWidth'
 import { DEFAULT_SHEAR, type ShearLoadCase, type ShearSettings } from './engine/shear'
+import type { RectAdvancedRebarConfig } from './engine/rectRebar'
 
 export interface AppState {
   code: DesignCodeId
@@ -12,6 +13,8 @@ export interface AppState {
   /** Which predefined shape produced the geometry (null = custom). */
   predefined: PredefinedSection | null
   shapeClass: 'rect' | 'circ'
+  /** Optional per-face advanced reinforcement configuration for rectangular sections. */
+  rectRebar?: RectAdvancedRebarConfig
   fck: number
   steelGrade: string
   /** Nominal clear cover to the links, entered per concrete face (docs/03 §3.6). */

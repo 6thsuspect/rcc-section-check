@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AdvancedCoverFigure, faceCoverForInput } from './AdvancedCoverFigure'
 import { generateSection } from '../engine/sections'
+import { generateRectAdvancedRebar } from '../engine/rectRebar'
 import {
   COVER_FACES,
   detectSectionType,
@@ -144,7 +145,11 @@ export function ClearCoverPanel({
   // --- generated-layout sync -------------------------------------------------
   const def = state.predefined
   const isCircularDef = def?.kind === 'circle' || def?.kind === 'hollowCircle'
-  const gen = def && !isCircularDef ? generateSection(def, { cover, tieDia: state.tieDia, barDia: state.barDia }) : null
+  const gen = state.rectRebar?.enabled
+    ? generateRectAdvancedRebar(state.rectRebar, state.geometry, cover, state.tieDia)
+    : def && !isCircularDef
+      ? generateSection(def, { cover, tieDia: state.tieDia, barDia: state.barDia })
+      : null
   const outOfSync = !!gen && barsKey(gen.bars) !== barsKey(state.bars)
 
   const applyToLayout = () => {

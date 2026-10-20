@@ -2,6 +2,7 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { normalizeCover } from './engine/cover'
 import { generateSection } from './engine/sections'
+import { sanitizeRectAdvancedConfig } from './engine/rectRebar'
 import type { Rebar, RebarFace, RebarPositioningMode, RebarSurface, LoadCase } from './engine/types'
 import { DEFAULT_EXPOSURE, EXPOSURE_OPTIONS } from './engine/crackWidth'
 import {
@@ -213,6 +214,11 @@ export function parseProjectFile(jsonText: string): AppState {
     tiePositions: sanitiserPositions(rawShear.tiePositions),
   }
 
+  const rectRebar = sanitizeRectAdvancedConfig(
+    rawState.rectRebar,
+    Number.isFinite(rawState.barDia) ? Number(rawState.barDia) : defState.barDia,
+  )
+
   const sanitized: AppState = {
     code,
     geometry: {
@@ -234,6 +240,7 @@ export function parseProjectFile(jsonText: string): AppState {
     bars: sanitizeBarRows(rawState.bars),
     predefined: rawState.predefined ?? null,
     shapeClass: ['rect', 'circ'].includes(rawState.shapeClass) ? rawState.shapeClass : defState.shapeClass,
+    ...(rectRebar ? { rectRebar } : {}),
     fck: Number.isFinite(rawState.fck) && rawState.fck > 0 ? Number(rawState.fck) : defState.fck,
     steelGrade: typeof rawState.steelGrade === 'string' ? rawState.steelGrade : defState.steelGrade,
     // v1.0 files stored a single cover number; v1.1 stores it per face.
@@ -267,7 +274,7 @@ export function parseProjectFile(jsonText: string): AppState {
   // layout still exactly matches the generator, migrate only that layout to
   // automatic; hand-edited coordinates remain manual and are never guessed.
   const legacyRows = rawState.bars.every((b: any) => b?.positioning == null)
-  if (legacyRows && sanitized.predefined && typeof sanitized.predefined === 'object') {
+  if (!sanitized.rectRebar?.enabled && legacyRows && sanitized.predefined && typeof sanitized.predefined === 'object') {
     try {
       const generated = generateSection(sanitized.predefined, {
         cover: sanitized.cover,

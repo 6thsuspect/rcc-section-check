@@ -17,6 +17,12 @@ import { PMChart, ContourChart } from './components/Charts'
 import { CodeMaterialsPanel, LoadCasesPanel, RebarPanel, SectionPanel } from './components/Editors'
 import { ClearCoverPanel, type ActiveFace } from './components/CoverPanel'
 import { CircularRebarPanel, isCircularSection } from './components/CircularRebarPanel'
+import { RectRebarPanel } from './components/RectRebarPanel'
+import { defaultPredefined } from './engine/sections'
+import {
+  generateRectAdvancedRebar,
+  isRectangularSection,
+} from './engine/rectRebar'
 import { CompliancePanel, NeutralAxisPanel, ReinforcementSpacingPanel, ResultsTable } from './components/Results'
 import { SlsCalculationPanel, SlsResultsTable, SlsSummaryPanel } from './components/SLSResults'
 import { CrackWidthDetailPanel, CrackWidthInputsPanel, CrackWidthResultsTable } from './components/CrackWidth'
@@ -203,6 +209,39 @@ export default function App() {
       if (patch.code !== undefined && patch.code !== s.code) {
         next.crackWidth = { ...next.crackWidth, exposure: DEFAULT_EXPOSURE[patch.code] }
       }
+
+      // Rectangular Advanced Reinforcement owns the longitudinal bar coordinates
+      // across Top, Bottom, Left and Right faces whenever active, automatically
+      // recomputing on any face/layer/spacer/geometry/cover/tie change while
+      // respecting explicit manual coordinate overrides in RebarPanel.
+      const nextRectAdv =
+        Boolean(next.rectRebar?.enabled) && isRectangularSection(next.geometry, next.predefined)
+      if (nextRectAdv && next.rectRebar) {
+        const rectDriversChanged =
+          patch.rectRebar !== undefined ||
+          patch.geometry !== undefined ||
+          patch.cover !== undefined ||
+          patch.tieDia !== undefined
+        if (rectDriversChanged) {
+          const generated = generateRectAdvancedRebar(
+            next.rectRebar,
+            next.geometry,
+            next.cover,
+            next.tieDia,
+          )
+          if (patch.rectRebar !== undefined) {
+            next.bars = generated.bars
+          } else {
+            const base = patch.bars !== undefined ? next.bars : s.bars
+            next.bars =
+              base.length === generated.bars.length
+                ? base.map((bar, i) => (isAutomaticBar(bar) ? generated.bars[i] : bar))
+                : [...generated.bars, ...base.filter((bar) => !isAutomaticBar(bar))]
+          }
+        }
+        return next
+      }
+
       const automaticDiameterChanged =
         patch.bars !== undefined &&
         patch.bars.some((bar, i) => isAutomaticBar(bar) && bar.dia !== s.bars[i]?.dia)
@@ -364,6 +403,30 @@ export default function App() {
     () => validateOuterCoverFit(state.geometry, state.bars, state.cover, state.tieDia),
     [state.geometry, state.bars, state.cover, state.tieDia],
   )
+
+  const rectAdvancedActive =
+    Boolean(state.rectRebar?.enabled) && isRectangularSection(state.geometry, state.predefined)
+
+  const rectRebarResult = useMemo(
+    () =>
+      rectAdvancedActive && state.rectRebar
+        ? generateRectAdvancedRebar(state.rectRebar, state.geometry, state.cover, state.tieDia)
+        : null,
+    [rectAdvancedActive, state.rectRebar, state.geometry, state.cover, state.tieDia],
+  )
+
+  const handleSelectFace = (face: ActiveFace | null) => {
+    setActiveFace(face)
+    if (face && face.surface === 'outer' && rectAdvancedActive && state.rectRebar) {
+      const map: ('bottom' | 'right' | 'top' | 'left')[] = ['bottom', 'right', 'top', 'left']
+      const picked = map[face.faceIndex % 4]
+      if (picked && state.rectRebar.activeFace !== picked) {
+        setState((prev) =>
+          prev.rectRebar ? { ...prev, rectRebar: { ...prev.rectRebar, activeFace: picked } } : prev,
+        )
+      }
+    }
+  }
 
   const props = useMemo(
     () => (valid ? sectionProperties(state.geometry, state.bars) : null),
@@ -908,6 +971,30 @@ export default function App() {
             update={update}
             onBarDiaCustomizeChange={setCustomizeBarDiameter}
           />
+          {rectAdvancedActive && state.rectRebar && (
+            <RectRebarPanel
+              config={state.rectRebar}
+              geometry={state.geometry}
+              cover={state.cover}
+              tieDia={state.tieDia}
+              onChange={(rectRebar) => update({ rectRebar })}
+              onDisable={() => {
+                const def =
+                  state.predefined?.kind === 'rect' ? state.predefined : defaultPredefined('rect')
+                const gen = generateSection(def, {
+                  cover: state.cover,
+                  tieDia: state.tieDia,
+                  barDia: state.barDia,
+                })
+                update({
+                  bars: gen.bars,
+                  rectRebar: { ...state.rectRebar!, enabled: false },
+                })
+              }}
+              onBarDiaCustomizeChange={setCustomizeBarDiameter}
+              onSelectFace={setActiveFace}
+            />
+          )}
           {isCircularSection(state.predefined) && (
             <CircularRebarPanel
               importStamp={importStamp}
@@ -994,6 +1081,18 @@ export default function App() {
               </ul>
             </Banner>
           )}
+          {rectRebarResult && rectRebarResult.warnings.length > 0 && (
+            <Banner tone={rectRebarResult.issues.some((i) => i.severity === 'error') ? 'error' : 'warn'}>
+              <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
+                Advanced reinforcement validation
+              </b>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {rectRebarResult.warnings.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+            </Banner>
+          )}
 
           <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
             <Card
@@ -1015,7 +1114,8 @@ export default function App() {
                 overlapping={spacing.overlapping}
                 activeFace={activeFace}
                 onHoverFace={setActiveFace}
-                onSelectFace={setActiveFace}
+                onSelectFace={handleSelectFace}
+                spacers={rectRebarResult?.spacers ?? null}
               />
             </Card>
             <Card
@@ -1083,6 +1183,18 @@ export default function App() {
                 </ul>
               </Banner>
             )}
+            {rectRebarResult && rectRebarResult.warnings.length > 0 && (
+              <Banner tone={rectRebarResult.issues.some((i) => i.severity === 'error') ? 'error' : 'warn'}>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
+                  Advanced reinforcement validation
+                </b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {rectRebarResult.warnings.map((msg, i) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
 
             <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
               <Card title="Section" subtitle="shared with the ULS and SLS modules">
@@ -1096,7 +1208,8 @@ export default function App() {
                   overlapping={spacing.overlapping}
                   activeFace={activeFace}
                   onHoverFace={setActiveFace}
-                  onSelectFace={setActiveFace}
+                  onSelectFace={handleSelectFace}
+                  spacers={rectRebarResult?.spacers ?? null}
                 />
               </Card>
               <ShearSummaryPanel code={state.code} summary={shearSum} />
@@ -1164,6 +1277,18 @@ export default function App() {
                 </ul>
               </Banner>
             )}
+            {rectRebarResult && rectRebarResult.warnings.length > 0 && (
+              <Banner tone={rectRebarResult.issues.some((i) => i.severity === 'error') ? 'error' : 'warn'}>
+                <b className="font-display text-[0.625rem] uppercase tracking-[0.07em]">
+                  Advanced reinforcement validation
+                </b>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {rectRebarResult.warnings.map((msg, i) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </ul>
+              </Banner>
+            )}
 
             <div className="grid grid-cols-1 gap-3.5 2xl:grid-cols-2">
               <Card
@@ -1181,8 +1306,9 @@ export default function App() {
                   overlapping={spacing.overlapping}
                   activeFace={activeFace}
                   onHoverFace={setActiveFace}
-                  onSelectFace={setActiveFace}
+                  onSelectFace={handleSelectFace}
                   stress={slsStressOverlay}
+                  spacers={rectRebarResult?.spacers ?? null}
                 />
               </Card>
               <SlsSummaryPanel

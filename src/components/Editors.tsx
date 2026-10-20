@@ -7,6 +7,7 @@ import {
   SHAPE_LABELS,
   type PredefinedSection,
 } from '../engine/sections'
+import { isRectangularSection, rectConfigFromSection } from '../engine/rectRebar'
 import type { AppState } from '../state'
 import { newCaseId } from '../state'
 import { isAutomaticBar, repositionAutomaticBars } from '../engine/reinforcement'
@@ -175,9 +176,28 @@ export function SectionPanel({
     setLoop(0)
   }, [importStamp, state.predefined])
 
+  const rectAdvancedActive =
+    Boolean(state.rectRebar?.enabled) && isRectangularSection(state.geometry, state.predefined)
+
   const apply = (def: PredefinedSection, opts?: { keepBars?: boolean }) => {
     if (frozen) return
     const gen = generateSection(def, { cover: state.cover, tieDia: state.tieDia, barDia: state.barDia })
+    // When rectangular Advanced Reinforcement is enabled and the user edits B or D,
+    // pass the new geometry through so App.tsx regenerates the per-face advanced bars.
+    if (def.kind === 'rect' && state.rectRebar?.enabled) {
+      update({
+        geometry: gen.geometry,
+        predefined: def,
+        shapeClass: gen.shapeClass,
+      })
+      return
+    }
+    // Switching away from rectangular disables rectangular advanced mode cleanly
+    // while retaining the saved face configuration if the user switches back later.
+    const disableRectAdv =
+      def.kind !== 'rect' && state.rectRebar?.enabled
+        ? { rectRebar: { ...state.rectRebar, enabled: false } }
+        : {}
     // Circular sections own their bar layout via CircularRebarPanel — keep existing
     // bars when only geometry params change so arrangement settings are not wiped.
     const isCirc = def.kind === 'circle' || def.kind === 'hollowCircle'
@@ -187,9 +207,10 @@ export function SectionPanel({
     )
     const keepBars =
       opts?.keepBars ??
-      (hasManualBars ||
-        hasAutomaticDiameterOverride ||
-        (isCirc && state.predefined?.kind === def.kind && state.bars.length > 0))
+      (!state.rectRebar?.enabled &&
+        (hasManualBars ||
+          hasAutomaticDiameterOverride ||
+          (isCirc && state.predefined?.kind === def.kind && state.bars.length > 0)))
     update({
       geometry: gen.geometry,
       bars: keepBars
@@ -197,7 +218,30 @@ export function SectionPanel({
         : gen.bars,
       predefined: def,
       shapeClass: gen.shapeClass,
+      ...disableRectAdv,
     })
+  }
+
+  const toggleRectAdvanced = () => {
+    if (frozen) return
+    if (rectAdvancedActive && state.rectRebar) {
+      const def =
+        state.predefined?.kind === 'rect'
+          ? state.predefined
+          : shape.kind === 'rect'
+            ? shape
+            : defaultPredefined('rect')
+      const gen = generateSection(def, { cover: state.cover, tieDia: state.tieDia, barDia: state.barDia })
+      update({
+        bars: gen.bars,
+        rectRebar: { ...state.rectRebar, enabled: false },
+      })
+    } else {
+      const nextCfg = state.rectRebar
+        ? { ...state.rectRebar, enabled: true }
+        : rectConfigFromSection(state.predefined, state.barDia, true)
+      update({ rectRebar: nextCfg })
+    }
   }
 
   // The table always shows something: after an import the selected void may not
@@ -268,6 +312,7 @@ export function SectionPanel({
         <ShapeParams
           shape={shape}
           disabled={frozen}
+          rectAdvancedActive={rectAdvancedActive}
           onChange={(def) => {
             setShape(def)
             apply(def)
@@ -282,6 +327,36 @@ export function SectionPanel({
           }}
           onBarDiaCustomizeChange={onBarDiaCustomizeChange}
         />
+
+        {isRectangularSection(state.geometry, state.predefined) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-line bg-panel/50 px-2.5 py-1.5">
+            <div className="min-w-0">
+              <div className="font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
+                Rectangular reinforcement mode
+              </div>
+              <p className="text-[0.65625rem] leading-snug text-ink-3">
+                {rectAdvancedActive
+                  ? 'Per-face configuration active (Top, Bottom, Left & Right — alternate ⌀, bundles, layers & spacer bars).'
+                  : 'Standard perimeter bars active. Enable Advanced reinforcement for per-face, layered, alternate & bundled bars.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={frozen}
+              aria-pressed={rectAdvancedActive}
+              data-testid="toggle-rect-advanced-rebar"
+              onClick={toggleRectAdvanced}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-field border px-2.5 py-[5px] font-display text-[0.65625rem] font-semibold uppercase tracking-[0.06em] leading-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-ui ${
+                rectAdvancedActive
+                  ? 'border-accent bg-accent-wash text-accent-strong shadow-tabmark'
+                  : 'border-edge bg-card text-ink-2 hover:border-edge-strong hover:bg-panel hover:text-ink'
+              }`}
+            >
+              <Icon name="layers" size={12} />
+              <span>Advanced reinforcement</span>
+            </button>
+          </div>
+        )}
 
         <div className="mb-1.5 mt-0.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t border-line pt-2.5">
           <span className="flex items-center gap-1.5 font-display text-[0.625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
@@ -405,6 +480,7 @@ function ShapeParams({
   setBarDia,
   onBarDiaCustomizeChange,
   disabled,
+  rectAdvancedActive = false,
 }: {
   shape: PredefinedSection
   onChange: (s: PredefinedSection) => void
@@ -412,6 +488,7 @@ function ShapeParams({
   setBarDia: (v: number) => void
   onBarDiaCustomizeChange?: (enabled: boolean) => void
   disabled?: boolean
+  rectAdvancedActive?: boolean
 }) {
   const f = (label: string, key: string, step = 10) => {
     const value = (shape as unknown as Record<string, number>)[key]
@@ -445,15 +522,26 @@ function ShapeParams({
         <>
           {f('Width B', 'B')}
           {f('Depth D', 'D')}
-          <DiameterField
-            label="Bar ⌀"
-            value={barDia}
-            disabled={disabled}
-            onChange={setBarDia}
-            onCustomizeChange={onBarDiaCustomizeChange}
-          />
-          {n('Bars/face (x)', 'nx')}
-          {n('Side bars (y)', 'ny')}
+          {rectAdvancedActive ? (
+            <p className="col-span-2 flex items-start gap-1.5 self-end pb-1 text-[0.65625rem] leading-snug text-ink-2 sm:col-span-1">
+              <Icon name="info" size={12} className="mt-px shrink-0 text-ink-3" />
+              <span>
+                Bars configured in <b className="font-semibold text-ink">Advanced reinforcement</b> below.
+              </span>
+            </p>
+          ) : (
+            <>
+              <DiameterField
+                label="Bar ⌀"
+                value={barDia}
+                disabled={disabled}
+                onChange={setBarDia}
+                onCustomizeChange={onBarDiaCustomizeChange}
+              />
+              {n('Bars/face (x)', 'nx')}
+              {n('Side bars (y)', 'ny')}
+            </>
+          )}
         </>
       )}
       {shape.kind === 'circle' && (

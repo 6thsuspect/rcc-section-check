@@ -37,6 +37,7 @@ import { circlePoly, defaultPredefined, generateSection, type PredefinedSection 
 import { centroid, ensureCCW } from './engine/geometry'
 import type { LoadCase, Point, Rebar, SectionGeometry } from './engine/types'
 import { repositionAutomaticBars, isAutomaticBar } from './engine/reinforcement'
+import { generateRectAdvancedRebar, sanitizeRectAdvancedConfig } from './engine/rectRebar'
 import {
   MAX_COT_THETA,
   MIN_COT_THETA,
@@ -654,6 +655,29 @@ function mapExternalFile(root: Rec, current: AppState): ImportResult {
   // A bar table the file gave is the reinforcement, whether or not the section
   // itself could be read.
   if (barsFromFile) patch.bars = barsFromFile
+
+  // Advanced rectangular reinforcement: apply if supplied by the external file,
+  // otherwise deactivate any prior active rectangular override when the file
+  // brings its own section or bar table.
+  const rawRectAdv = first(root, ['rectRebar', 'advancedReinforcement', 'rectAdvancedRebar'])
+  if (isRec(rawRectAdv)) {
+    const cleaned = sanitizeRectAdvancedConfig(rawRectAdv, patch.barDia ?? current.barDia)
+    if (cleaned) {
+      patch.rectRebar = cleaned
+      if (cleaned.enabled && !barsFromFile) {
+        const gRect = generateRectAdvancedRebar(
+          cleaned,
+          patch.geometry ?? current.geometry,
+          patch.cover ?? current.cover,
+          patch.tieDia ?? current.tieDia,
+        )
+        patch.bars = gRect.bars
+        report.add(GROUPS.bars, 'imported', `${gRect.bars.length} bars generated from advanced rectangular reinforcement`)
+      }
+    }
+  } else if (current.rectRebar?.enabled && (barsFromFile || def || section.boundary)) {
+    patch.rectRebar = { ...current.rectRebar, enabled: false }
+  }
 
   if (!report.has(GROUPS.bars)) {
     report.add(GROUPS.bars, 'missing', 'no bar table in the file — the reinforcement in use was kept')
