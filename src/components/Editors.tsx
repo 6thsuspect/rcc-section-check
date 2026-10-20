@@ -18,6 +18,7 @@ import {
   Card,
   cellCls,
   DiameterField,
+  fieldLabelCls,
   Icon,
   InfoTooltip,
   NumField,
@@ -90,7 +91,7 @@ export function CodeMaterialsPanel({
       </p>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className={fieldLabelCls}>
             Concrete grade
           </span>
           <select
@@ -107,7 +108,7 @@ export function CodeMaterialsPanel({
           </select>
         </label>
         <label className="flex min-w-0 flex-col gap-[3px]">
-          <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+          <span className={fieldLabelCls}>
             Steel grade (IS 1786)
           </span>
           <select
@@ -517,7 +518,7 @@ function ShapeParams({
     )
   }
   return (
-    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3">
+    <div className="grid grid-cols-2 items-start gap-x-2 gap-y-2.5 sm:grid-cols-3">
       {shape.kind === 'rect' && (
         <>
           {f('Width B', 'B')}

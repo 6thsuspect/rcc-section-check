@@ -30,6 +30,7 @@ import {
   DiameterField,
   fieldBoxCls,
   fieldCls,
+  fieldLabelCls,
   Icon,
   noteSmCls,
   NumField,
@@ -80,7 +81,7 @@ function OptionalMmField({
   const step = useWheelStepSize()
   return (
     <label className="flex min-w-0 flex-col gap-[3px]" title={title ? `${title} ${wheelHint(step, 'mm')}` : title}>
-      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className={fieldLabelCls}>
         {label}
       </span>
       <span className={fieldBoxCls}>

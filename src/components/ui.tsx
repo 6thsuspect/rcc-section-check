@@ -26,19 +26,23 @@ export const cellCls =
 
 /** Standard numeric/text field. */
 export const fieldCls =
-  'w-full min-w-0 border-0 bg-transparent px-2 py-[5px] text-[0.8125rem] tnum text-ink ' +
+  'h-full w-full min-w-0 border-0 bg-transparent px-2 py-0 text-[0.8125rem] leading-none tnum text-ink ' +
   'transition-[background-color] duration-150 ease-ui focus:outline-none'
 
 /** Wrapper that carries the border + focus ring for `fieldCls` inputs. */
 export const fieldBoxCls =
-  'flex items-center gap-1 rounded-field border border-edge bg-card ' +
+  'flex h-[1.875rem] items-center gap-1 rounded-field border border-edge bg-card ' +
   'transition-[border-color,box-shadow,background-color] duration-150 ease-ui ' +
   'hover:border-edge-strong focus-within:border-accent focus-within:bg-card focus-within:ring-[3px] focus-within:ring-accent/12'
 
-/** Dropdown — `sel` supplies the chevron (see index.css). */
+/** Dropdown — `sel` supplies the chevron (see index.css); matches `fieldBoxCls` height. */
 export const selectCls =
-  'sel w-full min-w-0 rounded-field border border-edge bg-card px-2 py-[5px] text-[0.8125rem] text-ink ' +
+  'sel h-[1.875rem] w-full min-w-0 rounded-field border border-edge bg-card px-2 py-0 text-[0.8125rem] leading-normal text-ink ' +
   'transition-[border-color,box-shadow] duration-150 ease-ui hover:border-edge-strong focus:border-accent'
+
+/** Shared field header row so labels and inline header controls share one baseline and bottom edge. */
+export const fieldLabelCls =
+  'flex min-h-[0.875rem] items-end gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2'
 
 /** Inline dropdown that sizes to its content, for toolbars and row labels. */
 export const selectInlineCls =
@@ -534,9 +538,9 @@ export function NumField({
       className={`flex min-w-0 flex-col gap-[3px] ${w ?? ''} ${disabled ? 'opacity-55' : ''}`}
       title={title ? (disabled ? title : `${title} ${wheelHint(increment, unit)}`) : title}
     >
-      <span className="flex items-center gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className={fieldLabelCls}>
         {label}
-        {disabled && <span className="font-body text-[0.5625rem] font-normal normal-case tracking-normal text-ink-3">locked</span>}
+        {disabled && <span className="font-body text-[0.5625rem] font-normal normal-case leading-none tracking-normal text-ink-3">locked</span>}
       </span>
       <span className={`${fieldBoxCls} ${disabled ? 'bg-panel' : ''}`}>
         <input
@@ -620,14 +624,14 @@ export function DiameterField({
 
   return (
     <label className={`flex min-w-0 flex-col gap-[3px] ${disabled ? 'opacity-55' : ''}`}>
-      <span className="flex items-center justify-between gap-1 font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+      <span className={`${fieldLabelCls} justify-between`}>
         <span>{label}</span>
         <button
           type="button"
           aria-pressed={customized}
           disabled={disabled}
           onClick={toggleCustomization}
-          className={`rounded border px-1.5 py-[1px] font-display text-[0.5625rem] font-bold uppercase tracking-[0.05em] leading-[1.5] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
+          className={`inline-flex h-[0.8125rem] shrink-0 items-center rounded border px-1.5 py-0 font-display text-[0.5625rem] font-bold uppercase leading-none tracking-[0.05em] transition-colors duration-150 ease-ui disabled:cursor-not-allowed ${
             customized
               ? 'border-accent/45 bg-accent-wash text-accent-strong hover:bg-accent/15'
               : 'border-edge bg-card text-ink-3 hover:border-edge-strong hover:text-ink'

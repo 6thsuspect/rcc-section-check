@@ -21,12 +21,12 @@ import {
   Banner,
   btnCls,
   btnPrimaryCls,
-  cellCls,
   Card,
   Check,
   DiameterField,
   fieldBoxCls,
   fieldCls,
+  fieldLabelCls,
   Icon,
   NumField,
   Readout,
@@ -516,7 +516,7 @@ export function CircularRebarPanel({
               />
               {cfg.kind !== 'bundle' && (
               <label className="flex min-w-0 flex-col gap-[3px]">
-                <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                <span className={fieldLabelCls}>
                   Angular spacing (blank = equal)
                 </span>
                 <span className={fieldBoxCls}>
@@ -634,28 +634,30 @@ export function CircularRebarPanel({
                   </div>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-3">
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className={fieldLabelCls}>
                         Radius (mm)
                       </span>
-                      <input
-                        ref={wheelRef<HTMLInputElement>(() => ({
-                          value: wheelBase(layer.radius, layerRadiusAuto(layer, idx)),
-                          min: 0,
-                          onChange: (v) => updateLayer(layer.id, { radius: v > 0 ? v : null }),
-                        }))}
-                        type="number"
-                        className={`${cellCls} px-2 py-[5px] text-[0.8125rem]`}
-                        value={layer.radius ?? ''}
-                        placeholder="auto"
-                        step={5}
-                        min={0}
-                        onChange={(e) => {
-                          const t = e.target.value
-                          updateLayer(layer.id, {
-                            radius: t === '' ? null : parseFloat(t) || null,
-                          })
-                        }}
-                      />
+                      <span className={fieldBoxCls}>
+                        <input
+                          ref={wheelRef<HTMLInputElement>(() => ({
+                            value: wheelBase(layer.radius, layerRadiusAuto(layer, idx)),
+                            min: 0,
+                            onChange: (v) => updateLayer(layer.id, { radius: v > 0 ? v : null }),
+                          }))}
+                          type="number"
+                          className={fieldCls}
+                          value={layer.radius ?? ''}
+                          placeholder="auto"
+                          step={5}
+                          min={0}
+                          onChange={(e) => {
+                            const t = e.target.value
+                            updateLayer(layer.id, {
+                              radius: t === '' ? null : parseFloat(t) || null,
+                            })
+                          }}
+                        />
+                      </span>
                     </label>
                     <DiameterField
                       label="Bar ⌀"
@@ -678,7 +680,7 @@ export function CircularRebarPanel({
                       onChange={(v) => updateLayer(layer.id, { startAngleDeg: v })}
                     />
                     <label className="flex min-w-0 flex-col gap-[3px]">
-                      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">
+                      <span className={fieldLabelCls}>
                         Angular spacing
                       </span>
                       <span className={fieldBoxCls}>
@@ -781,7 +783,7 @@ function OptionalMmField({
   const step = useWheelStepSize()
   return (
     <label className="flex min-w-0 flex-col gap-[3px]" title={title ? `${title} ${wheelHint(step, 'mm')}` : title}>
-      <span className="font-display text-[0.625rem] font-bold uppercase leading-none tracking-[0.07em] text-ink-2">{label}</span>
+      <span className={fieldLabelCls}>{label}</span>
       <span className={fieldBoxCls}>
         <input
           ref={wheelRef<HTMLInputElement>(() => ({
