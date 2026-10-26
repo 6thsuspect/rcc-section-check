@@ -14,14 +14,85 @@ interaction surface by strain-compatibility analysis of the actual geometry, dra
 P–M diagram and the Mx–My capacity contour with every load case overlaid, and reports a
 utilisation ratio plus the selected code's clause checks.
 
-Two top-bar modules share the same section, materials and reinforcement: the **ULS Check**
-(ultimate P–Mx–My interaction and capacity) and the **SLS Check** (serviceability limits — the
+Three top-bar modules share the same section, materials and reinforcement: the **ULS Check**
+(ultimate P–Mx–My interaction and capacity), the **SLS Check** (serviceability limits — the
 IS 456:2000 Annex C working-stress method for concrete σcbc and reinforcement σst / σsc against
 the cracked transformed-section stresses, **plus a crack-width check** by the method of the
-selected code, each with PASS/FAIL per case). **Load cases are entered separately for each
-check** — the ULS panel holds factored actions, the SLS panel holds characteristic (service)
-actions for the stress check, and the crack-width check has its own service load-case list; the
-three lists edit independently and switching tabs changes none of them.
+selected code) and the **Shear Check** (shear capacity, link design, minimum/maximum limits and
+spacing per the selected code). Each check keeps its own PASS/FAIL verdict. **Load cases are
+entered separately for each check** — the ULS panel holds factored actions, the SLS panel holds
+characteristic (service) actions for the stress check, the crack-width check has its own service
+list, and the shear check has its own factored `Vu`/`Pu` list; the four lists edit independently
+and switching tabs changes none of them.
+
+### Shear design check (Shear tab)
+The shear tab runs the shear method of the selected code, independently of the ULS and SLS
+modules, on its own factored load-case list of (`Vu`, `Pu`) pairs:
+- **IS 456:2000** — nominal shear stress τv = `Vu/(b·d)` (Cl 40.1) against the design shear
+  strength of concrete τc from **Table 19** (Cl 40.2.1), with the axial-compression multiplier
+  δ = 1 + 3Pu/(Ag·fck) ≤ 1.5 (Cl 40.2.2) and the near-support enhancement 2d/av (Cl 40.3);
+  stirrups carry `Vus = Vu − τc·b·d` (Cl 40.4); τc,max from **Table 20** (Cl 40.2.3);
+  minimum stirrups `Asv/(b·sv) ≥ 0.4/(0.87·fy)` (Cl 26.5.1.6); spacing ≤ min(0.75·d, 300 mm)
+  (Cl 26.5.1.5).
+- **IRC:112-2020** — members without links: `VRd,c = [0.12·K·(100·ρl·fck)^(1/3) + 0.15·σcp]·bw·d`,
+  K = 1 + √(200/d) ≤ 2 (Cl 10.3.2); variable strut inclination θ (cot θ = 1.0…2.5, user-set):
+  `VRd,s = (Asw/s)·z·fywd·cot θ` and `VRd,max = αcw·bw·z·ν1·fcd/(cot θ + tan θ)` (Cl 10.3.3.2);
+  minimum shear reinforcement ρw = 0.072·√fck/fyk (Cl 10.3.3.5 / 16.5.2); spacing ≤ 0.75·d
+  (Cl 16.5.2).
+- **IRS Concrete Bridge Code 1997** — shear stress `v = V/(b·d)` against the ultimate shear
+  stress in concrete βs·vc (Table 15 × Table 16 depth factor βs = (500/d)^(1/4) ≥ 0.70), links
+  per Table 14 (`Asv ≥ 0.4·b·sv/(0.87·fyv)` when v ≤ βs·vc, else
+  `Asv ≥ b·sv·(v + 0.4 − βs·vc)/(0.87·fyv)`, fyv ≤ 415 N/mm²), v ≤ min(0.75·√fck, 4.75 N/mm²)
+  (Cl 15.4.3.1), columns enhanced by (1 + 0.05·P/Ac) (Cl 15.6.6), spacing ≤ 0.75·d.
+
+b, d and Asl come from the section and bar table (with manual overrides), the tension face is
+selectable, and every result is shown as a step-by-step calculation with clause references plus
+a per-case PASS/FAIL verdict and a provided-vs-required reinforcement comparison.
+
+#### Link detailing & the shear reinforcement diagram
+The shear tab carries its own reinforcement diagram and stirrup editor, next to the results:
+
+- the figure **replicates the main cross-section** — outline, voids, every longitudinal bar at
+  its own coordinate and diameter, the clear cover of each face — and adds the resolved link
+  ring, the intermediate legs and the cross-ties, with a member elevation showing the provided
+  link spacing (`fig-shear`, same drawing framework, zoom controls and print capture as the
+  other figures);
+- the drawing shows the *connections*: **solid blue** = the closed outer link that encloses the
+  bar cage (2 legs in Asv), **dashed blue** = an intermediate leg on a bar column (in Asv),
+  **dash-dot ink** = a cross-tie (restrains a bar, not counted in Asv), **filled black** =
+  tension bars, **hollow** = other bars, light dotted = the shear plane at the effective depth d.
+  A member is drawn from one horizontal run of the link ring to the other and the longitudinal
+  bars are drawn over it, so a leg meets the bars it hooks and reads as a connection — no
+  disconnected stubs, dashes are phase-matched so they do not alias into solid lines, and the
+  figure caption carries how the provided Asv is made up (`n legs = 2 ring + m internal`);
+- the **link type** (auto / rectangular / circular), **arrangement** (automatic from the bar
+  layout, or manual) and the ⌀, effective leg count and spacing are inputs; the effective legs
+  and `Asv = n·⌀²π/4` feed the resistance check, and changing them changes the results — the
+  figure and the editor both state the arrangement the check ran on, and no design equation is
+  modified for the drawing;
+- the members are placed on the **actual coordinates of the main reinforcement**, not at
+  arbitrary positions. The bar table is read as *columns*: bars sharing a coordinate across the
+  width (a leg's line) or across the depth (a cross-tie's line). A column carrying a bar in the
+  bottom layer **and** a bar in the top layer takes an **intermediate leg** — so an internal leg
+  really connects the bottom reinforcement to the top reinforcement, riding along that column —
+  and its hook tails turn towards the bar each end is anchored on. The bars a leg cannot cover
+  (the side-face bars of a deep section, or a level the ring and the legs leave beyond the
+  150 mm restraint limit) are covered by **cross-ties**. Every member reports the bars it is
+  hooked around; one that lines up with none of them is reported rather than moved. The
+  arrangement is re-derived whenever the section, the cover or the bars change;
+- the **editor** adds, removes, repositions (in mm) and mirrors legs and cross-ties, switches a
+  member between the two orientations, distributes positions evenly, shows the clear spacing
+  between members and the resulting `Asv`, `Asv/sv` and code minimum. A position is adjustable
+  by typing it or by **scrolling the wheel over the field** — one notch moves the member by the
+  wheel increment set in **Settings** (1 mm by default; the field's spinner arrows keep their own
+  10 mm step), the drawing and the checks follow the notch immediately, and the page is held still
+  while the wheel is over the field; the field's own limits and validation are the ones that apply,
+  and keyboard entry is untouched; and
+- every arrangement is **validated, never silently changed**: positions outside the section, a
+  leg or tie that does not cross the ring, a member duplicating one of the ring's own legs, too
+  small a clear gap, a ring that does not fit inside the section with the entered cover, and any
+  bar left unrestrained are each reported with their reason. The drawing is a detailing view —
+  compliance always comes from the code check on the same inputs.
 
 ### Crack-width check (SLS tab)
 The crack-width check reuses the cracked-section tension-steel stress σs, neutral-axis depth and
@@ -37,6 +108,244 @@ list, and the load cases together with the exposure-class and load-duration inpu
 ULS list and the SLS stress list. The result, permissible width, utilisation and clause update
 automatically.
 
+## Branding
+
+One piece of artwork (a dark drafting tile carrying the reinforced concrete section: boundary,
+closed stirrup with its two hooks, and the eight main bars) is the mark of the app title, the
+printed report header and the browser tab. The section sits exactly in the middle of the tile —
+equal margins on both sides (120 units left and right, 70 above and below), its own axes on the
+centre lines, so the mark mirrors about both axes (the stirrup's hooks and the drop shadow are
+the artwork's own detail and stay where the drawing puts them):
+
+- `src/components/Logo.tsx` — the header mark (`AppLogo`) and `logoSvgMarkup()`, which the
+  report uses to emit the same drawing into the printed title line;
+- `public/favicon.svg` — the standalone artwork for the browser tab;
+- `public/favicon-32.png` and `public/apple-touch-icon.png` — the raster fallbacks, regenerated
+  after any change to the mark with `npm run icons` (dependency-free: `scripts/make-favicons.mjs`
+  draws the same geometry with edge-antialiased signed-distance fields and encodes the PNG with
+  `node:zlib`).
+
+`src/components/__tests__/branding.test.tsx` fails if the four drift apart — it compares the
+favicon against the component shape by shape, measures the drawing's box from the markup to
+check the section is centred with equal margins (and that the bars mirror about its axes), and
+checks the rasteriser still carries the same placement, bar centres and hooks.
+
+## Report
+
+The header's **PDF report** button prints a self-contained calculation report (§10.5 of
+`docs/10-outputs.md`) — figures embedded as inline SVG — for "Save as PDF". `src/reportDelivery.ts`
+delivers it by the first route the browser allows: a window of its own, else a hidden frame in
+the page (no popup permission needed, so it works in an embedded preview), else the report file
+itself, downloaded. A route counts only when the report document has loaded in it, and the print
+waits for the document to lay out; a route that never loads is dropped and the next one takes
+over. `src/components/__tests__/reportDelivery.test.ts` covers that routing.
+
+## Page frame
+
+The header, the workspace and the footer share one frame class (`shell` in `src/App.tsx`): the
+**full width of the window**, with no `max-width` cap and no centred column, and side padding that
+grows with the window (`px-3 sm:px-5 lg:px-6 2xl:px-8`) — so a desktop monitor has no empty gutter
+down the sides, and the content gets the width rather than the margin. Inside it the workspace is a
+two-track grid: the panels column (capped at 392 px, 430 px from 1536 px, so the form stays
+readable) and the **results column on `minmax(0, 1fr)`**, which takes every remaining pixel — the section diagrams,
+tables and result panels expand with it, and the tables scroll inside their cards rather than the
+page. Every grid track is `minmax(0, …)` and every column is `min-w-0`, so nothing can overflow
+horizontally; `src/components/__tests__/layout.test.tsx` holds all of that.
+
+## Settings and appearance
+
+The header's action row ends in a **gear** (Settings) and an **ⓘ** (About). Both open a panel built
+on the one modal shell (`src/components/Modal.tsx`: backdrop, ✕, Esc, click-outside, focus in and
+back, no page scroll behind), and both are mounted only while they are open.
+
+**Settings** holds the appearance preferences and the one input preference — how far a wheel notch
+moves a numeric field:
+
+| Section | Options |
+| --- | --- |
+| Theme | Dark · Light |
+| Drafting sheet | Paper · Blueprint · Graph · Cream, and the drafting grid on/off |
+| Interface font size | Small (14 px) · Medium (16 px) · Large (18 px) |
+| Accent colour | drafting blue (default) plus blue, green, purple, orange, pink and cyan |
+| Mouse-wheel increment | 0.1 · **1 (default)** · 5 · 10, or any number from 0.001 to 1000 |
+| Preview | the accent, a sample heading and the sample button style |
+
+- `src/settings.ts` is the whole model — defaults, swatches, size presets, sheet tints, a normaliser
+  that repairs one field at a time, and `applySettings`, which writes `data-theme`, `data-sheet`,
+  `data-grid`, the accent and the root font size onto the document element. `src/useSettings.ts`
+  holds it as state and mirrors it to `localStorage['rcc-section-check-settings']` — the app's only
+  storage key. `main.tsx` applies the stored settings before React renders, so a dark theme never
+  flashes light, and a storage that is missing, blocked or full leaves the app on its defaults.
+- **Dark mode is token overrides**, not a second set of components: Tailwind 4 emits every colour
+  utility as `var(--color-…)`, so `[data-theme='dark']` in `src/index.css` re-lights the panels, the
+  tables and the SVG figures together, restates the `shadow-*` utilities (Tailwind writes those out
+  in full), gives the select chevron a dark rule of its own, and flips `color-scheme` so the native
+  controls and scrollbars follow. The report is a document of its own and always prints on white.
+- **Interface font size is real**: every text size in the app is a `rem` value, and the presets move
+  the root font size (14 / 16 / 18 px) so the whole interface — type, spacing and controls — scales
+  together. Medium (16 px) is the size the app has always had, so nothing moves by default; the
+  figures keep their own user-unit scale.
+- **The mouse-wheel increment is one setting for the whole app**: with the pointer over any numeric
+  field — a section dimension, a cover, a bar position or ⌀, a load case, a shear member, a bundle or
+  triple-bar spacing, an angular spacing — one wheel notch moves the value by this much in the
+  field's own unit, wheel up increasing and wheel down decreasing. 1 is the default, so a 150 mm
+  bundle spacing becomes 151 mm and then 152 mm. It is read at the moment of the notch, so changing
+  it in the panel applies to the next wheel movement of the field already on screen — no reload, no
+  re-entry — and each field's tooltip names the increment in force. A field's **spinner arrows keep
+  their own step** (10 mm on the member positions, 5 mm on the cover and spacing fields) and the
+  field's `min`/`max`, decimals and validation are untouched, so nothing about what a field accepts
+  has changed. Where a blank field means "automatic" — the bundle and triple-bar spacings — a notch
+  starts from the value the app is using and takes the field over from it, rather than dropping it to
+  zero. The increment is stored with the other preferences, and the wheel is attached to every
+  numeric input in the app, so the page is held still while the pointer is over one (everywhere else
+  it scrolls as usual, and a locked/frozen field stays inert).
+- **The accent carries its own shades**: `--color-accent-strong`, `--color-accent-wash` and the
+  button ink are mixed from the one accent colour (and the theme's card), so every swatch is legible
+  in both themes.
+- **About** carries the app mark, the name and tagline, `Version 1.0.0` (the version in
+  `package.json`, pinned by a test), what the app is for, the author card (Arvind Singh Rawat,
+  Bridge & Structural Design Engineer — email and LinkedIn, opened in a new tab with
+  `rel="noopener noreferrer"`), the key features and the © 2025 notice above **Close**.
+
+`src/__tests__/settings.test.ts` and `src/components/__tests__/appPanels.test.tsx` hold the model,
+the storage behaviour, both dialogs and the stylesheet rules they depend on;
+`src/components/__tests__/wheelStep.test.ts` pins the stepping rule and
+`src/components/__tests__/wheelIncrement.test.tsx` mounts the app in a DOM (jsdom, for that file
+only) and turns the wheel over the fields the user reported — the bundle and triple-bar spacings
+first among them — checking that the value moves by the configured increment, that the setting takes
+effect on the next notch, and that every enabled numeric field on screen answers the wheel.
+
+## Importing a file
+
+`Import project` reads two kinds of file, both through `src/importFile.ts`:
+
+- **A project this app exported** (`{ version, app, exportedAt, state }` or a bare state) goes through
+  `parseProjectFile` exactly as it always has — same cleaning, same migrations — so a round trip is
+  still complete. The banner names which input groups the file carried.
+- **Any other JSON that describes a section** is mapped field by field onto the inputs: a boundary or
+  a parametric description (`sectionType`, `B`/`b`/`width`, `D`/`depth`/`h`, `nBars`, `nx`/`ny` …), the
+  code, `fck` and the steel grade, per-face or uniform cover, a bar table or bar counts, the bar and
+  link diameters, member length, ULS/SLS/crack-width/shear cases, the shear design inputs and the
+  mesh density. Common aliases and nesting are accepted (`depth`, `D`, `overallDepth`,
+  `section.depth`; `Pu`, `P`, `axialForce`, `loads.factored[].Pu` …), keys may be written in any case,
+  and a `units` block (`{ "length": "cm", "force": "N" }`) or a per-key suffix (`depth_mm`, `Pu_kN`,
+  `Mx_Nm`) brings the file's units to the mm and kN this app works in.
+
+The rules the reader follows:
+
+- **The section geometry is read from the file, not inherited from the screen.** A boundary may be
+  written as `{x, y}` points, `[x, y]` pairs, flat coordinates, `{x, y, width, height}` or
+  `{cx, cy, diameter}`, under any of `boundary`, `points`, `vertices`, `outline`, `section.points` …;
+  the parametric parameters of every shape (rectangle, circle, tee, I, angle, box, hollow circle) are
+  read from their own names and aliases; and the section type follows what the file describes, so an
+  import replaces the previous geometry outright. Openings (`holes`, `voids`, `cutouts`, `openings`,
+  `ducts`, `apertures`) are read the same way — a bolt hole or a duct as a circle, a cutout as a
+  rectangle or a ring — and are kept with a generated section as well as with a boundary.
+- **A field the file carries is applied; a field it does not carry keeps the value already on
+  screen.** No default ever replaces something the user can see, and a valid zero is a value: `0` for
+  `memberLength`, `Pu`, `av`, an override — all of them survive the round trip, as do decimals.
+- **What the file implies is generated by the app's own code** — `generateSection` for a parametric
+  section, `normalizeCover` for the covers, `repositionAutomaticBars` when a boundary moves the
+  automatic rows, `sanitizeBarRows`/`sanitizeLinkPositions` for the tables. Nothing re-derives
+  geometry here, so the imported section behaves exactly as a typed-in one.
+- **Unusable values are reported, not applied**: a negative dimension, a wall opening wider than its
+  outer diameter, an exposure class the selected code does not have, a cot θ outside 1.0–2.5, a mesh
+  below 4 steps, a name that is not one of the code's steel grades, an opening that cannot be read.
+  The field keeps the value it had and the banner lists it under **Not populated**. Two cases are
+  adjusted instead, and said out loud: a bar count below what the generator places on that face or
+  ring (2 on a face, 6 on a ring) is raised to it, and a rotation the file states is reported as not
+  applied because the app has no rotation control — its coordinates are taken as written.
+- **The banner is the report**: the green message counts the input groups taken from the file and
+  lists them; every group it could not populate is listed with the reason ("not in the file — the
+  cover in use was kept"). A complete import clears itself after five seconds as before; one with
+  unpopulated fields stays until it is dismissed.
+- A file that is not JSON, or JSON that is not an object, is refused with a message that says so —
+  the file dialog also accepts `.txt` for that reason.
+
+**The geometry that reaches the screen.** An imported section is a *controlled* section: the app
+holds the boundary, the openings and the parametric definition the file gave, so every input the app
+has for it is filled from the file. Where the app keeps a form value of its own — the shape the
+Section geometry panel is showing, which boundary or opening its table is on, the bar count on the
+circular arrangement form, whether the per-face cover block is open — those follow the import too,
+through one `importStamp` the header bumps on every successful read. Nothing else in the panels
+changes: the stamp is only ever a re-seed after a file is read.
+
+One more rule lives in the circular-reinforcement panel: a bar table that came from a file is left
+exactly as the file wrote it. Without that guard the panel's live generator would replace an imported
+circular arrangement with its own default one on the first render after the import. It stays held
+until the arrangement is edited, `Apply layout` is pressed, or the section changes underneath it.
+
+`src/__tests__/importFile.test.ts` covers the parsing half: the project round trip (including zeros
+and decimals), the external mappings, the units, every spelling of a boundary and of an opening, the
+invalid-value reporting and the app wiring. `src/components/__tests__/sectionPanelImport.test.tsx`
+covers the geometry that reaches the screen: the shape controls of all seven section types, the
+boundary table and the drawn figure, the openings (with the calculated area of the section they
+leave), the properties (area, centroid, Ixx/Iyy) and the app's own analysis — interaction surface,
+utilisation and compliance checks — running on the imported section.
+
+## Copying coordinates
+
+Two buttons put the geometry and the reinforcement on the clipboard as a **tab-separated table with a
+header row**, so the numbers paste straight into Excel, AutoCAD, STAAD or any other software that
+reads a column of coordinates — no retyping, no rounding, no separate spreadsheet to keep in step
+with the screen.
+
+- **Copy coordinates** sits in the coordinate-display header of the **Section geometry** panel, on the
+  same row as the boundary/opening selector, under the drawing.
+- **Copy bar coordinates** sits in the toolbar of the **Reinforcement bars** table, beside the row
+  count and the table's own actions.
+
+What the first button writes:
+
+```
+Section coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)
+Part	Point	X (mm)	Y (mm)
+Boundary	1	0	0
+Boundary	2	450	0
+…
+Void 1	1	100	100
+…
+```
+
+The boundary first, then each opening as its own numbered block (`Void 1`, `Void 2`, …) — so a bolt
+hole, a duct or a cutout can be fed to a drawing as a closed polyline of its own instead of being
+mixed into the outer ring. The second button writes one row per longitudinal bar, in table order:
+
+```
+Reinforcement bar coordinates — RCC Section Check · mm, x to the right, y up, origin at the section's own (0, 0)
+Bar	X (mm)	Y (mm)	Dia (mm)	Face	Surface	Placement
+1	61	61	25	bottom	outer	automatic
+…
+```
+
+Bar numbers, diameters, the face the bar belongs to, whether it is on an outer or an inner (void)
+surface and whether the app placed it or the user did all travel with the coordinates, so the row
+means the same thing in the spreadsheet as it does on screen.
+
+Both tables are built from the state the panels are already showing — **the values the app holds,
+copied verbatim**: the same `x`, `y` and `dia` the diagram and the bar table are drawn from, signs
+kept, `-0` written as `0`, decimals not rounded and not re-derived. A circle the app generated is
+copied as the polygon it analyses (a 64-vertex ring), so the paste is the geometry on screen. No engineering calculation runs
+for a copy, and the mm/`(0, 0)` frame is the section's own — the one the figure and the coordinate
+tables use, so a paste lands in the same place as the drawing.
+
+Each click reports itself in a note beside its button: *Copied 68 section points to the clipboard.*
+(or *Copied 12 bar coordinates…*), with a count of anything unusable that was left out of the table.
+The note clears itself after seven seconds. When there is nothing to copy — a boundary with fewer
+than three points, a boundary vertex that is not a finite number, an empty bar table — the button
+**says so instead of copying a partial or wrong table**, and when the browser refuses the clipboard
+(paste is unavailable, a permission was denied) the note says that too and points at the alternative:
+select the cells in the panel and press Ctrl+C. A void whose ring has fewer than three usable points
+is dropped rather than written as a half block.
+
+The whole feature is three small modules: `src/clipboard.ts` (the two table builders and one
+clipboard writer, `navigator.clipboard.writeText` with the off-screen-textarea `execCommand` fallback
+for pages where the Clipboard API is not granted), `src/useCopyFeedback.ts` (the note and its timer)
+and the two buttons in `src/components/Editors.tsx`. Tests: `src/__tests__/clipboard.test.ts` pins the
+formats, the signs and the precision, the opening blocks, a circular arrangement and the empty cases;
+`src/components/__tests__/copyCoordinates.test.tsx` checks the two buttons are where they belong, that
+the copied rows match the rows on screen, and that the untouched panels around them still render.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · Vitest
@@ -48,12 +357,15 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # engine regression suite (verified worked-example values)
 npm run build      # type-check + production build
+npm run icons      # regenerate favicon PNGs from the logo geometry
 ```
 
 ## Layout
 
 ```
 docs/                     Full specification (12 chapters, clause-verified)
+public/                   Application logo: favicon.svg + generated PNG fallbacks
+scripts/                  make-favicons.mjs — renders the logo PNGs (npm run icons)
 src/engine/               Code-agnostic analysis kernel
   types.ts                Shared types (units: N, mm internally)
   geometry.ts             Shoelace properties, polygon validity, scanline chords
@@ -66,12 +378,21 @@ src/engine/               Code-agnostic analysis kernel
   checks.ts               Clause compliance checks per code
   sls.ts                  SLS working-stress check (σcbc / σst, transformed section)
   crackWidth.ts           SLS crack-width check per code (IS 456 Annex F / IRC:112 / IRS CBC)
+  shear.ts                Shear design check per code (capacity, links, limits, spacing)
+  stirrups.ts             Link ring, automatic leg/tie arrangement, resolution + validation
   __tests__/              Golden regression tests (docs/11 worked example)
 src/components/           Editors, section preview, charts, results panels
   CoverPanel.tsx          Per-face cover inputs, schematic and layout actions
   SLSResults.tsx          SLS stress table, summary and calculation panels
   CrackWidth.tsx          SLS crack-width inputs, per-case results and calculation panels
-src/App.tsx               State + analysis pipeline wiring (ULS + SLS modules)
+  Shear.tsx               Shear inputs, load cases, reinforcement diagram + stirrup editor,
+                          results and calculation panels
+  Modal.tsx               Shared dialog shell (Settings, About)
+  SettingsPanel.tsx       Appearance preferences
+  AboutPanel.tsx          Version, author, key features
+src/settings.ts           Appearance settings: defaults, normaliser, apply + storage
+src/useSettings.ts        Those settings as React state, mirrored to localStorage
+src/App.tsx               State + analysis pipeline wiring (ULS + SLS + shear modules)
 ```
 
 ## Engineering notes
@@ -80,12 +401,16 @@ src/App.tsx               State + analysis pipeline wiring (ULS + SLS modules)
   constant Pu) governs the verdict; the code's simplified power-law interaction
   (IS 456 Cl 39.6 / IRC 112 Cl 8.3.2 / IRS CBC Cl 15.6.4 eq 16) is computed and
   reported alongside for traceability.
+- The shear diagram and the stirrup editor share one resolved link layout (`engine/stirrups.ts`)
+  with the shear check, so the drawn legs, the effective `Asv` and the reported numbers can
+  never disagree; entered member positions are kept exactly as typed and reported with their
+  reason when they cannot be built.
 - Cover is a **per-face** driving datum measured to the outside of the links: an automatic
   bar sits `cover(face) + ⌀tie + ⌀bar/2` from its associated face, a bar lining an internal
   void uses that void's own cover (blank = inherit the matching outer face), and circular
   rings take the governing (largest) face cover. Cover, bar diameter and section edits update
   automatic geometry live; coordinate-table edits switch only the edited rows to `manual`,
-  which are audited but not overwritten — see `docs/03` §3.6 and `docs/04` §4.2.
+  which are audited but not overwritten — see `docs/03` §3.6 and `docs/04` §4.3.
 - Loads are entered **already factored**; material partial safety factors are applied
   internally by the code stress blocks. Second-order / slenderness moments must be
   included upstream (the tool flags the slenderness screens).

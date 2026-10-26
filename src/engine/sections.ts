@@ -51,7 +51,8 @@ export interface GeneratedSection {
   shapeClass: 'rect' | 'circ'
 }
 
-function circlePoly(cx: number, cy: number, r: number, nSeg = 64): Point[] {
+/** A circle as a 64-sided polygon — the same ring the section generator builds. */
+export function circlePoly(cx: number, cy: number, r: number, nSeg = 64): Point[] {
   const pts: Point[] = []
   for (let i = 0; i < nSeg; i++) {
     const a = (2 * Math.PI * i) / nSeg

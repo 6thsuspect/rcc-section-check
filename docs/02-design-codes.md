@@ -26,15 +26,33 @@ deliberately impossible.
 | Max. steel / periphery spacing | 6% (warn > 4%) / 300 mm | 4% (8% laps) / 200 mm | 6% vert. cast (8% laps) / 300 mm |
 | Concrete grades offered | M20–M80 (Table 2 Amd 4; warn > M60) | M20–M90 (Table 6.4) | M20–M60 (Table 2) |
 | Steel grades offered | Fe250–Fe600 | Fe415–Fe600 (Table 18.1) | Fe250–Fe550 (Cl 4.5.1) |
+| **Shear design** (Shear Check tab) | τv = Vu/(b·d) vs τc from **Table 19** (Cl 40.2.1) with δ (Cl 40.2.2) and 2d/av (Cl 40.3); stirrups for Vus = Vu − τc·b·d (Cl 40.4); τc,max from Table 20 | Variable strut inclination: VRd,c (Cl 10.3.2), VRd,s = (Asw/s)·z·fywd·cot θ and VRd,max (Cl 10.3.3.2), cot θ = 1.0–2.5 user-set; steel not added to concrete | v = V/(b·d) vs βs·vc (Table 15 × Table 16, βs = (500/d)^¼ ≥ 0.70); links per Table 14, fyv ≤ 415 N/mm²; v ≤ min(0.75√fck, 4.75) |
 
 Full clause-by-clause requirements: [§6](06-is456.md), [§7](07-irc112.md),
-[§8](08-irs-cbc.md).
+[§8](08-irs-cbc.md). Shear is checked on its own tab — see
+[§6.4](06-is456.md#64-shear-design-check-shear-tab), [§7.8](07-irc112.md#78-shear-design-check-shear-tab)
+and [§8.7](08-irs-cbc.md#87-shear-design-check-cl-1543).
+
+The same tab carries the shear reinforcement diagram and the stirrup detailing editor: the
+link ring is set out from the section outline and the clear cover of each face, the
+longitudinal bars and the links are drawn together on the shared section geometry, and the
+effective legs (2 legs of the closed link + intermediate legs) with the entered spacing are
+what the code check above consumes. The detailing rules are applied **on top of** the selected
+code's clauses — they never change a design equation — and an arrangement that cannot be built
+is reported with its reason ([§10.2](10-outputs.md), [§9](09-validation.md) rule V14).
 
 ## 2.2 Scope boundaries
 
 - The module checks **ULS section strength** (axial + biaxial bending) and section-level
   detailing rules. Load combinations are formed upstream per IS 875/IS 1893, IRC:6, or
   IRS Bridge Rules as applicable.
+- **Shear design** is a separate module of the same app (the **Shear Check** tab) with its own
+  factored `Vu`/`Pu` load-case list. It checks single-axis shear at the critical section:
+  concrete shear resistance, the required shear reinforcement, the code's minimum and maximum
+  reinforcement limits, the spacing rules and the web-crushing limit — for the code selected in
+  the shared material panel. The link ring, the intermediate legs and the cross-ties are drawn
+  on the section and validated against the restraint/spacing rules of that code. Torsion, punching shear, fatigue and seismic shear detailing remain
+  outside the scope of revision A.
 - Slenderness classification is reported when member geometry is supplied; second-order
   moment amplification is the caller's responsibility
   ([§3.5](03-section-definition.md)).

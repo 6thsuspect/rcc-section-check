@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import type { Rebar, SectionGeometry, SectionProperties } from '../engine/types'
 import {
+  FACE_LABELS,
   faceFromNormal,
   formatCover,
   inboundNormal,
@@ -12,9 +13,11 @@ import {
   type BarCoverStatus,
   type CoverSpec,
 } from '../engine/cover'
-import { signedArea } from '../engine/geometry'
+import { barArea, signedArea } from '../engine/geometry'
+import { analyseBundles, bundleIdOf } from '../engine/barSpacing'
+import type { RectSpacerBar } from '../engine/rectRebar'
 import { fmtN } from '../state'
-import { Check, chipGroupCls, EmptyState, noteSmCls, Readout, ZoomableSvg } from './ui'
+import { btnMiniCls, Check, chipGroupCls, EmptyState, noteSmCls, Readout, ZoomableSvg } from './ui'
 import type { ActiveFace } from './CoverPanel'
 
 const W = 460
@@ -22,16 +25,35 @@ const H = 340
 const PAD = 34
 const FONT = "Bahnschrift, 'Avenir Next', 'Segoe UI', sans-serif"
 
+/**
+ * Label colours offered next to the figure. The first entry follows the theme
+ * (dark ink on the light sheet, light ink on the dark one) and is the default:
+ * a fixed dark grey would vanish the moment the interface goes dark. Its `hex`
+ * is empty because a native colour input only accepts a real hex value — the
+ * empty string is what the state carries while the theme colour is selected.
+ */
 const LABEL_COLORS = [
-  { name: 'ink', hex: '#17222c' },
-  { name: 'blue', hex: '#2a78d6' },
-  { name: 'orange', hex: '#d95926' },
-  { name: 'green', hex: '#0ca30c' },
+  { name: 'auto', title: 'Label colour — follows the theme ink', hex: '', swatch: 'var(--color-ink)' },
+  { name: 'blue', title: 'Label colour — blue', hex: '#2a78d6', swatch: '#2a78d6' },
+  { name: 'orange', title: 'Label colour — orange', hex: '#d95926', swatch: '#d95926' },
+  { name: 'green', title: 'Label colour — green', hex: '#0ca30c', swatch: '#0ca30c' },
 ]
 
-/** Hover text of a bar: coordinates, diameter and its cover audit result. */
+/** High-contrast engineering palette when multiple bar diameters exist in a section. */
+const DIAMETER_PALETTE = [
+  'var(--color-capacity)',
+  '#0d9488',
+  '#d97706',
+  '#7c3aed',
+  '#0284c7',
+  '#db2777',
+]
+
+/** Hover text of a bar: coordinates, diameter, layer/bundle info and its cover audit result. */
 function barTooltip(i: number, b: Rebar, st: BarCoverStatus | null | undefined): string {
-  const head = `bar ${i + 1} — (${b.x}, ${b.y}) ⌀${b.dia}`
+  const layerStr = b.layer != null ? ` · L${b.layer + 1}` : ''
+  const bundleStr = bundleIdOf(b) ? ' · bundled' : ''
+  const head = `bar ${i + 1} — (${b.x}, ${b.y}) ⌀${b.dia}${layerStr}${bundleStr}`
   if (!st) return head
   const where = `${st.surface === 'inner' ? 'void ' : ''}${st.faceName || st.face}`
   return `${head} · cover ${st.achieved.toFixed(1)} mm vs ${st.required.toFixed(1)} mm required at ${where}${
@@ -83,13 +105,14 @@ export function SectionPreview({
   onHoverFace,
   onSelectFace,
   stress,
+  spacers,
 }: {
   geometry: SectionGeometry
   bars: Rebar[]
   props: SectionProperties | null
   na?: NAInfo | null
   /** Per-face nominal cover; draws the cover envelope when supplied. */
-  cover?: CoverSpec | null
+  cover?: CoverAudit extends never ? never : CoverSpec | null
   /** Achieved-cover audit — bars short of their face cover are ringed in red. */
   audit?: CoverAudit | null
   /** Circular rings use one governing radial value all around the section. */
@@ -101,12 +124,20 @@ export function SectionPreview({
   onSelectFace?: (face: ActiveFace | null) => void
   /** SLS stress annotations (SLS window only). */
   stress?: StressOverlay | null
+  /** Transverse spacer bars between multi-layer rectangular reinforcement stacks. */
+  spacers?: RectSpacerBar[] | null
 }) {
   const [showLabels, setShowLabels] = useState(true)
   const [fontSize, setFontSize] = useState(11)
-  const [labelColor, setLabelColor] = useState(LABEL_COLORS[1].hex)
+  /* '' = the theme ink; any other value is the hex the swatches and the
+     colour picker write */
+  const [labelColor, setLabelColor] = useState('')
+  const labelInk = labelColor || 'var(--color-ink)'
   const [showNA, setShowNA] = useState(true)
   const [showCover, setShowCover] = useState(true)
+  const [showSpacers, setShowSpacers] = useState(true)
+  const [hoveredBar, setHoveredBar] = useState<number | null>(null)
+  const [pinnedBar, setPinnedBar] = useState<number | null>(null)
   const clipId = useId()
 
   const xs = geometry.boundary.map((p) => p.x)
@@ -211,6 +242,16 @@ export function SectionPreview({
   }
 
   const isRect = geometry.boundary.length === 4 && isAxisAlignedRect(geometry.boundary)
+  const bundles = analyseBundles(bars)
+  const uniqueDias = [...new Set(bars.map((b) => b.dia))].sort((a, b) => b - a)
+  const multiDiameter = uniqueDias.length > 1
+  const diaColorMap = new Map<number, string>(
+    uniqueDias.map((d, idx) => [d, DIAMETER_PALETTE[idx % DIAMETER_PALETTE.length]]),
+  )
+  const maxLayer = bars.reduce((m, b) => Math.max(m, b.layer ?? 0), 0)
+  const rawInspected = pinnedBar ?? hoveredBar
+  const inspectedIdx = rawInspected !== null && rawInspected >= 0 && rawInspected < bars.length ? rawInspected : null
+  const inspectedBar = inspectedIdx !== null ? bars[inspectedIdx] : null
 
   return (
     <div>
@@ -234,20 +275,28 @@ export function SectionPreview({
               title="Show the nominal cover envelope of each face (to the outside of the links)"
             />
           )}
+          {spacers && spacers.length > 0 && (
+            <Check
+              checked={showSpacers}
+              onChange={setShowSpacers}
+              label="Spacers"
+              title="Show transverse spacer bars separating reinforcement layers"
+            />
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className={chipGroupCls} title="Label font size">
             <button
-              className="grid h-[18px] w-[19px] place-items-center rounded text-[10px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[0.625rem] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
               aria-label="Smaller labels"
               onClick={() => setFontSize((v) => Math.max(8, v - 1))}
             >
               A−
             </button>
-            <span className="w-5 text-center text-[10.5px] text-ink-3 tnum">{fontSize}</span>
+            <span className="w-5 text-center text-[0.65625rem] text-ink-3 tnum">{fontSize}</span>
             <button
-              className="grid h-[18px] w-[19px] place-items-center rounded text-[11px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
+              className="grid h-[18px] w-[19px] place-items-center rounded text-[0.6875rem] font-semibold text-ink-2 transition-colors duration-150 hover:bg-panel hover:text-accent"
               aria-label="Larger labels"
               onClick={() => setFontSize((v) => Math.min(20, v + 1))}
             >
@@ -260,10 +309,10 @@ export function SectionPreview({
                 key={c.name}
                 aria-label={`Label colour ${c.name}`}
                 aria-pressed={labelColor === c.hex}
-                title={`Label colour — ${c.name}`}
-                className="h-[13px] w-[13px] rounded-full border border-black/10 transition-transform duration-150 hover:scale-110"
+                title={c.title}
+                className="h-[13px] w-[13px] rounded-full border border-edge transition-transform duration-150 hover:scale-110"
                 style={{
-                  background: c.hex,
+                  background: c.swatch,
                   outline: labelColor === c.hex ? '2px solid var(--color-accent)' : 'none',
                   outlineOffset: '1px',
                 }}
@@ -272,7 +321,7 @@ export function SectionPreview({
             ))}
             <input
               type="color"
-              value={labelColor}
+              value={labelColor || '#17222c'}
               aria-label="Custom label colour"
               title="Custom label colour"
               className="h-[15px] w-[17px] cursor-pointer rounded-[3px] border border-edge transition-transform duration-150 hover:scale-105"
@@ -442,7 +491,7 @@ export function SectionPreview({
               fontSize={fontSize}
               fontFamily={FONT}
               fontWeight="600"
-              fill={labelColor}
+              fill={labelInk}
               textAnchor={xuEls && xuEls.tagAnchorEnd ? 'end' : 'start'}
             >
               NA
@@ -472,7 +521,7 @@ export function SectionPreview({
               textAnchor="middle"
               dominantBaseline="middle"
               paintOrder="stroke"
-              stroke="var(--color-card, #fff)"
+              stroke="var(--color-card)"
               strokeWidth="3"
               className="fill-demand"
             >
@@ -503,7 +552,7 @@ export function SectionPreview({
                 fontWeight="700"
                 textAnchor={anchor}
                 paintOrder="stroke"
-                stroke="var(--color-card, #fff)"
+                stroke="var(--color-card)"
                 strokeWidth="3"
                 fill={ok ? 'var(--color-ok)' : 'var(--color-bad)'}
               >
@@ -525,10 +574,70 @@ export function SectionPreview({
             <text x={cx + 204} y={cy + 4} className="fill-ink-2" fontSize="11" fontFamily={FONT}>X</text>
             <text x={cx + 4} y={cy - 164} className="fill-ink-2" fontSize="11" fontFamily={FONT}>Y</text>
             {showLabels && props && (
-              <text x={cx + 6} y={cy + 16} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelColor}>
+              <text x={cx + 6} y={cy + 16} fontSize={fontSize} fontFamily={FONT} fontWeight="600" fill={labelInk}>
                 G ({fmtN(props.cx, 0)}, {fmtN(props.cy, 0)})
               </text>
             )}
+          </g>
+        )}
+
+        {/* Transverse spacer bars between reinforcement layers */}
+        {spacers && showSpacers && spacers.length > 0 && (
+          <g data-testid="spacer-bars-group">
+            {spacers.map((sp) => {
+              const sw = Math.max(2, sp.dia * scale)
+              return (
+                <g key={sp.id} data-spacer={sp.id}>
+                  <line
+                    x1={X(sp.x1)}
+                    y1={Y(sp.y1)}
+                    x2={X(sp.x2)}
+                    y2={Y(sp.y2)}
+                    stroke="var(--color-ink-3)"
+                    strokeWidth={sw}
+                    strokeLinecap="round"
+                    opacity={0.34}
+                  >
+                    <title>{`Spacer bar (${FACE_LABELS[sp.face]} L${sp.fromLayer + 1}–L${sp.toLayer + 1}) — ⌀${sp.dia} mm · clear gap ${sp.clearGap.toFixed(1)} mm`}</title>
+                  </line>
+                  <line
+                    x1={X(sp.x1)}
+                    y1={Y(sp.y1)}
+                    x2={X(sp.x2)}
+                    y2={Y(sp.y2)}
+                    stroke="var(--color-ink-2)"
+                    strokeWidth={1.1}
+                    strokeDasharray="5 3"
+                    pointerEvents="none"
+                  />
+                </g>
+              )
+            })}
+          </g>
+        )}
+
+        {/* Bundle group halo envelopes */}
+        {bundles.length > 0 && (
+          <g data-testid="bundle-halos-group">
+            {bundles.map((bundle) => {
+              const haloR = Math.max(4.5, (bundle.envelope / 2) * scale + 2.2)
+              return (
+                <circle
+                  key={bundle.id}
+                  data-bundle={bundle.id}
+                  cx={X(bundle.cx)}
+                  cy={Y(bundle.cy)}
+                  r={haloR}
+                  fill="var(--color-accent)"
+                  fillOpacity={0.09}
+                  stroke="var(--color-accent)"
+                  strokeWidth={1.1}
+                  strokeDasharray="3 2"
+                >
+                  <title>{`Bundle (${bundle.bars.length} bars: ⌀${bundle.dias.join('+')} · ⌀eq = ${bundle.eqDia.toFixed(1)} mm · centroid (${bundle.cx.toFixed(1)}, ${bundle.cy.toFixed(1)}))`}</title>
+                </circle>
+              )
+            })}
           </g>
         )}
 
@@ -537,28 +646,60 @@ export function SectionPreview({
           const st = audit?.bars[i] ?? null
           const bad = st !== null && !st.ok
           const clash = !!overlapping?.has(i)
+          const isInspected = inspectedIdx === i
+          const diaFill = multiDiameter ? diaColorMap.get(b.dia) : undefined
+          const innerLayer = maxLayer > 0 && (b.layer ?? 0) > 0
           return (
-            <g key={i}>
+            <g
+              key={i}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={() => setHoveredBar(i)}
+              onMouseLeave={() => setHoveredBar((cur) => (cur === i ? null : cur))}
+              onClick={() => setPinnedBar((cur) => (cur === i ? null : i))}
+            >
+              {isInspected && (
+                <circle
+                  cx={X(b.x)}
+                  cy={Y(b.y)}
+                  r={r + 3.5}
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth={1.8}
+                  data-inspected="true"
+                />
+              )}
               <circle
                 cx={X(b.x)}
                 cy={Y(b.y)}
                 r={r}
-                className={clash ? undefined : 'fill-capacity'}
-                fill={clash ? 'var(--color-bad)' : undefined}
+                className={clash || diaFill ? undefined : 'fill-capacity'}
+                fill={clash ? 'var(--color-bad)' : diaFill}
                 fillOpacity={clash ? 0.78 : undefined}
                 stroke={clash ? '#8f1d1d' : bad ? 'var(--color-bad)' : 'none'}
                 strokeWidth={clash ? 1.2 : bad ? 1.6 : 0}
                 data-overlap={clash ? 'true' : undefined}
+                data-bar-index={i + 1}
+                data-bar-dia={b.dia}
               >
                 <title>{`${barTooltip(i, b, st)}${clash ? ' — OVERLAPS another bar' : ''}`}</title>
               </circle>
+              {innerLayer && !clash && (
+                <circle
+                  cx={X(b.x)}
+                  cy={Y(b.y)}
+                  r={Math.max(1.1, r * 0.34)}
+                  fill="var(--color-card)"
+                  pointerEvents="none"
+                  data-inner-layer={b.layer}
+                />
+              )}
               {showLabels && (
                 <text
                   x={X(b.x) + r + 2}
                   y={Y(b.y) - r - 1}
                   fontSize={fontSize}
                   fontFamily={FONT}
-                  fill={labelColor}
+                  fill={labelInk}
                 >
                   {i + 1}
                 </text>
@@ -567,6 +708,78 @@ export function SectionPreview({
           )
         })}
       </ZoomableSvg>
+
+      {/* Bar diameter / bundle / layer visual key when varied reinforcement is active */}
+      {(multiDiameter || bundles.length > 0 || (spacers && spacers.length > 0)) && (
+        <div
+          data-testid="reinforcement-visual-key"
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-field border border-line bg-panel/45 px-2 py-1 text-[0.65625rem] text-ink-2"
+        >
+          {uniqueDias.map((d) => {
+            const count = bars.filter((b) => b.dia === d).length
+            return (
+              <span key={d} className="inline-flex items-center gap-1 font-mono tnum">
+                <span
+                  aria-hidden="true"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: diaColorMap.get(d) ?? 'var(--color-capacity)' }}
+                />
+                <span>
+                  ⌀{d} × {count}
+                </span>
+              </span>
+            )
+          })}
+          {bundles.length > 0 && (
+            <span className="inline-flex items-center gap-1 font-mono text-ink-2">
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 shrink-0 rounded-full border border-dashed border-accent bg-accent/15"
+              />
+              <span>{bundles.length} bundle{bundles.length === 1 ? '' : 's'}</span>
+            </span>
+          )}
+          {maxLayer > 0 && (
+            <span className="inline-flex items-center gap-1 font-mono text-ink-2">
+              <span aria-hidden="true" className="grid h-2.5 w-2.5 shrink-0 place-items-center rounded-full bg-capacity">
+                <span className="h-1 w-1 rounded-full bg-card" />
+              </span>
+              <span>{maxLayer + 1} layers</span>
+            </span>
+          )}
+          {spacers && spacers.length > 0 && showSpacers && (
+            <span className="inline-flex items-center gap-1 font-mono text-ink-2">
+              <span aria-hidden="true" className="h-1 w-3.5 shrink-0 rounded bg-ink-3/60" />
+              <span>{spacers.length} spacer{spacers.length === 1 ? '' : 's'} (⌀{spacers[0].dia})</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Interactive bar-coordinate inspector */}
+      {inspectedBar && inspectedIdx !== null && (
+        <div
+          data-testid="bar-inspector"
+          className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-field border border-accent/35 bg-accent-wash/50 px-2.5 py-1 text-[0.6875rem] text-ink"
+        >
+          <span className="font-mono tnum">
+            <b>Bar #{inspectedIdx + 1}</b> · X = <b>{inspectedBar.x}</b> mm, Y = <b>{inspectedBar.y}</b> mm · ⌀
+            <b>{inspectedBar.dia}</b> mm (As {fmtN(barArea(inspectedBar.dia), 1)} mm²)
+            {inspectedBar.face ? ` · ${FACE_LABELS[inspectedBar.face]}` : ''}
+            {inspectedBar.layer != null ? ` · Layer ${inspectedBar.layer + 1}` : ''}
+            {bundleIdOf(inspectedBar) ? ' · Bundle' : ''}
+          </span>
+          {pinnedBar !== null && (
+            <button
+              type="button"
+              className={btnMiniCls}
+              onClick={() => setPinnedBar(null)}
+            >
+              Unpin
+            </button>
+          )}
+        </div>
+      )}
 
       {/* figure legend */}
       <div className="mt-2 flex flex-col gap-1">

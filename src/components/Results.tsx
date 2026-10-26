@@ -119,10 +119,10 @@ export function CompliancePanel({ checks }: { checks: ComplianceCheck[] }) {
                   c.status === 'fail' ? 'bg-bad/6' : ''
                 }`}
               >
-                <td className={`${tdCls} whitespace-nowrap font-mono text-[11px] text-ink-2`}>{c.clause}</td>
+                <td className={`${tdCls} whitespace-nowrap font-mono text-[0.6875rem] text-ink-2`}>{c.clause}</td>
                 <td className={`${tdCls} font-medium`}>
                   {c.title}
-                  {c.note && <div className="mt-0.5 text-[10.5px] font-normal leading-snug text-ink-2">{c.note}</div>}
+                  {c.note && <div className="mt-0.5 text-[0.65625rem] font-normal leading-snug text-ink-2">{c.note}</div>}
                 </td>
                 <td className={`${tdCls} tnum`}>{c.demand}</td>
                 <td className={`${tdCls} tnum text-ink-2`}>{c.limit}</td>
@@ -223,12 +223,12 @@ export function NeutralAxisPanel({
           {sel && r && (
             <div className="mt-3 rounded-lg border border-line bg-panel/45 px-3 py-2.5">
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-2">
+                <span className="font-display text-[0.65625rem] font-bold uppercase tracking-[0.07em] text-ink-2">
                   Calculation — {sel.name}
                 </span>
                 <ClassBadge cls={r.classification} />
               </div>
-              <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-[11.5px] leading-snug text-ink-2 tnum sm:grid-cols-2">
+              <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-[0.71875rem] leading-snug text-ink-2 tnum sm:grid-cols-2">
                 <Row k="Neutral axis depth xu" v={`${fmtN(r.xu, 1)} mm`} note={`from the extreme compression fibre, ${r.axisLabel}`} />
                 <Row k="Effective depth d" v={`${fmtN(r.d, 1)} mm`} note="extreme compression fibre → extreme tension bar" />
                 <Row k="xu,max / d" v={fmtN(r.xuMaxRatio, 3)} note={xuMaxLabel} />
@@ -241,7 +241,7 @@ export function NeutralAxisPanel({
                 />
               </dl>
               {r.classification === 'under' && r.Mu !== null ? (
-                <p className="mt-2 rounded-field border border-ok/30 bg-ok/8 px-2 py-1.5 text-[11.5px] leading-snug text-ink">
+                <p className="mt-2 rounded-field border border-ok/30 bg-ok/8 px-2 py-1.5 text-[0.71875rem] leading-snug text-ink">
                   <b>Under-reinforced</b> — Mu = ΣC·z of the stress resultants at xu = {fmtN(r.xu, 1)} mm (P = {f0(sel.Pu)} kN):{' '}
                   <b className="tnum">Mu = {fmtN(r.Mu / 1e6, 1)} kN·m</b> vs MEd = {fmtN(r.MEd / 1e6, 1)} kN·m{' '}
                   <span className={r.Mu >= r.MEd ? 'font-semibold text-ok' : 'font-semibold text-bad'}>
@@ -249,7 +249,7 @@ export function NeutralAxisPanel({
                   </span>
                 </p>
               ) : (
-                <p className="mt-2 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[11.5px] leading-snug text-ink">
+                <p className="mt-2 rounded-field border border-warn2/30 bg-warn2/8 px-2 py-1.5 text-[0.71875rem] leading-snug text-ink">
                   <b>Over-reinforced{sel.Pu > 0 ? ' / compression-controlled' : ''}</b> — xu exceeds xu,max
                   {r.naOutside ? ' (the NA lies outside the section — whole section in compression)' : ''}, so Mu is not
                   taken from the under-reinforced formula. Revise the section (depth, concrete grade or steel) for a
@@ -273,7 +273,7 @@ export function NeutralAxisPanel({
 function ClassBadge({ cls }: { cls: 'under' | 'over' }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-1.5 py-px font-display text-[9.5px] font-bold uppercase tracking-[0.05em] ${
+      className={`inline-flex items-center rounded-full border px-1.5 py-px font-display text-[0.59375rem] font-bold uppercase tracking-[0.05em] ${
         cls === 'under' ? 'border-ok/35 bg-ok/10 text-ok' : 'border-warn2/35 bg-warn2/10 text-warn2'
       }`}
     >
@@ -285,10 +285,10 @@ function ClassBadge({ cls }: { cls: 'under' | 'over' }) {
 function Row({ k, v, note }: { k: string; v: string; note?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="font-display text-[9.5px] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
+      <dt className="font-display text-[0.59375rem] font-bold uppercase tracking-[0.07em] text-ink-3">{k}</dt>
       <dd className="font-semibold text-ink">
         {v}
-        {note && <span className="ml-1 font-normal text-[10.5px] text-ink-3">{note}</span>}
+        {note && <span className="ml-1 font-normal text-[0.65625rem] text-ink-3">{note}</span>}
       </dd>
     </div>
   )
@@ -324,7 +324,7 @@ export function ReinforcementSpacingPanel({ report }: { report: SpacingReport })
             <tr className={`border-b border-line align-top ${overlaps.length ? 'bg-bad/6' : ''}`}>
               <td className={`${tdCls} font-medium`}>
                 Bar overlap / intersection
-                <div className="mt-0.5 text-[10.5px] font-normal leading-snug text-ink-2">All bars, including bars inside a bundle</div>
+                <div className="mt-0.5 text-[0.65625rem] font-normal leading-snug text-ink-2">All bars, including bars inside a bundle</div>
               </td>
               <td className={`${tdCls} tnum`}>
                 {overlaps.length === 0 ? (
@@ -349,7 +349,7 @@ export function ReinforcementSpacingPanel({ report }: { report: SpacingReport })
               <tr className="border-b border-line align-top">
                 <td className={`${tdCls} font-medium`}>
                   {bundles.length ? 'Min. clear spacing between bars / bundles' : 'Min. clear spacing between bars'}
-                  <div className="mt-0.5 text-[10.5px] font-normal leading-snug text-ink-2">
+                  <div className="mt-0.5 text-[0.65625rem] font-normal leading-snug text-ink-2">
                     {bundles.length
                       ? 'Adjacent bars outside the bundle; bars within one bundle excluded'
                       : 'Surface-to-surface distance of the closest pair'}

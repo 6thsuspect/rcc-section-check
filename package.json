@@ -1,12 +1,13 @@
 {
   "name": "rcc-section-check",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "icons": "node scripts/make-favicons.mjs",
     "test": "vitest run",
     "preview": "vite preview"
   },
@@ -21,6 +22,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "jsdom": "^30.1.3",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",

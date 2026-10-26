@@ -3,6 +3,8 @@ import { DEFAULT_MESH } from './engine/types'
 import { defaultPredefined, generateSection, type PredefinedSection } from './engine/sections'
 import { uniformCover, type CoverSpec } from './engine/cover'
 import { DEFAULT_EXPOSURE, type CrackWidthSettings } from './engine/crackWidth'
+import { DEFAULT_SHEAR, type ShearLoadCase, type ShearSettings } from './engine/shear'
+import type { RectAdvancedRebarConfig } from './engine/rectRebar'
 
 export interface AppState {
   code: DesignCodeId
@@ -11,6 +13,8 @@ export interface AppState {
   /** Which predefined shape produced the geometry (null = custom). */
   predefined: PredefinedSection | null
   shapeClass: 'rect' | 'circ'
+  /** Optional per-face advanced reinforcement configuration for rectangular sections. */
+  rectRebar?: RectAdvancedRebarConfig
   fck: number
   steelGrade: string
   /** Nominal clear cover to the links, entered per concrete face (docs/03 §3.6). */
@@ -33,12 +37,24 @@ export interface AppState {
   crackCases: LoadCase[]
   /** Crack-width check inputs (exposure class + load duration) for the SLS tab. */
   crackWidth: CrackWidthSettings
+  /**
+   * Factored shear design cases for the shear tab — entered independently from
+   * the ULS moment cases (a shear case is a Vu/Pu pair, not a full P–Mx–My set).
+   */
+  shearCases: ShearLoadCase[]
+  /** Shear design inputs (direction, member type, matching links) for the shear tab. */
+  shear: ShearSettings
   mesh: MeshSettings
 }
 
 let caseSeq = 1
 export function newCaseId(): string {
   return `lc-${caseSeq++}-${Date.now() % 100000}`
+}
+
+let shearCaseSeq = 1
+export function newShearCaseId(): string {
+  return `sc-${shearCaseSeq++}-${Date.now() % 100000}`
 }
 
 export const DEFAULT_TIE_DIA = 8
@@ -81,6 +97,14 @@ export function initialState(): AppState {
       { id: newCaseId(), name: 'CWC2', Pu: 500, Mux: 160, Muy: 30 },
     ],
     crackWidth: { exposure: DEFAULT_EXPOSURE.IS456, longTerm: false },
+    // Shear design cases and inputs for the shear tab — an independent list of
+    // factored Vu / Pu pairs, seeded to show both a passing and a failing case
+    // for the default section and links.
+    shearCases: [
+      { id: newShearCaseId(), name: 'SC1', Vu: 120, Pu: 2500 },
+      { id: newShearCaseId(), name: 'SC2', Vu: 320, Pu: 1200 },
+    ],
+    shear: { ...DEFAULT_SHEAR },
     mesh: DEFAULT_MESH,
   }
 }

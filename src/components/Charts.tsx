@@ -109,7 +109,7 @@ export function PMChart({
         )}
       </ZoomableSvg>
       {hover && (
-        <div className="pointer-events-none absolute left-2 top-2 rounded-md border border-edge bg-card/95 px-2 py-1 text-[11px] text-ink-2 tnum shadow-card backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-2 top-2 rounded-md border border-edge bg-card/95 px-2 py-1 text-[0.6875rem] text-ink-2 tnum shadow-card backdrop-blur-sm">
           P = {fmtN(hover.P, 0)} kN → MRd = {fmtN(hover.M, 0)} kN·m
         </div>
       )}

@@ -20,9 +20,15 @@
   --color-card: #ffffff;
   --color-edge: #dde4ea;
   --color-edge-strong: #b9c4cd;
+  /* The accent is the one colour the Settings panel writes on the root
+     element; its darker (button hover) and pale (selected tab, wash) partners
+     are mixed from it, so a new accent carries through on its own. */
   --color-accent: #256abf;
-  --color-accent-strong: #1c5cab;
-  --color-accent-wash: #e8f0fa;
+  --color-accent-strong: color-mix(in srgb, var(--color-accent) 84%, #000);
+  --color-accent-wash: color-mix(in srgb, var(--color-accent) 9%, var(--color-card));
+  /* type on a filled accent button — written by the Settings panel, because the
+     pale swatches need dark type and the dark ones need white */
+  --color-accent-ink: #ffffff;
   --color-capacity: #2a78d6;
   --color-demand: #eb6834;
   --color-ramp-lo: #86b6ef;
@@ -36,6 +42,8 @@
   /* surfaces added for layering (not used inside the SVG figures) */
   --color-canvas: #eaeef3;
   --color-line: #e8edf2;
+  /* the drafting grid drawn on the canvas by the body background */
+  --color-grid: rgb(23 34 44 / 0.028);
 
   --radius-card: 10px;
   --radius-field: 6px;
@@ -43,8 +51,116 @@
   --shadow-card: 0 1px 1px rgb(23 34 44 / 0.03), 0 1px 3px rgb(23 34 44 / 0.05);
   --shadow-pop: 0 2px 6px -2px rgb(23 34 44 / 0.12), 0 10px 24px -8px rgb(23 34 44 / 0.2);
   --shadow-rowmark: inset 2px 0 0 0 var(--color-accent);
+  /* sticky header, primary buttons, and the underline of a selected segment */
+  --shadow-header: 0 1px 2px rgb(23 34 44 / 0.04);
+  --shadow-btn: 0 1px 2px rgb(23 34 44 / 0.16);
+  --shadow-btn-hover: 0 2px 6px -1px rgb(28 92 171 / 0.45);
+  --shadow-tabmark: inset 0 -2px 0 color-mix(in srgb, var(--color-accent) 35%, transparent);
 
   --ease-ui: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* The four drafting-sheet tints, named once: the Settings panel's swatches
+   (`src/settings.ts`) and the `[data-sheet]` rules below both point at these,
+   so an option can never show one colour and paint another. */
+:root {
+  --tint-paper: #eaeef3;
+  --tint-blueprint: #e4ecf7;
+  --tint-graph: #e6efe6;
+  --tint-cream: #f1ebdf;
+}
+
+/* ------------------------------------------------------------------
+   Dark theme: the same tokens, re-lit. Tailwind 4 emits every colour
+   utility as `var(--color-…)`, so overriding the tokens here flips the
+   whole interface — panels, tables and the SVG figures alike.
+   `color-scheme` is what makes the native scrollbars and form controls
+   (selects, number spinners, the colour picker) follow.
+------------------------------------------------------------------ */
+html {
+  color-scheme: light;
+}
+
+/* Drafting sheets: the tint of the canvas and the grid drawn on it. These are
+   the light theme's surfaces, so they are declared before the dark theme —
+   in dark mode the dark canvas wins, by source order at equal specificity. */
+html[data-sheet='paper'] {
+  --color-canvas: var(--tint-paper);
+}
+html[data-sheet='blueprint'] {
+  --color-canvas: var(--tint-blueprint);
+  --color-grid: rgb(37 106 191 / 0.1);
+}
+html[data-sheet='graph'] {
+  --color-canvas: var(--tint-graph);
+  --color-grid: rgb(0 99 0 / 0.09);
+}
+html[data-sheet='cream'] {
+  --color-canvas: var(--tint-cream);
+  --color-grid: rgb(120 90 40 / 0.08);
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-ink: #e6ecf2;
+  --color-ink-2: #a9b7c4;
+  --color-ink-3: #7d8b99;
+  --color-paper: #131a21;
+  --color-panel: #182028;
+  --color-card: #1c252e;
+  --color-canvas: #0f151b;
+  --color-line: #242e38;
+  --color-edge: #2c3843;
+  --color-edge-strong: #46545f;
+  --color-grid: rgb(255 255 255 / 0.035);
+
+  /* figures: the section is drawn on a dark sheet, so its concrete fill and
+     the two chart series move with it */
+  --color-concrete: #26313b;
+  --color-capacity: #5b9ef0;
+  --color-demand: #f08a5b;
+  --color-ramp-lo: #24425f;
+  --color-ramp-mid: #4682c9;
+  --color-ramp-hi: #8fbdf2;
+
+  /* status tones: the light values are darkened for print and disappear on a
+     dark panel, so they are re-mixed towards white instead */
+  --color-ok: #6cbf7d;
+  --color-bad: #e8797a;
+  --color-warn2: #d8a558;
+
+  /* a hover on an accent button reads as a lift on a dark sheet, not a drop */
+  --color-accent-strong: color-mix(in srgb, var(--color-accent) 82%, #fff);
+
+  --shadow-card: 0 1px 1px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.45);
+  --shadow-pop: 0 2px 6px -2px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-header: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow-btn: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow-btn-hover: 0 2px 6px -1px rgb(0 0 0 / 0.55);
+}
+
+/* Tailwind writes the shadow of a `shadow-*` utility out in full (it has to,
+   to keep `shadow-<colour>` working), so a shadow token cannot be re-pointed
+   the way a colour token can: the dark theme re-states the utilities. The
+   values are the ones the dark block above gives the same tokens. */
+html[data-theme='dark'] .shadow-card {
+  --tw-shadow: 0 1px 1px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.45);
+}
+html[data-theme='dark'] .shadow-pop {
+  --tw-shadow: 0 2px 6px -2px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.6);
+}
+html[data-theme='dark'] .shadow-header {
+  --tw-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+}
+html[data-theme='dark'] .shadow-btn {
+  --tw-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+}
+html[data-theme='dark'] .shadow-btn-hover {
+  --tw-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.55);
+}
+html[data-theme='dark'] .hover\:shadow-btn-hover:hover {
+  --tw-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.55);
 }
 
 html,
@@ -54,20 +170,21 @@ body,
 }
 
 body {
-  /* faint drafting grid over the canvas, so the white cards read as sheets */
+  /* faint drafting grid over the canvas, so the cards read as sheets */
   background-color: var(--color-canvas);
   background-image:
-    linear-gradient(to right, rgb(23 34 44 / 0.028) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(23 34 44 / 0.028) 1px, transparent 1px);
+    linear-gradient(to right, var(--color-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid) 1px, transparent 1px);
   background-size: 24px 24px;
   background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-body);
-  font-size: 14px;
+  /* 0.875rem, i.e. the 14 px this app has always used at the default root
+     size, and 12.25 / 15.75 px at the small and large interface sizes */
+  font-size: 0.875rem;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  color-scheme: light;
 }
 
 h1,
@@ -110,6 +227,11 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* the drafting grid is a preference, not decoration: off means off */
+html[data-grid='off'] body {
+  background-image: none;
+}
+
 /* selects: own chevron so all dropdowns read the same */
 .sel {
   appearance: none;
@@ -120,6 +242,11 @@ input[type="number"] {
   background-size: 11px;
   padding-right: 21px;
   cursor: pointer;
+}
+/* the chevron is drawn into the background, so it cannot use a token: it
+   needs a rule of its own for the dark theme (grey on a dark field) */
+html[data-theme='dark'] .sel {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a9b7c4' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* colour swatch input, trimmed to the app's geometry */
